@@ -6,7 +6,7 @@
 전체 공정의 흐름을 제어하는 상위 로직 구현
 
 1.1 CONNECTING
-[ ] 1.1.1 모든 서브 모듈(Device, Robot) 연결 상태 확인 로직 구현
+[*] 1.1.1 모든 서브 모듈(Device, Robot) 연결 상태 확인 로직 구현
 1.2 IDLE
 [ ] 1.2.1 작업자 시작 명령 대기 및 초기 위반(Violation) 감시
 1.3 PREPARING_BATCH
