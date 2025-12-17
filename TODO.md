@@ -1,10 +1,5 @@
-🎯 Project To-Do List (State-Based Implementation)
-
-이 문서는 `LogicFSM`, `DeviceFSM`, `RobotFSM`의 상태(State) 구현을 기준으로 작성된 작업 목록입니다.
-
 1. Logic FSM (Main Sequence Controller)
 전체 공정의 흐름을 제어하는 상위 로직 구현
-
 1.1 CONNECTING
 # [ ] 1.1.1 모든 서브 모듈(Device, Robot) 연결 상태 확인 로직 구현
 1.2 IDLE
@@ -75,3 +70,6 @@
 # [ ] 4.1.1 `constants.py`의 DigitalInput/Output 매핑 검증
 4.2 Communication
 # [ ] 4.2.1 MQTT 통신 (UI <-> Logic) 인터페이스 안정화
+
+최종 업데이트: 2025년 12월 17일
+
