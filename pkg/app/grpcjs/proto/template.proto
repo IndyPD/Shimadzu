@@ -1,0 +1,51 @@
+syntax = "proto3";
+package GRPCGlobalVariable;
+
+// 기존 전역 변수 관련 메시지
+message Empty {
+}
+
+message GInt {
+    int32 idx = 1;
+    int32 val = 2;
+}
+
+message IntVal {
+    int32 val = 1;
+}
+
+message GInts {
+    int32 idx = 1;
+    repeated int32 val = 2;
+}
+
+message IntVals {
+    repeated int32 val = 1;
+}
+
+// id와 함께 문자열을 주고받는 메시지
+message StringWithId {
+    int32 id = 1;
+    string val = 2;
+}
+
+// id만 담는 메시지 (읽기 요청에 사용)
+message StringId {
+    int32 id = 1;
+}
+
+
+service GRPCGlobalVariableTask {
+    // 기존 전역 변수 관련 RPC
+    rpc SetInt(GInt) returns (Empty) {}
+    rpc GetInt(IntVal) returns (IntVal) {}
+
+    rpc SetInts(GInts) returns (Empty) {}
+    rpc GetInts(GInt) returns (IntVals) {}
+
+    // id와 함께 문자열을 설정합니다.
+    rpc SetStringWithId(StringWithId) returns (Empty) {}
+    
+    // id에 해당하는 문자열을 읽어옵니다.
+    rpc GetStringWithId(StringId) returns (StringWithId) {}
+}

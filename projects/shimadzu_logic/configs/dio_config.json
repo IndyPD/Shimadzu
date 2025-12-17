@@ -1,0 +1,38 @@
+{
+  "server": {
+    "address": "192.168.0.10",
+    "port": "502"
+  },
+  "protocol":{
+    "di": [
+      {
+        "slave_index": 0,
+        "channels": 16,
+        "forwarding": {
+          "di/example1": 0
+        }
+      }
+    ],
+    "do": [
+      {
+        "slave_index": 1,
+        "channels": 16,
+        "forwarding": {
+          "do/example1": 0
+        }
+      }
+    ],
+    "end_do_off": [
+      {
+        "port": "C", 
+        "states": [-2]        
+      }
+    ],
+    "end_do_on": [
+      {
+        "port": "C", 
+        "states": [2]        
+      }
+    ]
+  }
+}

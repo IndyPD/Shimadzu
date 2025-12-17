@@ -1,0 +1,29 @@
+{
+  "conty_main_program_index": 1,
+  "conty_warming_program_index": 2,
+
+
+  "AType": {
+    "home_pos"       : [72.75, 11.44, -125.74, -1.70, -63.70, -56.70],
+    "packaging_pos"  : [-90, 0, 150, 0, -150, 0]
+  },
+  "BType": {
+    "home_pos"       : [72.75, 11.44, -125.74, -1.70, -63.70, -56.70],
+    "packaging_pos"  : [-90, 0, 150, 0, -150, 0]
+  },
+
+
+  "int_var/cmd/addr" : 600,
+  "int_var/init/addr" : 700,
+  "int_var/pickup_done/fryer1/addr" : 641,
+  "int_var/pickup_done/fryer2/addr" : 642,
+  "int_var/pickup_done/fryer3/addr" : 643,
+  "int_var/pickup_done/fryer4/addr" : 644,
+  "int_var/drain_num/addr" : 651,
+  "int_var/shake_num/addr" : 652,
+  "int_var/shake_option/addr" : 653,
+  "int_var/shake_done/addr" : 654,
+
+  "int_var/grip_state/addr" : 660,
+  "int_var/retry_grip/addr" : 661
+}

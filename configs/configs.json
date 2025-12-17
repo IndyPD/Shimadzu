@@ -1,0 +1,47 @@
+{
+  "robot_ip": "127.0.0.1",
+  "frying_coco_version": "AType",
+
+  "home_pass_mode": true,
+  "place_fool_proof": true,
+  "grip_close_fail_fool_proof": true,
+  "grip_open_fail_fool_proof": false,
+  "maximum_shake": false,
+  "auto_inspection": false,
+
+  "gripper": {
+      "product": "zimmer",
+      "transistor": "PNP",
+      "endtool_port": "A",
+      "open_channel": 1,
+      "ai_channel": 0,
+
+      "filter_alpha": 0.9,
+      "open_bound": [50, 200],
+      "close_bound": [8000, 9600],
+      "open_failure_duration": 3,
+      "close_failure_duration": 3
+  },
+
+  "switch_button": {
+      "button_type": "toggle",
+      "di_stop_channel": 1,
+      "di_dt_channel": 0
+  },
+
+  "sensors": {
+      "num_basket_sensor": 8,
+      "di_basket1": 2,
+      "di_basket2": 3,
+      "di_basket3": 4,
+      "di_basket4": 5,
+      "di_basket5": 6,
+      "di_basket6": 7,
+      "di_basket7": 8,
+      "di_basket8": 9
+  },
+
+  "buzzer": {
+      "do_buzzer_channel": 8
+  }
+}

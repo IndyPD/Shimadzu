@@ -1,0 +1,28 @@
+{
+  "ACK_IDS": {
+    "TENSIL_START_OK": "logic-ack-001",
+    "TENSIL_START_REJECT": "logic-ack-002",
+    "TENSIL_STOP": "logic-ack-003",
+    "TENSIL_STEP_STOP": "logic-ack-004",
+    "TENSIL_PAUSE": "logic-ack-005",
+    "TENSIL_RESUME": "logic-ack-006",
+    "TENSIL_RESET": "logic-ack-007",
+    "TENSIL_GOHOME": "logic-ack-008",
+    "MANUAL_CONTROL": "logic-ack-m-001",
+    "ROBOT_RECOVER": "logic-ack-m-002",
+    "PROCESS_AUTO_RECOVER": "logic-ack-m-003",
+    "ROBOT_DT_ON": "logic-ack-m-004",
+    "ROBOT_DT_OFF": "logic-ack-m-005",
+    "GRIPPER_HOLD": "logic-ack-m-006",
+    "GRIPPER_RELEASE": "logic-ack-m-007",
+    "SYSTEM_GO_HOME": "logic-ack-m-008",
+    "MANUAL_RECOVER_COMPLETE": "logic-ack-m-009",
+    "BINPICK_START": "logic-ack-001",
+    "BINPICK_STOP": "logic-ack-001",
+    "BINPICK_GENERAL": "logic-ack-001"
+  },
+  "EVENT_IDS": {
+    "DIO_STATUS": "logic-evt-dio-001",
+    "SYSTEM_STATUS": "logic-evt-state-001"
+  }
+}

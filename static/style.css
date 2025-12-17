@@ -1,0 +1,129 @@
+/* 기본 레이아웃 */
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    margin: 0;
+    padding: 0;
+}
+
+/* 전체 컨테이너 */
+.container {
+    max-width: 900px;
+    margin: 40px auto;
+    background: #fff;
+    padding: 30px 40px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+/* 제목 */
+h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #2c3e50;
+}
+
+h2 {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
+    margin-top: 30px;
+    color: #444;
+}
+
+/* 일반 필드 그룹 */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 20px;
+}
+
+label {
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+.form-row {
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 250px;
+    margin-bottom: 0;
+}
+
+
+/* toggle-style radio 그룹 공통 */
+.radio-toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.radio-toggle-group input[type="radio"] {
+    display: none;
+}
+
+.radio-toggle-group label {
+    padding: 6px 12px;
+    background: #eee;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.radio-toggle-group input[type="radio"]:checked + label {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+/* 바스켓 센서 그리드 */
+.basket-group {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-top: 10px;
+}
+
+.basket-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.basket-item label {
+    margin-bottom: 6px;
+}
+
+/* select 박스 (바스켓 센서용) */
+.basket-item select {
+    padding: 5px 6px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+/* 저장 버튼 */
+input[type="submit"] {
+    margin-top: 30px;
+    background-color: #3498db;
+    color: white;
+    padding: 12px 24px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+input[type="submit"]:hover {
+    background-color: #2980b9;
+}

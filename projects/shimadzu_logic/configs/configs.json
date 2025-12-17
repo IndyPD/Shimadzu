@@ -1,0 +1,12 @@
+{
+
+  "robot_ip": "192.168.0.15",
+  "remote_io": "192.168.0.20",
+  "mqtt_ip": "127.0.0.1",
+  "shimadzu_ip": "127.0.0.1",
+  "shimadzu_port": 5000,
+  
+  "test_mode" : 0,
+  "debug_mode": 0
+
+}

@@ -1,0 +1,155 @@
+{
+    "server": {
+        "address": "192.168.0.15",
+        "server_type": "grpc",
+        "modbus_port": "502",
+        "grpc_port": "503"
+    },
+    "protocol": {
+        "read": {
+            "ranges": [
+                [
+                    39,
+                    200
+                ]
+            ],
+            "forwarding": {
+                "ui/command/pot1/manual_mode": 39,
+                "ui/command/pot1/agiatator/mode": 40,
+                "ui/command/pot1/agitator/turn": 41,
+                "ui/command/pot1/agitator/lift": 42,
+                "ui/command/pot1/induction/target/level": 43,
+                "ui/command/pot1/induction/power": 44,
+                "ui/command/pot1/water_supply/target/volume": 45,
+                "ui/command/pot1/water_supply": 46,
+                "ui/command/pot2/manual_mode": 49,
+                "ui/command/pot2/agiatator/mode": 50,
+                "ui/command/pot2/agitator/turn": 51,
+                "ui/command/pot2/agitator/lift": 52,
+                "ui/command/pot2/induction/target/level": 53,
+                "ui/command/pot2/induction/power": 54,
+                "ui/command/pot2/water_supply/target/volume": 55,
+                "ui/command/pot2/water_supply": 56,
+                "ui/command/teaching": 100,
+                "ui/command/robot/gripper": 101,
+                "ui/command/robot/recover_motion": 102,
+                "ui/command/program_control": 103,
+                "ui/command/go_home": 104,
+                "ui/command/reset_robot": 110,
+                "ui/command/input_unit/turn": 111,
+                "ui/command/input_unit/lift/move": 112,
+                "ui/command/input_unit/fork/move": 113,
+                "ui/command/program/restart": 120,
+                "ui/command/pot1/btn": 150,
+                "ui/command/pot2/btn": 151,
+                "ui/command/recovery": 152,
+                "ui/command/pot1/enter/done": 160,
+                "ui/command/pot2/enter/done": 161,
+                "process/recipe/pot1/skip": 170,
+                "process/recipe/pot2/skip": 171,
+                "process/recipe/pot1/reload": 172,
+                "process/recipe/pot2/reload": 173,
+                "ui/command/restart": 180
+            }
+        },
+        "read_str": {
+            "forwarding": {
+                "ui/command/recipe/pot1": 191,
+                "ui/command/recipe/pot2": 192
+            }
+        },
+        "write": {
+            "ranges": [
+                [
+                    0,
+                    38
+                ]
+            ],
+            "forwarding": {
+                "ui/state/robot_state": 1,
+                "ui/state/working_time": 2,
+                "ui/state/working_minute": 3,
+                "ui/state/work_status": 4,
+                "ui/state/pot1/recipe": 5,
+                "ui/state/pot2/recipe": 6,
+                "ui/state/pot1/progress": 7,
+                "ui/state/pot2/progress": 8,
+                "ui/state/pot1/total_time": 9,
+                "ui/state/pot2/total_time": 10,
+                "ui/state/safe/stop": 11,
+                "ui/state/pot2/cur_cook_time": 12,
+                "ui/state/pot1/lift/state": 13,
+                "ui/state/pot2/lift/state": 14,
+                "ui/state/pot1/tilt/state": 15,
+                "ui/state/pot2/tilt/state": 16,
+                "ui/state/pot1/shaker/state": 17,
+                "ui/state/pot2/shaker/state": 18,
+                "ui/state/pot1/induction/state": 19,
+                "ui/state/pot2/induction/state": 20,
+                "ui/state/pot1/water_supply/state": 21,
+                "ui/state/pot2/water_supply/state": 22,
+                "ui/state/pot1/water_supply/volume": 23,
+                "ui/state/pot2/water_supply/volume": 24,
+                "ui/state/input_unit/pose": 25,
+                "ui/state/input_unit/state": 26,
+                "ui/state/input_unit/grasp_state": 27,
+                "ui/state/input_unit/pouring_state": 28,
+                "ui/state/pot1/shaker/mode": 29,
+                "ui/state/pot2/shaker/mode": 30,
+                "ui/state/direct_state": 31,
+                "ui/state/robot/gripper_state": 32,
+                "ui/state/program_state": 33,
+                "ui/state/recipe/pot1/enter": 34,
+                "ui/state/recipe/pot2/enter": 35,
+                "ui/state/workside": 36,
+                "ui/state/error": 37,
+                "ui/state/recover": 38
+            }
+        },
+        "read_reset": {
+            "forwarding": {
+                "ui/reset/pot1/agiatator/mode": 40,
+                "ui/reset/pot1/agitator/turn": 41,
+                "ui/reset/pot1/agitator/lift": 42,
+                "ui/reset/pot1/induction/target/level": 43,
+                "ui/reset/pot1/induction/power": 44,
+                "ui/reset/pot1/water_supply/target/volume": 45,
+                "ui/reset/pot1/water_supply": 46,
+                "ui/reset/pot2/agiatator/mode": 50,
+                "ui/reset/pot2/agitator/turn": 51,
+                "ui/reset/pot2/agitator/lift": 52,
+                "ui/reset/pot2/induction/target/level": 53,
+                "ui/reset/pot2/induction/power": 54,
+                "ui/reset/pot2/water_supply/target/volume": 55,
+                "ui/reset/pot2/water_supply": 56,
+                "ui/reset/teaching": 100,
+                "ui/reset/robot/gripper": 101,
+                "ui/reset/robot/recover_motion": 102,
+                "ui/reset/program_control": 103,
+                "ui/reset/go_home": 104,
+                "ui/reset/reset_robot": 110,
+                "ui/reset/input_unit/turn": 111,
+                "ui/reset/input_unit/lift/move": 112,
+                "ui/reset/input_unit/fork/move": 113,
+                "ui/reset/program/restart": 120,
+                "ui/reset/pot1/btn": 150,
+                "ui/reset/pot2/btn": 151,
+                "ui/reset/recovery": 152,
+                "ui/reset/pot1/enter/done": 160,
+                "ui/reset/pot2/enter/done": 161,
+                "process/reset/recipe/pot1/skip": 170,
+                "process/reset/recipe/pot2/skip": 171,
+                "process/reset/recipe/pot1/reload": 172,
+                "process/reset/recipe/pot2/reload": 173,
+                "ui/reset/restart": 180
+            }
+        },
+        "read_str_reset": {
+            "forwarding": {
+                "ui/reset/recipe/pot1": 191,
+                "ui/reset/recipe/pot2": 192
+            }
+        },
+        "delayed_resets": []
+    }
+}

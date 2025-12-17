@@ -1,0 +1,15 @@
+{
+  "SERIAL_CONFIG": {
+    "port": "COM3",
+    "baudrate": 2400,
+    "timeout": 1,
+    "bytesize": 8,
+    "parity": "N",
+    "stopbits": 1
+  },
+  "SOCKET_CONFIG": {
+    "host": "192.168.1.100",
+    "port": 4000,
+    "timeout": 1
+  }
+}

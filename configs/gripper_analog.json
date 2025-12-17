@@ -1,0 +1,14 @@
+{
+  "gripper0": {
+    "gripper_state": "gripper_none",
+    "ranges": [0,200]
+  },
+  "gripper1": {
+    "gripper_state": "gripper_close",
+    "ranges": [200,800]    
+  }, 
+  "gripper2": {
+    "gripper_state": "gripper_open",
+    "ranges": [900,1500]   
+  }
+}
