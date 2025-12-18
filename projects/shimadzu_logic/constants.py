@@ -199,7 +199,7 @@ class Robot_OP_State(IntEnum):
     TELE_OP = 17
 
 # 13. Remote IO DI (Digital Input) 신호 정의
-class DigitalInput(Enum):
+class DigitalInput(IntEnum):
     """
     PLC DI (Digital Input) 신호 목록
     address는 이미지의 address - 1 값입니다.
@@ -242,7 +242,7 @@ class DigitalInput(Enum):
     ATC_2_2_SENSOR = 36
 
 # 14. Remote IO DO (Digital Output) 신호 정의
-class DigitalOutput(Enum):
+class DigitalOutput(IntEnum):
     """
     PLC DO (Digital Output) 신호 목록
     address는 이미지의 address - 1 값입니다.

@@ -4,6 +4,8 @@
 import json
 from typing import Dict, Optional, Any
 
+DEBUG_MODE = False
+
 # 메시지 형식 정의 (Message Format Overview 탭 참고)
 # STX (Start of Text): 0x02
 # ETX (End of Text): 0x03
@@ -62,7 +64,7 @@ def parse_message(raw_message: str) -> Optional[Dict[str, Any]]:
     try:
         # 1. STX와 ETX 제거 및 형식 검증
         if not (raw_message.startswith(STX) and raw_message.endswith(ETX)):
-            print(f"[ERROR] Invalid message format: Missing STX/ETX. Message: {raw_message.encode('unicode_escape').decode()}")
+            if DEBUG_MODE: print(f"[ERROR] Invalid message format: Missing STX/ETX. Message: {raw_message.encode('unicode_escape').decode()}")
             return None
             
         message_body = raw_message[1:-1]
@@ -70,7 +72,7 @@ def parse_message(raw_message: str) -> Optional[Dict[str, Any]]:
         # 2. @ 구분자로 분리
         parts = message_body.split(DATA_ITEM_SEPARATOR)
         if not parts:
-            print(f"[ERROR] Invalid message format: Empty body. Message: {raw_message.encode('unicode_escape').decode()}")
+            if DEBUG_MODE: print(f"[ERROR] Invalid message format: Empty body. Message: {raw_message.encode('unicode_escape').decode()}")
             return None
             
         # 3. MessageType 추출 (첫 번째 요소)
@@ -101,7 +103,7 @@ def parse_message(raw_message: str) -> Optional[Dict[str, Any]]:
         }
 
     except Exception as e:
-        print(f"[ERROR] Failed to parse message '{raw_message[:50]}...'. Exception: {e}")
+        if DEBUG_MODE: print(f"[ERROR] Failed to parse message '{raw_message[:50]}...'. Exception: {e}")
         return None
 
 # --- 테스트 코드 (옵션) ---
@@ -115,11 +117,11 @@ if __name__ == '__main__':
         "LOTNAME": "LOT-20250701-01"
     }
     client_msg = create_message("ASK_REGISTER", params_client)
-    print(f"생성된 Client 메시지: {client_msg.encode('unicode_escape').decode()}")
+    if DEBUG_MODE: print(f"생성된 Client 메시지: {client_msg.encode('unicode_escape').decode()}")
     
     # 2. 메시지 파싱 테스트: Client 메시지 파싱
     parsed_client = parse_message(client_msg)
-    print(f"파싱 결과 (Client): {parsed_client}")
+    if DEBUG_MODE: print(f"파싱 결과 (Client): {parsed_client}")
 
     # 3. 메시지 생성 테스트: Shimadzu -> Korea (ANA_RESULT 예시)
     params_server = {
@@ -130,8 +132,8 @@ if __name__ == '__main__':
         "CODE": "00"
     }
     server_msg = create_message("ANA_RESULT", params_server)
-    print(f"\n생성된 Server 메시지: {server_msg.encode('unicode_escape').decode()}")
+    if DEBUG_MODE: print(f"\n생성된 Server 메시지: {server_msg.encode('unicode_escape').decode()}")
 
     # 4. 메시지 파싱 테스트: Server 메시지 파싱
     parsed_server = parse_message(server_msg)
-    print(f"파싱 결과 (Server): {parsed_server}")
+    if DEBUG_MODE: print(f"파싱 결과 (Server): {parsed_server}")

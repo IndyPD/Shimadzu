@@ -5,8 +5,10 @@ import sys
 import json
 import os
 
+DEBUG_MODE = False
+
 # 설정 파일 경로
-CONFIG_FILE_PATH = 'configs/MitutoyoGauge.json'
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'MitutoyoGauge.json')
 
 def load_config(filepath: str) -> dict:
     """
@@ -17,21 +19,21 @@ def load_config(filepath: str) -> dict:
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
     if not os.path.exists(filepath):
-        print(f"ERROR: 설정 파일을 찾을 수 없습니다: {filepath}")
-        print("configs/MitutoyoGauge.json 파일이 존재하는지 확인해 주세요.")
+        if DEBUG_MODE: print(f"ERROR: 설정 파일을 찾을 수 없습니다: {filepath}")
+        if DEBUG_MODE: print("configs/MitutoyoGauge.json 파일이 존재하는지 확인해 주세요.")
         # 파일이 없으면 기본 설정으로 임시 파일 생성 유도 (선택 사항이나 여기서는 종료)
         sys.exit(1)
 
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             config = json.load(f)
-            print(f"INFO: 설정 파일 로드 성공: {filepath}")
+            if DEBUG_MODE: print(f"INFO: 설정 파일 로드 성공: {filepath}")
             return config
     except json.JSONDecodeError as e:
-        print(f"ERROR: JSON 파일 파싱 오류: {filepath}. 오류 내용: {e}")
+        if DEBUG_MODE: print(f"ERROR: JSON 파일 파싱 오류: {filepath}. 오류 내용: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"ERROR: 설정 파일을 읽는 중 알 수 없는 오류 발생: {e}")
+        if DEBUG_MODE: print(f"ERROR: 설정 파일을 읽는 중 알 수 없는 오류 발생: {e}")
         sys.exit(1)
 
 
@@ -58,33 +60,43 @@ class MitutoyoGauge:
         # 2. 통신 타입에 맞는 설정 선택
         if connection_type == 1:
             self.config = full_config.get('SERIAL_CONFIG', {})
-            print("INFO: 통신 방식이 Serial (COM/USB)로 설정되었습니다.")
+            if DEBUG_MODE: print("INFO: 통신 방식이 Serial (COM/USB)로 설정되었습니다.")
         elif connection_type == 2:
             self.config = full_config.get('SOCKET_CONFIG', {})
-            print("INFO: 통신 방식이 Socket (TCP/IP)로 설정되었습니다.")
+            if DEBUG_MODE: print("INFO: 통신 방식이 Socket (TCP/IP)로 설정되었습니다.")
         else:
-            print(f"ERROR: 잘못된 통신 방식 입력 ({connection_type}). 1(Serial) 또는 2(Socket)를 선택하세요.")
+            if DEBUG_MODE: print(f"ERROR: 잘못된 통신 방식 입력 ({connection_type}). 1(Serial) 또는 2(Socket)를 선택하세요.")
             sys.exit(1)
             
         # 설정 로드 확인
         if not self.config:
             config_key = 'SERIAL_CONFIG' if connection_type == 1 else 'SOCKET_CONFIG'
-            print(f"ERROR: JSON 파일에서 '{config_key}' 설정을 찾을 수 없습니다. CONFIG_FILE_PATH를 확인하세요.")
+            if DEBUG_MODE: print(f"ERROR: JSON 파일에서 '{config_key}' 설정을 찾을 수 없습니다. CONFIG_FILE_PATH를 확인하세요.")
             sys.exit(1)
 
         # PC -> 게이지 요청 명령어 (Carriage Return, CR)
         # 매뉴얼에 따라 1바이트 문자를 사용하며, 바이트 형태로 인코딩
         self.request_command = '\r'.encode('latin-1') 
 
+        # 초기 연결 및 데이터 확인
+        if self.connect():
+            test_val = self.request_data()
+            if test_val is not None:
+                if DEBUG_MODE: print(f"INFO: 초기 데이터 수신 확인 완료 ({test_val})")
+            else:
+                if DEBUG_MODE: print("WARNING: 연결은 성공했으나 초기 데이터 수신에 실패했습니다.")
+        else:
+            if DEBUG_MODE: print("WARNING: 초기 연결에 실패했습니다.")
+
     def _log_debug(self, message: str):
         """디버그 모드가 1일 때만 메시지를 출력합니다."""
-        if self.debug_mode == 1:
+        if self.debug_mode == 1 and DEBUG_MODE:
             print(f"DEBUG: {message}")
 
     def _connect_serial(self):
         """pyserial을 사용하여 시리얼 포트 연결을 시도합니다."""
         port = self.config.get('port')
-        print(f"[{port}] 포트에 시리얼 연결 시도 중...")
+        if DEBUG_MODE: print(f"[{port}] 포트에 시리얼 연결 시도 중...")
         try:
             self.connection = serial.Serial(
                 port=port,
@@ -95,28 +107,28 @@ class MitutoyoGauge:
                 timeout=self.config.get('timeout')
             )
             if self.connection.is_open:
-                print(f"✅ 시리얼 포트 연결 성공: {port}")
+                if DEBUG_MODE: print(f"✅ 시리얼 포트 연결 성공: {port}")
                 return True
             return False
         except serial.SerialException as e:
-            print(f"❌ 시리얼 포트 연결 실패: {e}")
-            print("포트 설정(port)이나 속도(baudrate)를 확인해 주세요.")
+            if DEBUG_MODE: print(f"❌ 시리얼 포트 연결 실패: {e}")
+            if DEBUG_MODE: print("포트 설정(port)이나 속도(baudrate)를 확인해 주세요.")
             return False
 
     def _connect_socket(self):
         """socket을 사용하여 TCP/IP 소켓 연결을 시도합니다."""
         host = self.config.get('host')
         port = self.config.get('port')
-        print(f"[{host}:{port}] 주소에 소켓 연결 시도 중...")
+        if DEBUG_MODE: print(f"[{host}:{port}] 주소에 소켓 연결 시도 중...")
         try:
             self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.connection.settimeout(self.config.get('timeout', 1))
             self.connection.connect((host, port))
-            print(f"✅ 소켓 연결 성공: {host}:{port}")
+            if DEBUG_MODE: print(f"✅ 소켓 연결 성공: {host}:{port}")
             return True
         except socket.error as e:
-            print(f"❌ 소켓 연결 실패: {e}")
-            print("IP 주소(host)와 포트(port) 설정을 확인하고, 컨버터가 켜져 있는지 확인하세요.")
+            if DEBUG_MODE: print(f"❌ 소켓 연결 실패: {e}")
+            if DEBUG_MODE: print("IP 주소(host)와 포트(port) 설정을 확인하고, 컨버터가 켜져 있는지 확인하세요.")
             self.connection = None
             return False
 
@@ -132,7 +144,7 @@ class MitutoyoGauge:
         """통신 연결을 해제합니다."""
         if self.connection:
             self.connection.close()
-            print("통신 연결 해제.")
+            if DEBUG_MODE: print("통신 연결 해제.")
             self.connection = None
 
     def _request_serial_data(self):
@@ -151,7 +163,7 @@ class MitutoyoGauge:
             
             return raw_response
         except serial.SerialException as e:
-            print(f"통신 중 시리얼 오류 발생: {e}")
+            if DEBUG_MODE: print(f"통신 중 시리얼 오류 발생: {e}")
         return None
 
     def _request_socket_data(self):
@@ -184,11 +196,11 @@ class MitutoyoGauge:
                 except BlockingIOError:
                     time.sleep(0.01)
                     
-            print("게이지로부터 응답을 받지 못했습니다. (타임아웃)")
+            if DEBUG_MODE: print("게이지로부터 응답을 받지 못했습니다. (타임아웃)")
             return None
             
         except socket.error as e:
-            print(f"통신 중 소켓 오류 발생: {e}")
+            if DEBUG_MODE: print(f"통신 중 소켓 오류 발생: {e}")
             return None
 
     def parse_data(self, raw_data: bytes) -> dict:
@@ -244,7 +256,7 @@ class MitutoyoGauge:
         성공 시 float 값을 반환하고, 실패 시 None을 반환합니다.
         """
         if not self.connection:
-            print("ERROR: 통신이 연결되지 않았습니다. .connect()를 먼저 호출하세요.")
+            if DEBUG_MODE: print("ERROR: 통신이 연결되지 않았습니다. .connect()를 먼저 호출하세요.")
             return None
 
         if self.connection_type == 1:
@@ -266,7 +278,7 @@ class MitutoyoGauge:
                 # print(f"✅ 수신 성공: 측정 값 (float) = {value}")
                 return value # 성공 시 float 값 반환
             elif result["status"] == "ERROR":
-                print(f"❌ 실패: {result['message']}")
+                if DEBUG_MODE: print(f"❌ 실패: {result['message']}")
                 
         return None # raw_response가 없거나 파싱 상태가 ERROR일 경우 None 반환
 
@@ -286,19 +298,19 @@ def main():
     
     if gauge.connect():
         try:
-            print("\n데이터 수신 대기 중... (Ctrl+C를 눌러 종료)")
+            if DEBUG_MODE: print("\n데이터 수신 대기 중... (Ctrl+C를 눌러 종료)")
             while True:
                 # request_data 호출 결과가 float 또는 None으로 반환됩니다.
                 measurement = gauge.request_data() 
                 if measurement is not None:
                     # 실제 측정값 사용 예시
-                    print(f"현재 측정값: {measurement}")
+                    if DEBUG_MODE: print(f"현재 측정값: {measurement}")
                     pass
                     
                 time.sleep(1) # 1초 간격으로 반복
                 
         except KeyboardInterrupt:
-            print("\n사용자에 의해 프로그램이 종료되었습니다.")
+            if DEBUG_MODE: print("\n사용자에 의해 프로그램이 종료되었습니다.")
         finally:
             gauge.disconnect()
             

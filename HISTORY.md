@@ -2,6 +2,21 @@
 
 이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지합니다.
 
+v0.1.1 - 2025-12-18 (환경 설정 및 초기 오류 수정)
+
+1. 하드웨어 (Hardware)
+장비IO체크: IO제어를 통해 실제 매핑된 장비 작동 유무 확인
+DialGauge: 다이얼게이지 통신 및 데이터 확인
+
+2. 소프트웨어 (Software)
+의존성 관리 및 문서화: run.py 실행에 필요한 외부 라이브러리를 requirements.txt 파일로 생성하여 관리하고, README.md에 Anaconda 가상환경 설정 및 실행 절차를 문서화했습니다. 초기 실행 과정에서 발생한 다수의 ModuleNotFoundError를 해결했습니다. 경로 문제 해결: run.py 실행 위치에 따라 설정 파일(*.json)을 찾지 못하는 FileNotFoundError를 해결하기 위해, os.path.dirname(__file__)을 사용하여 파일 경로를 동적으로 생성하도록 run.py, devices_context.py, remote_io.py, mitutoyogauge.py 코드를 수정했습니다. 코드 개선: devices_context.py의 TypeError를 IntEnum을 사용하여 해결하고, devices 폴더 내 주요 Python 파일에 DEBUG_MODE 플래그를 추가하여 디버깅 편의성을 높였습니다.
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
+
 v0.1.0 - 2025-12-17 (시스템 초기 구축 및 FSM 설계)
 
 1. 하드웨어 (Hardware)

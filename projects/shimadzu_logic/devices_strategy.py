@@ -111,6 +111,37 @@ class ReadyStrategy(Strategy):
             
         # 작업자의 START_COMMAND 대기 로직이 여기에 추가되어야 함
         # 예시: if bb.get("user/start_request"): return DeviceEvent.START_COMMAND
+        
+        # 수동 장비 제어 테스트 로직
+        manual_cmd = bb.get("manual/device/tester")
+        if manual_cmd and manual_cmd > 0:
+            Logger.info(f"[Device] Manual Test Command Executed: {manual_cmd}")
+            
+            if manual_cmd == 1:
+                context.chuck_open()
+            elif manual_cmd == 2:
+                context.chuck_close()
+            elif manual_cmd == 3:
+                context.EXT_move_forword()
+            elif manual_cmd == 4:
+                context.EXT_move_backward()
+            elif manual_cmd == 5:
+                context.EXT_stop()
+            elif manual_cmd == 6:
+                context.align_push()
+            elif manual_cmd == 7:
+                context.align_pull()
+            elif manual_cmd == 8:
+                context.align_stop()
+            elif manual_cmd == 9:
+                context.get_dial_gauge_value()
+            elif manual_cmd == 10:
+                context.smz_are_you_there()
+            elif manual_cmd == 11:
+                context.smz_ask_sys_status()
+            
+            # 명령 실행 후 초기화
+            bb.set("manual/device/tester", 0)
 
         return DeviceEvent.NONE
     

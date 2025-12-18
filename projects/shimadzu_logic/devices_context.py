@@ -1,4 +1,5 @@
 from .constants import *
+import os
 from pkg.fsm.shared import *
 from pkg.utils.process_control import Flagger, reraise, FlagDelay
 from pkg.utils.file_io import load_json, save_json
@@ -22,8 +23,10 @@ class DeviceContext(ContextBase):
     def __init__(self):
         ContextBase.__init__(self)
 
-        config_path = 'projects/shimadzu_logic/configs/configs.json'
-        config : dict = load_json(config_path)
+        # 스크립트 위치를 기준으로 설정 파일의 절대 경로 생성
+        config_dir = os.path.join(os.path.dirname(__file__), 'configs')
+        config_path = os.path.join(config_dir, 'configs.json')
+        config: dict = load_json(config_path)
         self.debug_mode = config.get("debug_mode")
         Logger.info(f"[device] Debug mode : {self.debug_mode}")
         Logger.info(f"[device] configs : {config.get('remote_io')}")
@@ -35,8 +38,7 @@ class DeviceContext(ContextBase):
         
         # MitutoyoGauge 장치 인스턴스 생성
         if self.dev_gauge_enable :
-            self.gauge = MitutoyoGauge(connection_type=2)  # 예: connection_type=2는 시리얼 통신을 의미
-            self.gauge.connect()
+            self.gauge = MitutoyoGauge(connection_type=1)  # 예: connection_type=1는 시리얼 통신을 의미
         # 측정, 상태 확인 명령 전송 방지 변수
         self.gauge_initial_check_done = False
         self.gauge_measurement_done = False
@@ -44,9 +46,9 @@ class DeviceContext(ContextBase):
         # remote I/O 장치 인스턴스 생성
         if self.dev_remoteio_enable :
             self.iocontroller = AutonicsEIPClient()
-            self.th_IO_reader = self.iocontroller.connect()
-        self.remote_input_data = []
-        self.remote_output_data = []
+            # self.th_IO_reader = self.iocontroller.connect()
+        self.remote_input_data = self.iocontroller.current_di_value
+        self.remote_output_data = self.iocontroller.current_do_value
         self.remote_comm_state = False
 
 
@@ -114,6 +116,8 @@ class DeviceContext(ContextBase):
         # 비트 위치가 명확하고 코드가 짧아집니다.
         # N번째 비트 = 1 << N
 
+        # 임시 코드 << 삭제 예정
+        return True
         GAUGE_COMM_ERR     = 1 << 0  # 0b00000001 (1)
         GAUGE_DEVICE_ERROR = 1 << 1 # 0b00000010 (2)
         SMZ_COMM_ERR       = 1 << 2  # 0b00000100 (4)

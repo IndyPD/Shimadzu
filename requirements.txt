@@ -1,0 +1,14 @@
+pycomm3
+pyserial
+paho-mqtt
+grpcio
+protobuf
+requests
+numpy
+grpcio-tools
+PyYAML
+semver
+psutil
+py_trees
+neuromeka
+scipy
