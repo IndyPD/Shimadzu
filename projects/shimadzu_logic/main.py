@@ -45,6 +45,8 @@ def main():
     mqtt_communicator = None
     try:        
         
+        # TODO DB관련 내용 추가    
+
         # Indy 로봇 통신 시작
         # robot = indy_control.RobotCommunication()
         # robot.start()

@@ -12,7 +12,7 @@ import os
 import sys
 import threading
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 # =========================== 모듈 상수 정의 ===========================
 # 설정 파일 경로
@@ -240,19 +240,27 @@ class AutonicsEIPClient:
         """
         입력 데이터 (Instance: 101)를 읽어와 DI 상태를 출력하고 비트 리스트를 반환합니다.
         """
-        status_int, bit_list = self._read_data_and_print(INPUT_ASSEMBLY_INSTANCE, "입력 데이터 (DI)", verbose=verbose)
+        result = self._read_data_and_print(INPUT_ASSEMBLY_INSTANCE, "입력 데이터 (DI)", verbose=verbose)
+        if result is None:
+            return []
+            
+        status_int, bit_list = result
         if verbose:
             if DEBUG_MODE: print("-" * 50)
-        return bit_list if bit_list is not None else []
+        return bit_list
 
     def read_output_data(self, verbose=True):
         """
         출력 데이터 (Instance: 100)를 읽어와 DO 상태를 출력하고 비트 리스트를 반환합니다.
         """
-        status_int, bit_list = self._read_data_and_print(OUTPUT_ASSEMBLY_INSTANCE, "출력 데이터 (DO)", verbose=verbose)
+        result = self._read_data_and_print(OUTPUT_ASSEMBLY_INSTANCE, "출력 데이터 (DO)", verbose=verbose)
+        if result is None:
+            return []
+
+        status_int, bit_list = result
         if verbose:
             if DEBUG_MODE: print("-" * 50)
-        return bit_list if bit_list is not None else []
+        return bit_list
 
     def start_monitoring(self, interval=0.1):
         """
@@ -407,6 +415,8 @@ if __name__ == '__main__':
             if DEBUG_MODE: print("  'q'   : 프로그램 종료")
             if DEBUG_MODE: print("=" * 50)
 
+            client.write_output_data([0] * 32)
+            
             try:
                 while True:
                     cmd = input("\n명령 입력 (get/s/q) >> ").strip().lower()
@@ -423,13 +433,13 @@ if __name__ == '__main__':
                     
                     elif cmd == 's':
                         try:
-                            addr_input = input("  👉 제어할 DO Address (0~31): ")
+                            addr_input = input("  👉 제어할 DO Address (1~32): ")
                             if not addr_input.isdigit():
                                 if DEBUG_MODE: print("  ❌ 숫자를 입력하세요.")
                                 continue
-                            address = int(addr_input)
+                            address = int(addr_input) - 1
 
-                            val_input = input(f"  👉 DO {address}번 설정 값 (1:ON, 0:OFF): ")
+                            val_input = input(f"  👉 DO {addr_input}번 설정 값 (1:ON, 0:OFF): ")
                             if val_input not in ['0', '1']:
                                 if DEBUG_MODE: print("  ❌ 0 또는 1을 입력하세요.")
                                 continue
