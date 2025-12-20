@@ -153,93 +153,130 @@ class ReadyStrategy(Strategy):
 ## 시험 공정 전략 (FSM 규칙에 맞추어 추가됨)
 ## ----------------------------------------------------
 
-# 기존 MovingStrategy는 삭제하고, 공정별 Strategy로 대체
-# DeviceState.GRIPPING_SPECIMEN 에 대한 전략
-class GrippingSpecimenStrategy(Strategy):
+class WaitCommandStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending GRIP_CLOSE command to Shimadzu.")
-        # TODO: Shimadzu에 GRIP_CLOSE 명령 전송 로직 구현
+        Logger.info("Device: Waiting for process start command.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # GRIP_CLOSE 완료 응답/타임아웃 대기
-        # if shimadzu.check_status('GRIP_CLOSED'):
-        #     return DeviceEvent.GRIP_CLOSE_COMPLETE
+        # Logic FSM 등 상위에서 START_COMMAND를 주면 전이
+        # if bb.get("device/start_command"):
+        #     return DeviceEvent.START_COMMAND
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         pass
 
-# DeviceState.EXT_FORWARD 에 대한 전략
-class ExtForwardStrategy(Strategy):
+class ReadQRStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending EXT_FORWARD command to Extensometer Unit.")
-        # TODO: Ext에 신율계 전진 명령 전송 로직 구현
-        
-    def operate(self, context: DeviceContext) -> DeviceEvent:
-        # Ext 전진 완료 응답/타임아웃 대기
-        # if ext.check_status('FORWARD_COMPLETE'):
-        #     return DeviceEvent.EXT_FORWARD_COMPLETE
-        return DeviceEvent.NONE
-    
-    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        pass
-        
-# DeviceState.PRELOADING 에 대한 전략
-class PreloadingStrategy(Strategy):
-    def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending ASK_PRELOAD command to Shimadzu.")
-        # TODO: Shimadzu에 초기 하중 제거 명령 전송 로직 구현
+        Logger.info("Device: Reading QR Code.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # PRELOAD 완료 응답/타임아웃 대기
-        # if shimadzu.check_status('PRELOAD_COMPLETE'):
-        #     return DeviceEvent.PRELOAD_COMPLETE
-        return DeviceEvent.NONE
+        # QR 리딩 로직 수행
+        # 성공 시:
+        return DeviceEvent.QR_READ_DONE
+        # 실패 시: return DeviceEvent.QR_READ_FAIL
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         pass
 
-# DeviceState.TESTING 에 대한 전략
-class TestingStrategy(Strategy):
+class MeasureThicknessStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending START_ANA command to Shimadzu (Testing starts).")
-        # TODO: Shimadzu에 인장 시험 시작 명령 전송 로직 구현
+        Logger.info("Device: Measuring Thickness.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # 시험 완료(ANA_RESULT) 대기
-        # if shimadzu.check_status('TEST_COMPLETE'):
-        #     return DeviceEvent.TEST_COMPLETE
-        return DeviceEvent.NONE
+        # 게이지 측정 로직
+        return DeviceEvent.THICKNESS_MEASURE_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         pass
 
-# DeviceState.EXT_BACK 에 대한 전략
-class ExtBackStrategy(Strategy):
+class AlignerOpenStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending EXT_BACK command to Extensometer Unit.")
-        # TODO: Ext에 신율계 후진 명령 전송 로직 구현
+        Logger.info("Device: Opening Aligner.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # Ext 후진 완료 응답/타임아웃 대기
-        # if ext.check_status('BACK_COMPLETE'):
-        #     return DeviceEvent.EXT_BACK_COMPLETE
-        return DeviceEvent.NONE
+        return DeviceEvent.ALIGNER_OPEN_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         pass
 
-# DeviceState.UNGRIPPING_SPECIMEN 에 대한 전략
-class UngrippingSpecimenStrategy(Strategy):
+class AlignerActionStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
-        Logger.info("Sending GRIP_OPEN command to Shimadzu.")
-        # TODO: Shimadzu에 GRIP_OPEN 명령 전송 로직 구현
+        Logger.info("Device: Operating Aligner.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # GRIP_OPEN 완료 응답/타임아웃 대기
-        # if shimadzu.check_status('GRIP_OPEN_COMPLETE'):
-        #     return DeviceEvent.GRIP_OPEN_COMPLETE
-        return DeviceEvent.NONE
+        return DeviceEvent.ALIGNER_ACTION_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class GripperMoveDownStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Moving Gripper Down.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.GRIPPER_MOVE_DOWN_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class GripperGripStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Gripping Specimen.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.GRIPPER_GRIP_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class RemovePreloadStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Removing Preload.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.REMOVE_PRELOAD_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class ExtensometerForwardStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Moving Extensometer Forward.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.EXTENSOMETER_FORWARD_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class StartTensileTestStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Starting Tensile Test.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        # 시험 완료 대기
+        return DeviceEvent.TENSILE_TEST_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class ExtensometerBackwardStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Moving Extensometer Backward.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
+    
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        pass
+
+class GripperReleaseStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        Logger.info("Device: Releasing Gripper.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        return DeviceEvent.GRIPPER_RELEASE_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         pass

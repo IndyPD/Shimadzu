@@ -2,22 +2,39 @@ import socket
 import threading
 import time
 import os
+import json
 
 DEBUG_MODE = True
+
+# 설정 파일 경로
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'QR_comm.json')
+
+def load_config(filepath: str) -> dict:
+    """JSON 설정 파일을 로드합니다."""
+    if not os.path.exists(filepath):
+        if DEBUG_MODE: print(f"⚠️ Config file not found: {filepath}")
+        return {}
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        if DEBUG_MODE: print(f"❌ Failed to load config: {e}")
+        return {}
 
 class QRReader:
     """
     TCP/IP를 통해 QR 리더기(Server)에 접속하여 제어 및 데이터를 수신하는 클래스입니다.
     """
-    def __init__(self, host='192.168.2.41', port=9004, timeout=2.0):
+    def __init__(self, host=None, port=None, timeout=2.0):
         """
         Args:
             host: QR 리더기 서버 IP 주소
             port: QR 리더기 서버 포트 번호
             timeout: 소켓 통신 타임아웃 (초)
         """
-        self.host = host
-        self.port = port
+        self.config = load_config(CONFIG_FILE_PATH)
+        self.host = host if host else self.config.get('host', '192.168.2.41')
+        self.port = port if port else self.config.get('port', 9004)
         self.timeout = timeout
         self.client_socket = None
         self.is_connected = False

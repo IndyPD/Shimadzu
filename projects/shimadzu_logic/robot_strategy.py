@@ -62,8 +62,8 @@ class RobotReadyStrategy(Strategy):
         if context.check_violation():
             return RobotEvent.VIOLATION_DETECT
         # TODO: Neuromeka로부터 START_BATCH 명령 대기 로직 추가
-        # if bb.get("neuromeka/start_batch"):
-        #     return RobotEvent.START_BATCH
+        # if bb.get("robot/start_auto"):
+        #     return RobotEvent.PROGRAM_AUTO_ON_DONE
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
@@ -73,101 +73,221 @@ class RobotReadyStrategy(Strategy):
 # 2. 로봇 작업 특화 전략
 # ----------------------------------------------------
 
-class RobotToolChangingStrategy(Strategy):
+class RobotProgramAutoOnStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Checking/Changing to specimen gripper.")
-        # TODO: 툴 교체/확인 명령 전송 (Neuromeka 지시 반영)
+        Logger.info("Robot: Turning on Auto Mode.")
     def operate(self, context: RobotContext) -> RobotEvent:
-        # if tool_changer.status == 'COMPLETE':
-        return RobotEvent.TOOL_CHANGE_COMPLETE
-        # if tool_changer.status == 'FAIL':
+        return RobotEvent.PROGRAM_AUTO_ON_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotProgramManualOffStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Turning off Auto Mode (Manual).")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.PROGRAM_MANUAL_OFF_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotWaitAutoCommandStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Waiting for auto process start command.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        # if bb.get("robot/start_process"):
+        #     return RobotEvent.START_PROCESS
+        return RobotEvent.NONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotMoveHomeStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Moving to Home.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_MOVE_HOME_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotToolChangeStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Changing Tool.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_TOOL_CHANGE_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachRackStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Rack.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_RACK_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotAutoGripperOpenStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Opening Gripper.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_GRIPPER_OPEN_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotAutoGripperCloseStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Closing Gripper.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_GRIPPER_CLOSE_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotMoveToQRStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Moving to QR Position.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_MOVE_TO_QR_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachPickStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Pick Position.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotPickSpecimenStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Picking Specimen.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromTrayStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Tray.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_TRAY_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromRackStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Rack.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_RACK_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachThicknessStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Thickness Gauge.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_THICKNESS_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterThicknessPos1Strategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Thickness Position 1.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_1_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterThicknessPos2Strategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Thickness Position 2.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_2_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterThicknessPos3Strategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Thickness Position 3.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_3_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromThicknessStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Thickness Gauge.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_THICKNESS_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachAlignerStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Aligner.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_ALIGNER_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterAlignerStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Aligner.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_ALIGNER_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromAlignerStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Aligner.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_ALIGNER_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachTensileStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Tensile Machine.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_TENSILE_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterTensileStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Tensile Machine.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_TENSILE_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromTensileStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Tensile Machine.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_TENSILE_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotApproachScrapStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Approaching Scrap Box.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_APPROACH_SCRAP_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotEnterScrapStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Entering Scrap Box.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_ENTER_SCRAP_DONE
+    def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        pass
+
+class RobotRetractFromScrapStrategy(Strategy):
+    def prepare(self, context: RobotContext, **kwargs):
+        Logger.info("Robot: Retracting from Scrap Box.")
+    def operate(self, context: RobotContext) -> RobotEvent:
+        return RobotEvent.AUTO_MOTION_RETRACT_FROM_SCRAP_DONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         pass
-        #     context.violation_code |= RobotViolation.TOOL_CHANGE_FAIL.value
-        #     return RobotEvent.VIOLATION_DETECT
-        # return RobotEvent.NONE
-
-class RobotReadingQRStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Moving to QR reading position and capturing.")
-        # TODO: QR 리딩 위치 이동 및 리딩 명령 전송
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if qr_scanner.result == 'SUCCESS':
-        return RobotEvent.QR_READ_COMPLETE
-        # if qr_scanner.result == 'FAIL':
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        #     context.violation_code |= RobotViolation.QR_READ_FAIL.value
-        #     return RobotEvent.VIOLATION_DETECT
-        # return RobotEvent.NONE
-
-class RobotPickingStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Executing Specimen Pick operation.")
-        # TODO: 픽업 명령 전송 (좌표: 트레이, 두께측정 장치 등)
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if gripper.status == 'PICK_SUCCESS':
-        return RobotEvent.PICK_COMPLETE
-        # if gripper.status == 'PICK_FAIL':
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        #     context.violation_code |= RobotViolation.GRIPPER_FAIL.value
-        #     return RobotEvent.VIOLATION_DETECT
-        # return RobotEvent.NONE
-
-class RobotPlacingStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Executing Specimen Place operation.")
-
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Executing Specimen Place operation.")
-        # TODO: 플레이싱 명령 전송 (좌표: 두께측정 장치, 정렬 장치, 시험기 그립 등)
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if gripper.status == 'PLACE_SUCCESS':
-        return RobotEvent.PLACE_COMPLETE
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        # return RobotEvent.NONE
-
-class RobotAligningStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Performing alignment operation.")
-        # TODO: 정렬 동작 수행 명령 전송
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if alignment_unit.status == 'COMPLETE':
-        return RobotEvent.ALIGN_COMPLETE
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        # return RobotEvent.NONE
-
-class RobotDisposingStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Executing broken specimen disposal.")
-        # TODO: 폐기통으로 이동 및 시편 해제 명령 전송
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if disposal_sequence.status == 'COMPLETE':
-        return RobotEvent.DISPOSE_COMPLETE
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        # return RobotEvent.NONE
-
-class RobotMovingToWaitStrategy(Strategy):
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Moving to a safe waiting position.")
-
-    def prepare(self, context: RobotContext, **kwargs):
-        Logger.info("Robot: Moving to a safe waiting position.")
-        # TODO: 대기 장소 (Wait 1, 2, 3)으로 이동 명령 전송
-    def operate(self, context: RobotContext) -> RobotEvent:
-        # if robot.motion_status == 'IDLE_AT_WAIT_POS':
-        return RobotEvent.MOVE_COMPLETE
-    
-    def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
-        # return RobotEvent.NONE

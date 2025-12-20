@@ -33,51 +33,81 @@ class DeviceFsm(FiniteStateMachine):
             
             # 4. 정지/전원 차단 상태
             DeviceState.STOP_AND_OFF: {
-                DeviceEvent.DONE: DeviceState.CONNECTING                # 작업 완료 -> 연결 재시도
+                DeviceEvent.DONE: DeviceState.CONNECTING,               # 작업 완료 -> 연결 재시도
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,        # 위반 감지 -> 에러
             },
             
             # 5. 준비 완료 (IDLE): 시험 대기 상태
             DeviceState.READY: {
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,        # 위반 감지 -> 에러
                 DeviceEvent.STOP_EMG: DeviceState.STOP_AND_OFF,         # 비상 정지 -> 정지/전원 차단
-                DeviceEvent.START_COMMAND: DeviceState.GRIPPING_SPECIMEN, # 시험 시작 명령 -> 시편 장착 시작
+                DeviceEvent.START_COMMAND: DeviceState.WAIT_COMMAND,    # 준비 완료 -> 명령 대기 진입
                 DeviceEvent.RECOVER: DeviceState.RECOVERING,            # 복구 요청 (소프트 리셋) -> 복구 중
             },
             
-            # 6. 시험 공정 시퀀스 (간소화된 예시)
-            DeviceState.GRIPPING_SPECIMEN: {
-                DeviceEvent.GRIP_CLOSE_COMPLETE: DeviceState.EXT_FORWARD, # 그립 닫기 완료 -> 신율계 전진
-                DeviceViolation.GRIP_CLOSE_FAIL: DeviceState.ERROR,         # 그립 닫기 실패 -> 에러
+            # 6. 시험 공정 시퀀스
+            DeviceState.WAIT_COMMAND: {
+                DeviceEvent.START_COMMAND: DeviceState.READ_QR,         # 시작 명령 -> QR 읽기
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
-            DeviceState.EXT_FORWARD: {
-                DeviceEvent.EXT_FORWARD_COMPLETE: DeviceState.PRELOADING, # 전진 완료 -> 초기 하중 제거
-                DeviceViolation.EXT_MOVEMENT_FAIL: DeviceState.ERROR,       # 전진 실패 -> 에러
+            DeviceState.READ_QR: {
+                DeviceEvent.QR_READ_DONE: DeviceState.MEASURE_THICKNESS, # QR 완료 -> 두께 측정
+                DeviceEvent.QR_READ_FAIL: DeviceState.ERROR,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
-            DeviceState.PRELOADING: {
-                DeviceEvent.PRELOAD_COMPLETE: DeviceState.TESTING,      # 초기 하중 제거 완료 -> 시험 진행
-                DeviceViolation.PRELOAD_FAIL: DeviceState.ERROR,            # 초기 하중 제거 실패 -> 에러
+            DeviceState.MEASURE_THICKNESS: {
+                DeviceEvent.THICKNESS_MEASURE_DONE: DeviceState.ALIGNER_OPEN, # 측정 완료 -> 정렬기 벌리기
+                DeviceEvent.GAUGE_MEASURE_FAIL: DeviceState.ERROR,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
-            DeviceState.TESTING: {
-                DeviceEvent.TEST_COMPLETE: DeviceState.EXT_BACK,        # 시험 완료 -> 신율계 후진
-                DeviceViolation.TEST_RUNTIME_ERROR: DeviceState.ERROR,      # 시험 중 오류 -> 에러
+            DeviceState.ALIGNER_OPEN: {
+                DeviceEvent.ALIGNER_OPEN_DONE: DeviceState.ALIGNER_ACTION, # 벌리기 완료 -> 정렬기 작동(대기/정렬)
+                DeviceEvent.ALIGNER_FAIL: DeviceState.ERROR,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
-            DeviceState.EXT_BACK: {
-                DeviceEvent.EXT_BACK_COMPLETE: DeviceState.UNGRIPPING_SPECIMEN, # 후진 완료 -> 그립 개방
-                DeviceViolation.EXT_MOVEMENT_FAIL: DeviceState.ERROR,
+            DeviceState.ALIGNER_ACTION: {
+                DeviceEvent.ALIGNER_ACTION_DONE: DeviceState.GRIPPER_MOVE_DOWN, # 정렬 완료 -> 그리퍼 하강
+                DeviceEvent.ALIGNER_FAIL: DeviceState.ERROR,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
-            DeviceState.UNGRIPPING_SPECIMEN: {
-                DeviceEvent.GRIP_OPEN_COMPLETE: DeviceState.READY,      # 그립 개방 완료 -> 준비 완료 (다음 루프)
+            DeviceState.GRIPPER_MOVE_DOWN: {
+                DeviceEvent.GRIPPER_MOVE_DOWN_DONE: DeviceState.GRIPPER_GRIP, # 하강 완료 -> 그리퍼 잡기
+                DeviceEvent.GRIPPER_MOVE_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_GRIP: {
+                DeviceEvent.GRIPPER_GRIP_DONE: DeviceState.REMOVE_PRELOAD, # 잡기 완료 -> 초기 하중 제거
+                DeviceEvent.GRIPPER_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.REMOVE_PRELOAD: {
+                DeviceEvent.REMOVE_PRELOAD_DONE: DeviceState.EXTENSOMETER_FORWARD, # 제거 완료 -> 신율계 전진
+                DeviceEvent.PRELOAD_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.EXTENSOMETER_FORWARD: {
+                DeviceEvent.EXTENSOMETER_FORWARD_DONE: DeviceState.START_TENSILE_TEST, # 전진 완료 -> 인장시험 시작
+                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.START_TENSILE_TEST: {
+                DeviceEvent.TENSILE_TEST_DONE: DeviceState.EXTENSOMETER_BACKWARD, # 시험 완료 -> 신율계 후진
+                DeviceEvent.TENSILE_TEST_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.EXTENSOMETER_BACKWARD: {
+                DeviceEvent.EXTENSOMETER_BACKWARD_DONE: DeviceState.GRIPPER_RELEASE, # 후진 완료 -> 그리퍼 풀기
+                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.ERROR,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_RELEASE: {
+                DeviceEvent.GRIPPER_RELEASE_DONE: DeviceState.WAIT_COMMAND, # 풀기 완료 -> 명령 대기 (사이클 종료)
+                DeviceEvent.GRIPPER_FAIL: DeviceState.ERROR,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
         }
 
     def _setup_strategies(self):
-        # 전략 클래스 이름도 새 상태명에 맞춰 변경되어야 합니다.
         self._strategy_table = {
             DeviceState.CONNECTING: ConnectingStrategy(),               # 기존 WaitConnectionStrategy
             DeviceState.ERROR: ErrorStrategy(),                         # 기존 ViolatedStrategy
@@ -85,11 +115,17 @@ class DeviceFsm(FiniteStateMachine):
             DeviceState.STOP_AND_OFF: StopOffStrategy(),
             DeviceState.READY: ReadyStrategy(),                         # 기존 IdleStrategy
             
-            # 새로운 시험 공정 전략 (임시로 ReadyStrategy 사용, 실제 구현 필요)
-            DeviceState.GRIPPING_SPECIMEN: GrippingSpecimenStrategy(),
-            DeviceState.PRELOADING: PreloadingStrategy(),
-            DeviceState.EXT_FORWARD: ExtForwardStrategy(),
-            DeviceState.TESTING: TestingStrategy(),
-            DeviceState.EXT_BACK: ExtBackStrategy(),
-            DeviceState.UNGRIPPING_SPECIMEN: UngrippingSpecimenStrategy(),
+            # 새로운 시험 공정 전략
+            DeviceState.WAIT_COMMAND: WaitCommandStrategy(),
+            DeviceState.READ_QR: ReadQRStrategy(),
+            DeviceState.MEASURE_THICKNESS: MeasureThicknessStrategy(),
+            DeviceState.ALIGNER_OPEN: AlignerOpenStrategy(),
+            DeviceState.ALIGNER_ACTION: AlignerActionStrategy(),
+            DeviceState.GRIPPER_MOVE_DOWN: GripperMoveDownStrategy(),
+            DeviceState.GRIPPER_GRIP: GripperGripStrategy(),
+            DeviceState.REMOVE_PRELOAD: RemovePreloadStrategy(),
+            DeviceState.EXTENSOMETER_FORWARD: ExtensometerForwardStrategy(),
+            DeviceState.START_TENSILE_TEST: StartTensileTestStrategy(),
+            DeviceState.EXTENSOMETER_BACKWARD: ExtensometerBackwardStrategy(),
+            DeviceState.GRIPPER_RELEASE: GripperReleaseStrategy(),
         }
