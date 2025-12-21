@@ -12,7 +12,7 @@ import os
 import sys
 import threading
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # =========================== 모듈 상수 정의 ===========================
 # 설정 파일 경로
@@ -82,6 +82,13 @@ class AutonicsEIPClient:
                 self.current_do_value = self.read_output_data()
             except Exception as e:
                 if DEBUG_MODE: print(f"⚠️ 초기화 중 연결 또는 데이터 읽기 실패: {e}")
+
+    @property
+    def is_connected(self) -> bool:
+        """
+        현재 CIPDriver의 연결 상태를 반환합니다.
+        """
+        return self.apioc.connected if self.apioc else False
     
     def connect(self):
         """
@@ -185,6 +192,7 @@ class AutonicsEIPClient:
             if response.error:
                 if verbose:
                     if DEBUG_MODE: print(f"⚠️ {instance_name} 읽기 오류: {response.error}")
+                # 통신 에러 발생 시 연결 상태를 강제로 확인하거나 처리할 수 있음
                 return None
             else:
                 raw_data = response.value

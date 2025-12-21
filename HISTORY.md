@@ -1,6 +1,21 @@
 📜 Project History & Changelog (프로젝트 기록 및 변경 사항)
 
-이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지합니다.
+이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지하며, 가독성을 위해 백틱 기호는 사용하지 않습니다.
+
+v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+초기 로그 파일 추가 및 로직 테스트 노트북 생성: 시스템 초기화 및 장치 명령 기록을 위한 신규 로그 파일을 생성했습니다.
+로직 테스트용 Jupyter Notebook 추가: shimadzu_logic 프로젝트의 메인 로직을 테스트할 수 있는 logic_test.ipynb를 추가했습니다. 여기에는 글로벌 블랙보드 설정 및 장치 명령 실행 환경 구축이 포함되어 있습니다.
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
 
 v0.1.0 - 2025-12-20 (Automated Testing Workflow Refactoring)
 

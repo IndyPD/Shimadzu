@@ -4,7 +4,7 @@ import time
 import os
 import json
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # 설정 파일 경로
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'QR_comm.json')

@@ -34,7 +34,7 @@ class DeviceContext(ContextBase):
 
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
-        self.dev_smz_enable = True 
+        self.dev_smz_enable = False 
         
         # MitutoyoGauge 장치 인스턴스 생성
         if self.dev_gauge_enable :
@@ -73,6 +73,8 @@ class DeviceContext(ContextBase):
         self.delay_IO_reader = FlagDelay(0.1)  # 0.1초 간격으로 I/O 상태 읽기
         self.th_IO_reader = Thread(target=self._thread_IO_reader, daemon=True)
         self.th_IO_reader.start()
+
+        Logger.info(f"[device] All device Init Complete")
     
     def shimadzu_test(self) :
         # you are there 명령어 테스트
@@ -117,7 +119,9 @@ class DeviceContext(ContextBase):
         # N번째 비트 = 1 << N
 
         # 임시 코드 << 삭제 예정
-        return True
+        # 정상인 경우 False
+        return False
+        # Local violation bitmask constants
         GAUGE_COMM_ERR     = 1 << 0  # 0b00000001 (1)
         GAUGE_DEVICE_ERROR = 1 << 1 # 0b00000010 (2)
         SMZ_COMM_ERR       = 1 << 2  # 0b00000100 (4)
@@ -132,50 +136,39 @@ class DeviceContext(ContextBase):
             smz_violation = [False,0]
             remoteio_violation = [False,0]
 
-            # TODO: 여기에 Shimadzu/Ext 통신 상태 확인 및 Timeout/InitialCheckFail 로직 추가 필요
             if self.dev_gauge_enable :
                 gauge_state = self.get_dial_gauge_status()
                 if not gauge_state :
                     gauge_violation =[True, GAUGE_COMM_ERR]    # 통신 연결 에러
 
             if self.dev_smz_enable :
-                smz_state = self.smz_ask_sys_status()
-                '''
-                dict: {
-                    "MODE": "A"(Auto) or "M"(Manual),
-                    "RUN": "N"(Standby), "C"(Testing), "B"(Return), "F"(Stop), "R"(Ready), "E"(Error),
-                    "KEY": Optional status info name,
-                    "VALUE": Optional status info content,
-                    "LOAD": float,
-                    "TEMP": float
-                }
-                '''                    
-                if self.debug_mode : 
-                    Logger.info(f"[DeviceContext] Shimadzu System State: {smz_state}")
-                    pass
-                if smz_state != False :
-                    smz_mode = smz_state.get("MODE")
-                    smz_run = smz_state.get("RUN")
-                    smz_key = smz_state.get("KEY")
-                    smz_value = smz_state.get("VALUE")
-                    smz_load = smz_state.get("LOAD")
-                    smz_temp = smz_state.get("TEMP")
-                    if smz_run == "E" :
-                        smz_violation = [True, SMZ_DEVICE_ERR]    # 장비 에러
-
-                else :
-                    smz_violation = [True, SMZ_COMM_ERR]    # 통신 연결 에러
+                # Initial Check & Communication Status
+                if not self.smz_are_you_there():
+                    smz_violation = [True, SMZ_COMM_ERR]
+                else:
+                    smz_state = self.smz_ask_sys_status()
+                    if smz_state is False:
+                        smz_violation = [True, SMZ_COMM_ERR]
+                    elif smz_state.get("RUN") == "E":
+                        smz_violation = [True, SMZ_DEVICE_ERR]
                 
             if self.dev_remoteio_enable :
                 if not self.remote_comm_state :
                     remoteio_violation = [True, REMOTE_IO_COMM_ERR]    # 통신 연결 에러
+                else:
+                    # Device Error Check (e.g. EMO buttons)
+                    # EMO signals are typically NC (Normally Closed), so 0 means triggered.
+                    emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SI] == 0 or 
+                                     self.remote_input_data[DigitalInput.EMO_03_SI] == 0 or 
+                                     self.remote_input_data[DigitalInput.EMO_04_SI] == 0)
+                    if emo_triggered:
+                        remoteio_violation = [True, REMOTE_IO_DEVICE_ERR]
 
             
             # 장비 모든 상태 확인 후  error code 생성
             if gauge_violation[0] or smz_violation[0] or remoteio_violation[0] :
                 self.violation_code = gauge_violation[1] | smz_violation[1] | remoteio_violation[1]
 
-            time.sleep(0.3)
             return self.violation_code
         except Exception as e:
             Logger.error(f"[device] Error in check_violation: {e}")
@@ -191,7 +184,7 @@ class DeviceContext(ContextBase):
         try:
             self.remote_input_data = self.iocontroller.read_input_data()
             self.remote_output_data = self.iocontroller.read_output_data()
-            Logger.info(f"Remote I/O Input Data: {self.remote_input_data}")
+            # Logger.info(f"Remote I/O Input Data: {self.remote_input_data}")
             bb.set("device/remote/input/entire", self.remote_input_data)
             bb.set("device/remote/output/entire", self.remote_output_data)
             
@@ -436,8 +429,22 @@ class DeviceContext(ContextBase):
         '''
         try:
             output_data = self.remote_output_data.copy()
+            # 1st 1번
             output_data[DigitalOutput.ALIGN_1_PUSH] = 1
             output_data[DigitalOutput.ALIGN_1_PULL] = 0
+            
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 1 and
+                read_data[DigitalOutput.ALIGN_1_PULL] == 0):
+                Logger.info(f"[device] Align #1 Push Command Sent Successfully.")
+                time.sleep(1)
+                
+            else:
+                Logger.error(f"[device] Align #1 Push Command Failed. read_data: {read_data}")
+                return False
+            # 2nd 2,3 번 움직이기
             output_data[DigitalOutput.ALIGN_2_PUSH] = 1
             output_data[DigitalOutput.ALIGN_2_PULL] = 0
             output_data[DigitalOutput.ALIGN_3_PUSH] = 1
@@ -445,17 +452,19 @@ class DeviceContext(ContextBase):
             self.iocontroller.write_output_data(output_data)
             time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
             read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 1 and
-                read_data[DigitalOutput.ALIGN_1_PULL] == 0 and
-                read_data[DigitalOutput.ALIGN_2_PUSH] == 1 and
+
+            if (read_data[DigitalOutput.ALIGN_2_PUSH] == 1 and
                 read_data[DigitalOutput.ALIGN_2_PULL] == 0 and
                 read_data[DigitalOutput.ALIGN_3_PUSH] == 1 and
                 read_data[DigitalOutput.ALIGN_3_PULL] == 0):
-                Logger.info(f"[device] Align Push Command Sent Successfully.")
-                return True
+                Logger.info(f"[device] Align #2, #3 Push Command Sent Successfully.")
+                
             else:
-                Logger.error(f"[device] Align Push Command Failed. read_data: {read_data}")
+                Logger.error(f"[device] Align #2, #3 Push Command Failed. read_data: {read_data}")
                 return False
+            
+            return True
+        
         except Exception as e:
             Logger.error(f"[device] Error in align_push: {e}")
             reraise(e)
@@ -468,8 +477,23 @@ class DeviceContext(ContextBase):
         '''
         try:
             output_data = self.remote_output_data.copy()
+            # 1st 1번
             output_data[DigitalOutput.ALIGN_1_PUSH] = 0
             output_data[DigitalOutput.ALIGN_1_PULL] = 1
+            
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 0 and
+                read_data[DigitalOutput.ALIGN_1_PULL] == 1):
+                Logger.info(f"[device] Align #1 Pull Command Sent Successfully.")
+                time.sleep(1)
+                
+            else:
+                Logger.error(f"[device] Align #1 Pull Command Failed. read_data: {read_data}")
+                return False
+            
+            # 2nd 2,3 번 움직이기
             output_data[DigitalOutput.ALIGN_2_PUSH] = 0
             output_data[DigitalOutput.ALIGN_2_PULL] = 1
             output_data[DigitalOutput.ALIGN_3_PUSH] = 0
@@ -477,17 +501,18 @@ class DeviceContext(ContextBase):
             self.iocontroller.write_output_data(output_data)
             time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
             read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_1_PULL] == 1 and
-                read_data[DigitalOutput.ALIGN_2_PUSH] == 0 and
+
+            if (read_data[DigitalOutput.ALIGN_2_PUSH] == 0 and
                 read_data[DigitalOutput.ALIGN_2_PULL] == 1 and
                 read_data[DigitalOutput.ALIGN_3_PUSH] == 0 and
                 read_data[DigitalOutput.ALIGN_3_PULL] == 1):
-                Logger.info(f"[device] Align Pull Command Sent Successfully.")
-                return True
+                Logger.info(f"[device] Align #2, #3 Pull Command Sent Successfully.")
+                
             else:
-                Logger.error(f"[device] Align Pull Command Failed. read_data: {read_data}")
+                Logger.error(f"[device] Align #2, #3 Pull Command Failed. read_data: {read_data}")
                 return False
+            
+            return True
         except Exception as e:
             Logger.error(f"[device] Error in align_pull: {e}")
             reraise(e)
@@ -542,7 +567,6 @@ class DeviceContext(ContextBase):
                     read_data[DigitalInput.ALIGN_2_PULL] == 0 and
                     read_data[DigitalInput.ALIGN_3_PUSH] == 1 and
                     read_data[DigitalInput.ALIGN_3_PULL] == 0):
-                    self.align_stop()
                     return True
                 else :
                     return False
@@ -553,7 +577,6 @@ class DeviceContext(ContextBase):
                     read_data[DigitalInput.ALIGN_2_PULL] == 1 and
                     read_data[DigitalInput.ALIGN_3_PUSH] == 0 and
                     read_data[DigitalInput.ALIGN_3_PULL] == 1):
-                    self.align_stop()
                     return True
                 else :
                     return False
@@ -564,6 +587,78 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
     
+    def indicator_up(self) -> bool:
+        '''
+        인디게이터 가이드를 위로 이동시킵니다.
+        :return: 성공 시 True, 실패 시 False
+        '''
+        try:
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.INDICATOR_UP] = 1
+            output_data[DigitalOutput.INDICATOR_DOWN] = 0
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.INDICATOR_UP] == 1 and
+                read_data[DigitalOutput.INDICATOR_DOWN] == 0):
+                Logger.info(f"[device] Indicator Up Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Indicator Up Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in indicator_up: {e}")
+            reraise(e)
+            return False
+
+    def indicator_down(self) -> bool:
+        '''
+        인디게이터 가이드를 아래로 이동시킵니다.
+        :return: 성공 시 True, 실패 시 False
+        '''
+        try:
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.INDICATOR_UP] = 0
+            output_data[DigitalOutput.INDICATOR_DOWN] = 1
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
+                read_data[DigitalOutput.INDICATOR_DOWN] == 1):
+                Logger.info(f"[device] Indicator Down Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Indicator Down Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in indicator_down: {e}")
+            reraise(e)
+            return False
+
+    def indicator_stop(self) -> bool:
+        '''
+        인디게이터 가이드 이동을 정지합니다.
+        :return: 성공 시 True, 실패 시 False
+        '''
+        try:
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.INDICATOR_UP] = 0
+            output_data[DigitalOutput.INDICATOR_DOWN] = 0
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
+                read_data[DigitalOutput.INDICATOR_DOWN] == 0):
+                Logger.info(f"[device] Indicator Stop Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Indicator Stop Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in indicator_stop: {e}")
+            reraise(e)
+            return False
+
     # dial gauge 관련 함수들
     # dial gauge 측정 함수
     def get_dial_gauge_value(self) -> float:

@@ -67,8 +67,8 @@ def main():
 
         # 메인 스레드는 여기에서 종료되도록 변경
         # FSM 스레드가 백그라운드에서 계속 실행됩니다.
-        while not terminate_flag.is_set():
-            time.sleep(0.5)
+        # while not terminate_flag.is_set():
+        #     time.sleep(0.5)
 
     except Exception as e:
         Logger.error(f"[SYSTEM ERROR] Unexpected exception: {e}")

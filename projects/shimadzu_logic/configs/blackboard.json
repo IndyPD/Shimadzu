@@ -137,5 +137,6 @@
     "sys/robot/comm/state": 0,
     "sys/ext/comm/state": 0,
     "sys/remoteio/comm/state": 0,
-    "sys/gauge/comm/state": 0
+    "sys/gauge/comm/state": 0,
+    "manual/device/tester": 0
 }

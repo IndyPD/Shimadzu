@@ -124,6 +124,7 @@ class DeviceEvent(OpEvent):
     GRIPPER_MOVE_FAIL = 25      # 인장기 이동 실패
     EXTENSOMETER_FAIL = 26      # 신율계 동작 실패
     TENSILE_TEST_FAIL = 27      # 인장시험 명령 실패
+    PRELOAD_FAIL = 28           # 초기 하중 제거 실패
     
     # 명령 실행 이벤트 (DO_Command)
     DO_READ_QR = 30             # QR 읽기 실행
