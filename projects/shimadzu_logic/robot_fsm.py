@@ -34,53 +34,144 @@ class RobotFSM(FiniteStateMachine):
             RobotState.READY: {
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
                 RobotEvent.STOP_EMG: RobotState.STOP_AND_OFF,
-                RobotEvent.START_BATCH: RobotState.TOOL_CHANGING, # 시험 배치 시작 -> 툴 확인/교체
+                RobotEvent.PROGRAM_AUTO_ON_DONE: RobotState.PROGRAM_AUTO_ON, # 자동 모드 켜기
                 RobotEvent.RECOVER: RobotState.RECOVERING,
-                RobotEvent.DONE: RobotState.READY, # 자체 반복 작업을 위해 DONE 이벤트 사용 가능
-                RobotEvent.DISPOSE_COMPLETE: RobotState.READY # 폐기 완료 후 복귀
             },
             
-            # 4. 시험 공정 시퀀스
-            RobotState.TOOL_CHANGING: {
-                RobotEvent.TOOL_CHANGE_COMPLETE: RobotState.READING_QR, # 툴 교체 완료 -> QR 리딩
+            # 4. 로봇 동작 시퀀스
+            RobotState.PROGRAM_AUTO_ON: {
+                RobotEvent.PROGRAM_AUTO_ON_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.WAIT_AUTO_COMMAND: {
+                RobotEvent.DO_AUTO_MOTION_PROGRAM_MANUAL_OFF: RobotState.PROGRAM_MANUAL_OFF,
+                RobotEvent.DO_AUTO_MOTION_TOOL_CHANGE: RobotState.AUTO_MOTION_TOOL_CHANGE,
+                RobotEvent.DO_AUTO_MOTION_MOVE_HOME: RobotState.AUTO_MOTION_MOVE_HOME,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_RACK: RobotState.AUTO_MOTION_APPROACH_RACK,
+                RobotEvent.DO_AUTO_GRIPPER_OPEN: RobotState.AUTO_GRIPPER_OPEN,
+                RobotEvent.DO_AUTO_GRIPPER_CLOSE: RobotState.AUTO_GRIPPER_CLOSE,
+                RobotEvent.DO_AUTO_MOTION_MOVE_TO_QR: RobotState.AUTO_MOTION_MOVE_TO_QR,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_PICK: RobotState.AUTO_MOTION_APPROACH_PICK,
+                RobotEvent.DO_AUTO_MOTION_PICK_SPECIMEN: RobotState.AUTO_MOTION_PICK_SPECIMEN,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_TRAY: RobotState.AUTO_MOTION_RETRACT_FROM_TRAY,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_RACK: RobotState.AUTO_MOTION_RETRACT_FROM_RACK,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_THICKNESS: RobotState.AUTO_MOTION_APPROACH_THICKNESS,
+                RobotEvent.DO_AUTO_MOTION_ENTER_THICKNESS_POS_1: RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_1,
+                RobotEvent.DO_AUTO_MOTION_ENTER_THICKNESS_POS_2: RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_2,
+                RobotEvent.DO_AUTO_MOTION_ENTER_THICKNESS_POS_3: RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_3,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_THICKNESS: RobotState.AUTO_MOTION_RETRACT_FROM_THICKNESS,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_ALIGNER: RobotState.AUTO_MOTION_APPROACH_ALIGNER,
+                RobotEvent.DO_AUTO_MOTION_ENTER_ALIGNER: RobotState.AUTO_MOTION_ENTER_ALIGNER,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_ALIGNER: RobotState.AUTO_MOTION_RETRACT_FROM_ALIGNER,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_TENSILE: RobotState.AUTO_MOTION_APPROACH_TENSILE,
+                RobotEvent.DO_AUTO_MOTION_ENTER_TENSILE: RobotState.AUTO_MOTION_ENTER_TENSILE,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_TENSILE: RobotState.AUTO_MOTION_RETRACT_FROM_TENSILE,
+                RobotEvent.DO_AUTO_MOTION_APPROACH_SCRAP: RobotState.AUTO_MOTION_APPROACH_SCRAP,
+                RobotEvent.DO_AUTO_MOTION_ENTER_SCRAP: RobotState.AUTO_MOTION_ENTER_SCRAP,
+                RobotEvent.DO_AUTO_MOTION_RETRACT_FROM_SCRAP: RobotState.AUTO_MOTION_RETRACT_FROM_SCRAP,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.PROGRAM_MANUAL_OFF: {
+                RobotEvent.PROGRAM_MANUAL_OFF_DONE: RobotState.READY,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_MOVE_HOME: {
+                RobotEvent.AUTO_MOTION_MOVE_HOME_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_TOOL_CHANGE: {
+                RobotEvent.AUTO_MOTION_TOOL_CHANGE_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotViolation.TOOL_CHANGE_FAIL: RobotState.ERROR,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            RobotState.READING_QR: {
-                RobotEvent.QR_READ_COMPLETE: RobotState.PICKING, # QR 리딩 완료 -> 픽업 (첫 번째 작업)
+            RobotState.AUTO_MOTION_APPROACH_RACK: {
+                RobotEvent.AUTO_MOTION_APPROACH_RACK_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_GRIPPER_OPEN: {
+                RobotEvent.AUTO_GRIPPER_OPEN_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_GRIPPER_CLOSE: {
+                RobotEvent.AUTO_GRIPPER_CLOSE_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_MOVE_TO_QR: {
+                RobotEvent.AUTO_MOTION_MOVE_TO_QR_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotViolation.QR_READ_FAIL: RobotState.ERROR,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            
-            # 5. 픽업/플레이싱/정렬 루프 (두께 측정 및 장착)
-            RobotState.PICKING: {
-                RobotEvent.PICK_COMPLETE: RobotState.PLACING, # 픽업 완료 -> 플레이싱
+            RobotState.AUTO_MOTION_APPROACH_PICK: {
+                RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_PICK_SPECIMEN: {
+                RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotViolation.GRIPPER_FAIL: RobotState.ERROR,
-                RobotViolation.MOTION_VIOLATION: RobotState.ERROR,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            RobotState.PLACING: {
-                RobotEvent.PLACE_COMPLETE: RobotState.MOVING_TO_WAIT, # 플레이싱 완료 -> 다음 동작 준비 (예: 대기 위치 이동)
-                # 시퀀스 내 다음 픽업이 필요한 경우: RobotEvent.PLACE_COMPLETE: RobotState.PICKING
-                RobotViolation.GRIPPER_FAIL: RobotState.ERROR,
-                RobotViolation.MOTION_VIOLATION: RobotState.ERROR,
+            RobotState.AUTO_MOTION_RETRACT_FROM_TRAY: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_TRAY_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            RobotState.ALIGNING: {
-                RobotEvent.ALIGN_COMPLETE: RobotState.PICKING, # 정렬 완료 -> 시편 픽업 (시험기 장착용)
+            RobotState.AUTO_MOTION_RETRACT_FROM_RACK: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_RACK_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            
-            # 6. 대기 및 폐기
-            RobotState.MOVING_TO_WAIT: {
-                RobotEvent.MOVE_COMPLETE: RobotState.READY, # 대기 장소 도착 -> Ready (시험 완료 대기)
-                RobotViolation.MOTION_VIOLATION: RobotState.ERROR,
+            RobotState.AUTO_MOTION_APPROACH_THICKNESS: {
+                RobotEvent.AUTO_MOTION_APPROACH_THICKNESS_DONE: RobotState.WAIT_AUTO_COMMAND,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
-            RobotState.DISPOSING: {
-                RobotEvent.DISPOSE_COMPLETE: RobotState.READY, # 폐기 완료 -> READY (다음 시편 대기 또는 배치 종료)
-                RobotViolation.MOTION_VIOLATION: RobotState.ERROR,
-                RobotViolation.GRIPPER_FAIL: RobotState.ERROR,
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_1: {
+                RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_1_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_2: {
+                RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_2_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_3: {
+                RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_3_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_RETRACT_FROM_THICKNESS: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_THICKNESS_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_APPROACH_ALIGNER: {
+                RobotEvent.AUTO_MOTION_APPROACH_ALIGNER_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_ENTER_ALIGNER: {
+                RobotEvent.AUTO_MOTION_ENTER_ALIGNER_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_RETRACT_FROM_ALIGNER: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_ALIGNER_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_APPROACH_TENSILE: {
+                RobotEvent.AUTO_MOTION_APPROACH_TENSILE_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_ENTER_TENSILE: {
+                RobotEvent.AUTO_MOTION_ENTER_TENSILE_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_RETRACT_FROM_TENSILE: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_TENSILE_DONE: RobotState.WAIT_AUTO_COMMAND, # 시험 후 스크랩 이동
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_APPROACH_SCRAP: {
+                RobotEvent.AUTO_MOTION_APPROACH_SCRAP_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_ENTER_SCRAP: {
+                RobotEvent.AUTO_MOTION_ENTER_SCRAP_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
+            },
+            RobotState.AUTO_MOTION_RETRACT_FROM_SCRAP: {
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_SCRAP_DONE: RobotState.WAIT_AUTO_COMMAND, # 사이클 완료 후 대기
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
         }
@@ -94,11 +185,31 @@ class RobotFSM(FiniteStateMachine):
             RobotState.STOP_AND_OFF: RobotStopOffStrategy(),
             RobotState.READY: RobotReadyStrategy(),                         
             
-            RobotState.TOOL_CHANGING: RobotToolChangingStrategy(),
-            RobotState.READING_QR: RobotReadingQRStrategy(),
-            RobotState.PICKING: RobotPickingStrategy(),
-            RobotState.PLACING: RobotPlacingStrategy(),
-            RobotState.ALIGNING: RobotAligningStrategy(),
-            RobotState.DISPOSING: RobotDisposingStrategy(),
-            RobotState.MOVING_TO_WAIT: RobotMovingToWaitStrategy(),
+            RobotState.PROGRAM_AUTO_ON: RobotProgramAutoOnStrategy(),
+            RobotState.PROGRAM_MANUAL_OFF: RobotProgramManualOffStrategy(),
+            RobotState.WAIT_AUTO_COMMAND: RobotWaitAutoCommandStrategy(),
+            RobotState.AUTO_MOTION_MOVE_HOME: RobotMoveHomeStrategy(),
+            RobotState.AUTO_MOTION_TOOL_CHANGE: RobotToolChangeStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_RACK: RobotApproachRackStrategy(),
+            RobotState.AUTO_GRIPPER_OPEN: RobotAutoGripperOpenStrategy(),
+            RobotState.AUTO_GRIPPER_CLOSE: RobotAutoGripperCloseStrategy(),
+            RobotState.AUTO_MOTION_MOVE_TO_QR: RobotMoveToQRStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_PICK: RobotApproachPickStrategy(),
+            RobotState.AUTO_MOTION_PICK_SPECIMEN: RobotPickSpecimenStrategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_TRAY: RobotRetractFromTrayStrategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_RACK: RobotRetractFromRackStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_THICKNESS: RobotApproachThicknessStrategy(),
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_1: RobotEnterThicknessPos1Strategy(),
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_2: RobotEnterThicknessPos2Strategy(),
+            RobotState.AUTO_MOTION_ENTER_THICKNESS_POS_3: RobotEnterThicknessPos3Strategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_THICKNESS: RobotRetractFromThicknessStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_ALIGNER: RobotApproachAlignerStrategy(),
+            RobotState.AUTO_MOTION_ENTER_ALIGNER: RobotEnterAlignerStrategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_ALIGNER: RobotRetractFromAlignerStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_TENSILE: RobotApproachTensileStrategy(),
+            RobotState.AUTO_MOTION_ENTER_TENSILE: RobotEnterTensileStrategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_TENSILE: RobotRetractFromTensileStrategy(),
+            RobotState.AUTO_MOTION_APPROACH_SCRAP: RobotApproachScrapStrategy(),
+            RobotState.AUTO_MOTION_ENTER_SCRAP: RobotEnterScrapStrategy(),
+            RobotState.AUTO_MOTION_RETRACT_FROM_SCRAP: RobotRetractFromScrapStrategy(),
         }

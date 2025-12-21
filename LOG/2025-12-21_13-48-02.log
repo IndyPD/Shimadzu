@@ -1,0 +1,37 @@
+[2025-12-21|13:48:02][INFO]  Blackboard initialized from c:\Users\S\Documents\GitHub\Shimadzu\projects/shimadzu_logic/configs/blackboard.json
+[2025-12-21|13:48:02][INFO]  Blackboard initialized from c:\Users\S\Documents\GitHub\Shimadzu\projects/shimadzu_logic/configs/blackboard.json
+[2025-12-21|13:48:02][INFO]  [SYSTEM] Starting shimadzu_logic System...
+[2025-12-21|13:48:02][INFO]  → [INFO] Config file loaded successfully: c:\Users\S\Documents\GitHub\Shimadzu\projects\shimadzu_logic\configs\mqtt_config.json
+[2025-12-21|13:48:02][INFO]  MQTT client initialized: 127.0.0.1:1883
+[2025-12-21|13:48:02][INFO]  
+==================================================
+[2025-12-21|13:48:02][INFO]  Tensile Machine MQTT Protocol Connector Started
+[2025-12-21|13:48:02][INFO]  → [INFO] 브로커 연결 성공!
+[2025-12-21|13:48:02][INFO]  Logic connector is waiting for commands on /ui/cmd.
+[2025-12-21|13:48:02][INFO]  → [SUB] 토픽 구독 완료: /ui/cmd
+[2025-12-21|13:48:02][INFO]  ==================================================
+
+[2025-12-21|13:48:02][INFO]  → [SUB] 토픽 구독 완료: /binpick/evt
+[2025-12-21|13:48:02][INFO]  
+[LogicProcessingThread]: Starting internal logic processing loop.
+[2025-12-21|13:48:02][INFO]  [StatusPublishingThread]: Starting status publishing loop.
+[2025-12-21|13:48:02][INFO]  configs robot : 192.168.0.15
+[2025-12-21|13:48:02][INFO]  configs remot io : 192.168.0.20
+[2025-12-21|13:48:02][INFO]  configs mqtt : 127.0.0.1
+[2025-12-21|13:48:02][INFO]  configs shimadzu : 127.0.0.1 : 5000
+[2025-12-21|13:48:02][INFO]  실행 모드 : Run 모드
+[2025-12-21|13:48:02][INFO]  Initializing Device FSM...
+[2025-12-21|13:48:02][INFO]  [device] Debug mode : 0
+[2025-12-21|13:48:02][INFO]  [device] configs : 192.168.0.20
+[2025-12-21|13:48:02][INFO]  [device] configs : 127.0.0.1 : 5000
+[2025-12-21|13:48:03][INFO]  [device] All device Init Complete
+[2025-12-21|13:48:03][INFO]  [device] enter ConnectingStrategy
+[2025-12-21|13:48:03][INFO]  [device] Attempting to connect to devices.
+[2025-12-21|13:48:03][INFO]  Device FSM initialized.
+[2025-12-21|13:48:03][INFO]  [device] exit ConnectingStrategy
+[2025-12-21|13:48:03][INFO]  [device] enter ReadyStrategy
+[2025-12-21|13:48:03][INFO]  [device] Device: Ready and waiting for commands.
+[2025-12-21|13:48:08][INFO]  [SYSTEM] shimadzu_logic system initialized. Running...
+[2025-12-21|13:48:55][WARN]  [SIGNAL] Received signal 2. Gracefully shutting down...
+[2025-12-21|13:48:55][INFO]  [ProcessManager] All FSMs stopped.
+[2025-12-21|13:48:55][INFO]  [SYSTEM] System Shutdown Complete.

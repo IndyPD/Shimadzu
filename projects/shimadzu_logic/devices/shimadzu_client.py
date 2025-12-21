@@ -10,6 +10,8 @@ try:
 except ImportError:
     from message_protocol import create_message, parse_message, ENCODING, STX, ETX
 
+DEBUG_MODE = False
+
 def format_float_string(value, total_chars, decimal_places):
     """지정된 전체 길이와 소수점 자릿수로 숫자 문자열을 포맷합니다 (오른쪽 공백 패딩)."""
     try:
@@ -50,7 +52,7 @@ class ShimadzuClient:
 
     def _default_callback(self, message):
         """기본 콜백 함수 (UI 콜백이 없을 경우 콘솔 출력)."""
-        if self.debug_mode :
+        if self.debug_mode and DEBUG_MODE:
             print(f"[SHIMADZU-CLIENT-DEBUG] {message}")
             
         
@@ -385,7 +387,7 @@ if __name__ == '__main__':
     SERVER_PORT = 5000
 
     def client_log(message):
-        if client.debug_mode :
+        if client.debug_mode and DEBUG_MODE:
             print(f"[NEURO-CLIENT-DEBUG] {message}")
         # print(f"[NEURO-CLIENT] {message}")
 

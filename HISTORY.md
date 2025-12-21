@@ -1,10 +1,7 @@
 📜 Project History & Changelog (프로젝트 기록 및 변경 사항)
 
-이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지합니다.
+이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지하며, 가독성을 위해 백틱 기호는 사용하지 않습니다.
 
-<<<<<<< Updated upstream
-v0.1.0 - 2025-12-17 
-=======
 v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
 
 1. 하드웨어 (Hardware)
@@ -19,7 +16,7 @@ v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
 (특이사항 없음)
 
 4. 기타 (Other)
-Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정: 로봇그리퍼 파지실패 로직에 활용
+Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정: 그리퍼 파지실패 로직에 활용
 
 v0.1.0 - 2025-12-20 (Automated Testing Workflow Refactoring)
 
@@ -70,7 +67,6 @@ DialGauge: 다이얼게이지 통신 및 데이터 확인
 (특이사항 없음)
 
 v0.1.0 - 2025-12-17 (시스템 초기 구축 및 FSM 설계)
->>>>>>> Stashed changes
 
 1. 하드웨어 (Hardware)
 Shimadzu 전장부: I/O 신호 결선 및 동작 테스트 완료 (I/O Check Completed).

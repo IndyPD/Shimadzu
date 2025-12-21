@@ -137,7 +137,7 @@ class MqttComm:
 
     def _load_config(self):
         """config/mqtt_config.json 파일에서 ACK ID 및 기타 설정을 로드합니다."""
-        config_path = "config/mqtt_config.json"
+        config_path = os.path.join(os.path.dirname(__file__), 'configs', 'mqtt_config.json')
         
         # 로드 실패 시 사용할 최소한의 기본값 딕셔너리
         default_ack_ids = {

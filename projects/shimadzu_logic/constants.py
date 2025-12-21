@@ -13,12 +13,13 @@ class LogicState(OpState):
     STOP_AND_OFF = 5    # 비상 정지 및 전원 차단 상태
     
     # 시험 배치(Batch) 관리 주요 상태
-    PREPARING_BATCH = 6 # 초기 상태 확인 및 툴 교체 조정
-    SUPPLYING_SPECIMEN = 7 # 시편 공급 모듈 관리 (QR 리딩, 두께 측정, 정렬)
-    TESTING_SPECIMEN = 8 # 시험 수행 모듈 관리 (그립, 초기하중, 인장시험)
-    COLLECTING_SPECIMEN = 9 # 파단 시편 회수 및 폐기 관리
-    BATCH_COMPLETE = 10 # 배치 완료 및 종료 통보
-
+    WAIT_COMMAND = 6          # 1. 명령 대기
+    REGISTER_PROCESS_INFO = 7 # 2. 공정 정보 등록
+    CHECK_DEVICE_STATUS = 8   # 3. 장비 상태 확인
+    WAIT_PROCESS = 9          # 4. 자동화 공정 대기
+    RUN_PROCESS = 10          # 5. 자동화 공정 실행
+    PROCESS_COMPLETE = 11     # 6. 자동화 공정 완료
+    
 # 2. LogicEvent (Neuromeka 전체 제어 이벤트) 정의
 class LogicEvent(OpEvent):
     NONE = 0
@@ -27,16 +28,28 @@ class LogicEvent(OpEvent):
     DONE = 3                    # 현재 전략/작업 완료
     RECOVER = 4                 # 복구 요청 이벤트
     
-    # 배치 흐름 이벤트 (Neuromeka 시퀀스)
-    START_BATCH_COMMAND = 5     # 작업자로부터 시험 시작 버튼 조작
-    CONNECTION_ALL_SUCCESS = 6  # 모든 서브 모듈 연결 완료
-    CONNECTION_FAIL = 7         # 연결 실패
+    # LogicState 기반 이벤트
+    START_AUTO_COMMAND = 5      # 자동화 공정 시작 명령
+    REGISTRATION_DONE = 6       # 공정 정보 등록 완료
+    STATUS_CHECK_DONE = 7       # 장비 상태 확인 완료
+    PROCESS_START = 8           # 자동화 공정 시작
+    PROCESS_STOP = 9            # 공정 정지 (현재 모션 완료 후 정지)
+    PROCESS_STEP_STOP = 10      # 공정 단계 정지 (현재 공정 완료 후 정지)
+    PROCESS_PAUSE = 11          # 공정 일시 정지
+    PROCESS_FINISHED = 12       # 자동화 공정 완료
     
-    PREP_COMPLETE = 8           # 배치 준비 완료 (툴 교체, 초기 상태 확인 완료)
-    SUPPLY_COMPLETE = 9         # 시편 공급 및 장착 완료 (시험 직전 상태)
-    TEST_COMPLETE = 10          # 인장 시험 수행 완료 (파단 후)
-    COLLECT_COMPLETE = 11       # 시편 회수 및 폐기 완료
-    BATCH_FINISHED = 12         # 전체 배치 프로세스 종료
+    # 연결 상태 이벤트
+    CONNECTION_ALL_SUCCESS = 13 # 모든 모듈 연결 성공
+    CONNECTION_FAIL = 14        # 연결 실패
+    
+    # 명령 실행 이벤트 (DO_Command)
+    DO_START_AUTO = 20          # 자동화 공정 시작 실행
+    DO_REGISTER_INFO = 21       # 공정 정보 등록 실행
+    DO_CHECK_STATUS = 22        # 장비 상태 확인 실행
+    DO_RUN_PROCESS = 23         # 공정 실행
+    DO_STOP = 24                # 정지 실행
+    DO_PAUSE = 25               # 일시 정지 실행
+    DO_STEP_STOP = 26           # 단계 정지 실행
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
 class LogicViolation(ViolationType):
@@ -62,35 +75,69 @@ class DeviceState(OpState):
     RECOVERING = 10         # 복구 시도 중 (Recovering)
     STOP_AND_OFF = 11       # 비상 정지 및 전원 차단 상태
     
-    GRIPPING_SPECIMEN = 12  # 시편 그립 중
-    EXT_FORWARD = 13        # 신율계 전진 중
-    PRELOADING = 14         # 초기 하중 제거 중
-    TESTING = 15            # 인장 시험 진행 중
-    EXT_BACK = 16           # 신율계 후진 중
-    UNGRIPPING_SPECIMEN = 17 # 시편 그립 해제 중
+    WAIT_COMMAND = 12           # 명령 대기
+    READ_QR = 13                # QR 읽기
+    MEASURE_THICKNESS = 14      # 두께 측정
+    ALIGNER_OPEN = 15           # 정렬기 벌리기
+    ALIGNER_ACTION = 16         # 정렬기 작동
+    GRIPPER_MOVE_DOWN = 17      # 인장기 그리퍼 아래로 이동
+    GRIPPER_GRIP = 18           # 인장기 그리퍼 잡기
+    GRIPPER_RELEASE = 19        # 인장기 그리퍼 풀기
+    REMOVE_PRELOAD = 20         # 초기 하중 제거
+    EXTENSOMETER_FORWARD = 21   # 신율계 전진
+    EXTENSOMETER_BACKWARD = 22  # 신율계 후진
+    START_TENSILE_TEST = 23     # 인장시험 시작
+
+
 
 # 5. DeviceEvent (시험기 제어 이벤트) 정의 - Logic FSM의 서브 이벤트로 활용
 class DeviceEvent(OpEvent):
     NONE = 0
-    START_COMMAND = 1           # Logic에서 Device FSM에게 시험 시작 명령
-    STOP_COMMAND = 2            # Logic에서 Device FSM에게 시험 중지 명령
-    CONNECTION_SUCCESS = 3      # Device FSM의 연결 완료 보고
-    CONNECTION_FAIL = 4         # Device FSM의 연결 실패 보고
-    DEVICE_READY = 5            # Device FSM의 준비 완료 보고
-    REGISTER_COMPLETE = 6       # 시험 조건 등록 완료
-    GRIP_CLOSE_COMPLETE = 7     # 시험기 그립 닫기 완료
-    EXT_FORWARD_COMPLETE = 8    # 신율계 전진 완료
-    PRELOAD_COMPLETE = 9        # 초기 하중 제거 완료
-    TEST_START_ACK = 10         # 인장 시험 시작 응답 수신
-    TEST_COMPLETE = 11          # 인장 시험 결과 수신 (파단 후)
-    EXT_BACK_COMPLETE = 12      # 신율계 후진 완료
-    GRIP_OPEN_COMPLETE = 13     # 시험기 그립 열기 완료
-    SPECIMEN_COLLECTED = 14     # 로봇이 시편 회수 완료
-    DONE = 15                   # 현재 전략/작업 완료
-    RECOVER = 16                # 복구 요청 이벤트
-    VIOLATION_DETECT = 17       # 위반 감지 이벤트
-    STOP_EMG = 18               # 비상 정지 이벤트
-    # (GRIPPING_SPECIMEN 등 상태는 이제 Logic FSM 내에서 Strategy로 관리)
+    VIOLATION_DETECT = 1        # 위반 감지 (System Violation)
+    STOP_EMG = 2                # 비상 정지
+    DONE = 3                    # 작업 완료
+    RECOVER = 4                 # 복구 요청
+    
+    START_COMMAND = 5           # Logic에서 Device FSM에게 시험 시작 명령
+    STOP_COMMAND = 6            # Logic에서 Device FSM에게 시험 중지 명령
+    CONNECTION_SUCCESS = 7      # Device FSM의 연결 완료 보고
+    CONNECTION_FAIL = 8         # Device FSM의 연결 실패 보고
+    DEVICE_READY = 9            # Device FSM의 준비 완료 보고
+    
+    QR_READ_DONE = 10           # QR 읽기 완료
+    THICKNESS_MEASURE_DONE = 11 # 두께 측정 완료
+    ALIGNER_OPEN_DONE = 12      # 정렬기 벌리기 완료
+    ALIGNER_ACTION_DONE = 13    # 정렬기 작동 완료
+    GRIPPER_MOVE_DOWN_DONE = 14 # 인장기 그리퍼 아래로 이동 완료
+    GRIPPER_GRIP_DONE = 15      # 인장기 그리퍼 잡기 완료
+    GRIPPER_RELEASE_DONE = 16   # 인장기 그리퍼 풀기 완료
+    REMOVE_PRELOAD_DONE = 17    # 초기 하중 제거 완료
+    EXTENSOMETER_FORWARD_DONE = 18 # 신율계 전진 완료
+    EXTENSOMETER_BACKWARD_DONE = 19 # 신율계 후진 완료
+    TENSILE_TEST_DONE = 20      # 인장시험 완료
+    
+    # 장비별 에러 상황 이벤트
+    QR_READ_FAIL = 21           # QR 읽기 실패
+    GAUGE_MEASURE_FAIL = 22     # 게이지 측정 실패
+    ALIGNER_FAIL = 23           # 정렬기 동작 실패
+    GRIPPER_FAIL = 24           # 인장기 그리퍼 동작 실패
+    GRIPPER_MOVE_FAIL = 25      # 인장기 이동 실패
+    EXTENSOMETER_FAIL = 26      # 신율계 동작 실패
+    TENSILE_TEST_FAIL = 27      # 인장시험 명령 실패
+    PRELOAD_FAIL = 28           # 초기 하중 제거 실패
+    
+    # 명령 실행 이벤트 (DO_Command)
+    DO_READ_QR = 30             # QR 읽기 실행
+    DO_MEASURE_THICKNESS = 31   # 두께 측정 실행
+    DO_ALIGNER_OPEN = 32        # 정렬기 벌리기 실행
+    DO_ALIGNER_ACTION = 33      # 정렬기 작동 실행
+    DO_GRIPPER_MOVE_DOWN = 34   # 인장기 그리퍼 하강 실행
+    DO_GRIPPER_GRIP = 35        # 인장기 그리퍼 잡기 실행
+    DO_GRIPPER_RELEASE = 36     # 인장기 그리퍼 풀기 실행
+    DO_REMOVE_PRELOAD = 37      # 초기 하중 제거 실행
+    DO_EXTENSOMETER_FORWARD = 38 # 신율계 전진 실행
+    DO_EXTENSOMETER_BACKWARD = 39 # 신율계 후진 실행
+    DO_TENSILE_TEST = 40        # 인장시험 실행
 
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
@@ -118,13 +165,38 @@ class RobotState(OpState):
     RECOVERING = 4      # 복구 시도 중 (Recovering)
     STOP_AND_OFF = 5    # 비상 정지 및 전원 차단 상태
     
-    TOOL_CHANGING = 6   # 툴 교체 중
-    READING_QR = 7      # 트레이/시편 QR 리딩 중
-    PICKING = 8         # 시편 픽업 중
-    PLACING = 9         # 시편 플레이싱 중
-    ALIGNING = 10       # 정렬 장치에서 정렬 동작 수행 중
-    DISPOSING = 11      # 파단 시편 폐기통으로 버리는 중
-    MOVING_TO_WAIT = 12 # 대기 장소로 이동 중
+    MANUAL_GRIPPER_OPEN = 6     # 수동 그리퍼 열기
+    MANUAL_GRIPPER_CLOSE = 7    # 수동 그리퍼 닫기
+
+    PROGRAM_AUTO_ON = 8         # 로봇 프로그램 켜기(자동모드)
+    PROGRAM_MANUAL_OFF = 9      # 로봇 프로그램 끄기(수동모드)
+    
+    AUTO_MOTION_TOOL_CHANGE = 10             # 툴 교체
+    AUTO_MOTION_MOVE_HOME = 11               # 홈 위치 이동
+    AUTO_MOTION_APPROACH_RACK = 12          # 렉 앞 접근
+    AUTO_GRIPPER_OPEN = 13           # 로봇 그리퍼 열기
+    AUTO_GRIPPER_CLOSE = 14          # 로봇 그리퍼 닫기
+    AUTO_MOTION_MOVE_TO_QR = 15             # 렉 작업 대상 층 Tray QR 인식 위치 이동
+    AUTO_MOTION_APPROACH_PICK = 16          # 렉 작업 대상 층 Tray 시편 잡는 위치 앞 이동
+    AUTO_MOTION_PICK_SPECIMEN = 17          # 렉 작업 대상 층 Tray 내 시편 잡기
+    AUTO_MOTION_RETRACT_FROM_TRAY = 18      # 렉 작업 대상 층 Tray 앞 후퇴
+    AUTO_MOTION_RETRACT_FROM_RACK = 19      # 렉 앞 후퇴
+    AUTO_MOTION_APPROACH_THICKNESS = 20     # 두께측정기 앞 이동
+    AUTO_MOTION_ENTER_THICKNESS_POS_1 = 21  # 두께측정기 1번 위치 진입
+    AUTO_MOTION_ENTER_THICKNESS_POS_2 = 22  # 두께측정기 2번 위치 진입
+    AUTO_MOTION_ENTER_THICKNESS_POS_3 = 23  # 두께측정기 3번 위치 진입
+    AUTO_MOTION_RETRACT_FROM_THICKNESS = 24 # 두께측정기 앞 후퇴
+    AUTO_MOTION_APPROACH_ALIGNER = 25       # 정렬기 앞 이동
+    AUTO_MOTION_ENTER_ALIGNER = 26          # 정렬기 진입
+    AUTO_MOTION_RETRACT_FROM_ALIGNER = 27   # 정렬기 앞 후퇴
+    AUTO_MOTION_APPROACH_TENSILE = 28       # 인장시험기 앞 이동
+    AUTO_MOTION_ENTER_TENSILE = 29          # 인장시험기 진입
+    AUTO_MOTION_RETRACT_FROM_TENSILE = 30   # 인장시험기 앞 후퇴
+    AUTO_MOTION_APPROACH_SCRAP = 31         # 스크랩 통 위치 앞 이동
+    AUTO_MOTION_ENTER_SCRAP = 32            # 스크랩 통 진입
+    AUTO_MOTION_RETRACT_FROM_SCRAP = 33     # 스크랩 통 위치 앞 후퇴
+    WAIT_AUTO_COMMAND = 34      # 자동 공정 명령 대기
+    
 
 # 8. RobotEvent (로봇 제어 이벤트) 정의 - Logic FSM의 서브 이벤트로 활용
 class RobotEvent(OpEvent):
@@ -135,15 +207,65 @@ class RobotEvent(OpEvent):
     RECOVER = 4                 # 복구 요청 이벤트
     CONNECTION_SUCCESS = 5      # 연결 성공
     CONNECTION_FAIL = 6         # 연결 실패
-    START_BATCH = 7             # Logic에서 Robot FSM에게 시험 배치 시작 명령
-    TOOL_CHECK_COMPLETE = 8     # 툴 확인 완료 (교체 필요 여부 판단)
-    TOOL_CHANGE_COMPLETE = 9    # 툴 교체 완료
-    QR_READ_COMPLETE = 10       # QR 리딩 완료 (메타데이터 보고 완료)
-    PICK_COMPLETE = 11          # 시편 픽업 완료
-    PLACE_COMPLETE = 12         # 시편 플레이싱 완료
-    ALIGN_COMPLETE = 13         # 정렬 동작 수행 완료
-    MOVE_COMPLETE = 14          # 대기 장소 이동 완료
-    DISPOSE_COMPLETE = 15       # 파단 시편 폐기 완료
+
+    MANUAL_GRIPPER_OPEN_DONE = 7    # 수동 그리퍼 열기 완료
+    MANUAL_GRIPPER_CLOSE_DONE = 8   # 수동 그리퍼 닫기 완료
+
+    PROGRAM_AUTO_ON_DONE = 9        # 로봇 프로그램 켜기 완료
+    PROGRAM_MANUAL_OFF_DONE = 10    # 로봇 프로그램 끄기 완료
+    AUTO_MOTION_TOOL_CHANGE_DONE = 11    # 툴 교체 완료
+    AUTO_MOTION_MOVE_HOME_DONE = 12      # 홈 위치 이동 완료
+    AUTO_MOTION_APPROACH_RACK_DONE = 13  # 렉 앞 접근 완료
+    AUTO_GRIPPER_OPEN_DONE = 14     # 로봇 그리퍼 열기 완료
+    AUTO_GRIPPER_CLOSE_DONE = 15    # 로봇 그리퍼 닫기 완료
+    AUTO_MOTION_MOVE_TO_QR_DONE = 16            # QR 인식 위치 이동 완료
+    AUTO_MOTION_APPROACH_PICK_DONE = 17         # 시편 잡는 위치 앞 이동 완료
+    AUTO_MOTION_PICK_SPECIMEN_DONE = 18         # 시편 잡기 완료
+    AUTO_MOTION_RETRACT_FROM_TRAY_DONE = 19     # Tray 앞 후퇴 완료
+    AUTO_MOTION_RETRACT_FROM_RACK_DONE = 20     # 렉 앞 후퇴 완료
+    AUTO_MOTION_APPROACH_THICKNESS_DONE = 21    # 두께측정기 앞 이동 완료
+    AUTO_MOTION_ENTER_THICKNESS_POS_1_DONE = 22 # 두께측정기 1번 위치 진입 완료
+    AUTO_MOTION_ENTER_THICKNESS_POS_2_DONE = 23 # 두께측정기 2번 위치 진입 완료
+    AUTO_MOTION_ENTER_THICKNESS_POS_3_DONE = 24 # 두께측정기 3번 위치 진입 완료
+    AUTO_MOTION_RETRACT_FROM_THICKNESS_DONE = 25 # 두께측정기 앞 후퇴 완료
+    AUTO_MOTION_APPROACH_ALIGNER_DONE = 26      # 정렬기 앞 이동 완료
+    AUTO_MOTION_ENTER_ALIGNER_DONE = 27         # 정렬기 진입 완료
+    AUTO_MOTION_RETRACT_FROM_ALIGNER_DONE = 28  # 정렬기 앞 후퇴 완료
+    AUTO_MOTION_APPROACH_TENSILE_DONE = 29      # 인장시험기 앞 이동 완료
+    AUTO_MOTION_ENTER_TENSILE_DONE = 30         # 인장시험기 진입 완료
+    AUTO_MOTION_RETRACT_FROM_TENSILE_DONE = 31  # 인장시험기 앞 후퇴 완료
+    AUTO_MOTION_APPROACH_SCRAP_DONE = 32        # 스크랩 통 위치 앞 이동 완료
+    AUTO_MOTION_ENTER_SCRAP_DONE = 33           # 스크랩 통 진입 완료
+    AUTO_MOTION_RETRACT_FROM_SCRAP_DONE = 34    # 스크랩 통 위치 앞 후퇴 완료
+    
+    # 명령 실행 이벤트 (DO_Command)
+    DO_AUTO_MOTION_PROGRAM_AUTO_ON = 40     # 로봇 프로그램 켜기 실행
+    DO_AUTO_MOTION_PROGRAM_MANUAL_OFF = 41  # 로봇 프로그램 끄기 실행
+    DO_AUTO_MOTION_TOOL_CHANGE = 42         # 툴 교체 실행
+    DO_AUTO_MOTION_MOVE_HOME = 43           # 홈 위치 이동 실행
+    DO_AUTO_MOTION_APPROACH_RACK = 44       # 렉 앞 접근 실행
+    DO_AUTO_GRIPPER_OPEN = 45        # 그리퍼 열기 실행
+    DO_AUTO_GRIPPER_CLOSE = 46       # 그리퍼 닫기 실행
+    DO_AUTO_MOTION_MOVE_TO_QR = 47          # QR 위치 이동 실행
+    DO_AUTO_MOTION_APPROACH_PICK = 48       # 픽업 위치 접근 실행
+    DO_AUTO_MOTION_PICK_SPECIMEN = 49       # 시편 픽업 실행
+    DO_AUTO_MOTION_RETRACT_FROM_TRAY = 50   # 트레이 후퇴 실행
+    DO_AUTO_MOTION_RETRACT_FROM_RACK = 51   # 렉 후퇴 실행
+    DO_AUTO_MOTION_APPROACH_THICKNESS = 52  # 두께측정기 접근 실행
+    DO_AUTO_MOTION_ENTER_THICKNESS_POS_1 = 53 # 두께측정 1번 위치 진입 실행
+    DO_AUTO_MOTION_ENTER_THICKNESS_POS_2 = 54 # 두께측정 2번 위치 진입 실행
+    DO_AUTO_MOTION_ENTER_THICKNESS_POS_3 = 55 # 두께측정 3번 위치 진입 실행
+    DO_AUTO_MOTION_RETRACT_FROM_THICKNESS = 56 # 두께측정기 후퇴 실행
+    DO_AUTO_MOTION_APPROACH_ALIGNER = 57    # 정렬기 접근 실행
+    DO_AUTO_MOTION_ENTER_ALIGNER = 58       # 정렬기 진입 실행
+    DO_AUTO_MOTION_RETRACT_FROM_ALIGNER = 59 # 정렬기 후퇴 실행
+    DO_AUTO_MOTION_APPROACH_TENSILE = 60    # 인장시험기 접근 실행
+    DO_AUTO_MOTION_ENTER_TENSILE = 61       # 인장시험기 진입 실행
+    DO_AUTO_MOTION_RETRACT_FROM_TENSILE = 62 # 인장시험기 후퇴 실행
+    DO_AUTO_MOTION_APPROACH_SCRAP = 63      # 스크랩 통 접근 실행
+    DO_AUTO_MOTION_ENTER_SCRAP = 64         # 스크랩 통 진입 실행
+    DO_AUTO_MOTION_RETRACT_FROM_SCRAP = 65  # 스크랩 통 후퇴 실행
+
 
 # 9. RobotViolation (로봇 제어 위반) 정의 - Logic FSM으로 보고됨
 class RobotViolation(ViolationType):
@@ -199,7 +321,7 @@ class Robot_OP_State(IntEnum):
     TELE_OP = 17
 
 # 13. Remote IO DI (Digital Input) 신호 정의
-class DigitalInput(Enum):
+class DigitalInput(IntEnum):
     """
     PLC DI (Digital Input) 신호 목록
     address는 이미지의 address - 1 값입니다.
@@ -242,7 +364,7 @@ class DigitalInput(Enum):
     ATC_2_2_SENSOR = 36
 
 # 14. Remote IO DO (Digital Output) 신호 정의
-class DigitalOutput(Enum):
+class DigitalOutput(IntEnum):
     """
     PLC DO (Digital Output) 신호 목록
     address는 이미지의 address - 1 값입니다.

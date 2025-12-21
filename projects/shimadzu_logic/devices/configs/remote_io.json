@@ -1,4 +1,4 @@
 {
-    "remote_io_ip": "192.168.16.10",
+    "remote_io_ip": "192.168.2.40",
     "description": "Autonics APIO-C-EI의 EtherNet/IP 주소 설정"
 }

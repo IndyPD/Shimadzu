@@ -36,9 +36,12 @@ class GlobalBlackboard(py_trees.blackboard.Blackboard, metaclass=SingletonMeta):
     def __init__(self, json_file_path=""):
         super().__init__()
         self.config_path = json_file_path
-        initialize_blackboard_from_json(self, json_file_path)
+        if json_file_path:
+            initialize_blackboard_from_json(self, json_file_path)
 
 def initialize_global_blackboard(json_file_path):
     """Create the singleton instance before other modules import it."""
-    return GlobalBlackboard(json_file_path)
-
+    instance = GlobalBlackboard(json_file_path)
+    if json_file_path:
+        initialize_blackboard_from_json(instance, json_file_path)
+    return instance
