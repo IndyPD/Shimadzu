@@ -118,9 +118,6 @@ class DeviceContext(ContextBase):
         # 비트 위치가 명확하고 코드가 짧아집니다.
         # N번째 비트 = 1 << N
 
-        # 임시 코드 << 삭제 예정
-        # 정상인 경우 False
-        return False
         # Local violation bitmask constants
         GAUGE_COMM_ERR     = 1 << 0  # 0b00000001 (1)
         GAUGE_DEVICE_ERROR = 1 << 1 # 0b00000010 (2)

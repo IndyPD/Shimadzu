@@ -20,11 +20,8 @@ class ConnectingStrategy(Strategy):
         if context.check_violation():
             return DeviceEvent.VIOLATION_DETECT
         else:
-            # 연결 성공 시 SUCCESS 이벤트 반환
             return DeviceEvent.CONNECTION_SUCCESS
             
-        return DeviceEvent.NONE
-
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info("[device] exit ConnectingStrategy")
 

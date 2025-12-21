@@ -1,0 +1,10 @@
+# Jupyter Notebook
+logic_test.ipynb
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local Configs
+projects/shimadzu_logic/configs/remote_io_copy.json
