@@ -2,7 +2,75 @@
 
 이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지합니다.
 
+<<<<<<< Updated upstream
 v0.1.0 - 2025-12-17 
+=======
+v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+초기 로그 파일 추가 및 로직 테스트 노트북 생성: 시스템 초기화 및 장치 명령 기록을 위한 신규 로그 파일을 생성
+로직 테스트용 Jupyter Notebook 추가: shimadzu_logic 프로젝트의 메인 로직을 테스트할 수 있는 logic_test.ipynb를 추가
+여기에는 글로벌 블랙보드 설정 및 장치 명령 실행 환경 구축이 포함
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정: 로봇그리퍼 파지실패 로직에 활용
+
+v0.1.0 - 2025-12-20 (Automated Testing Workflow Refactoring)
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+자동화 시험 워크플로우를 위한 장치 전략 및 FSM 로직 리팩토링
+그리핑, 두께 측정, QR 코드 판독 등 장치 제어를 위한 구형 전략을 제거하고 신규 전략을 도입
+자동화 명령 처리 및 공정 정보 등록을 위해 LogicFSM의 상태와 이벤트를 업데이트
+시편 핸들링 및 공정 개선을 위해 RobotFSM이 새로운 자동 모션 명령과 상태를 관리하도록 기능을 강화
+QR 통신 설정을 위한 설정 파일을 신규 생성
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
+
+v0.1.0 - 2025-12-19 (QR 리더기 연동 및 시스템 초기화 개선)
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+QR 리더기 모듈 추가: QR 리더기와의 TCP/IP 통신을 담당하고 수신 데이터를 파싱하는 QRReader 클래스를 새롭게 구현했습니다.
+시스템 초기화 및 디버깅: MitutoyoGauge 및 Remote I/O 모듈의 DEBUG_MODE를 활성화하여 통신 로그 확인이 가능하도록 했으며, 메인 프로세스 시작 시 모든 디지털 출력(DO)을 0으로 초기화하여 초기 구동 안정성을 확보했습니다.
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
+
+v0.1.0 - 2025-12-18 (환경 설정 및 초기 오류 수정)
+
+1. 하드웨어 (Hardware)
+장비IO체크: IO제어를 통해 실제 매핑된 장비 작동 유무 확인
+DialGauge: 다이얼게이지 통신 및 데이터 확인
+
+2. 소프트웨어 (Software)
+의존성 관리 및 문서화: run.py 실행에 필요한 외부 라이브러리를 requirements.txt 파일로 생성하여 관리하고, README.md에 Anaconda 가상환경 설정 및 실행 절차를 문서화했습니다. 초기 실행 과정에서 발생한 다수의 ModuleNotFoundError를 해결했습니다. 경로 문제 해결: run.py 실행 위치에 따라 설정 파일(*.json)을 찾지 못하는 FileNotFoundError를 해결하기 위해, os.path.dirname(__file__)을 사용하여 파일 경로를 동적으로 생성하도록 run.py, devices_context.py, remote_io.py, mitutoyogauge.py 코드를 수정했습니다. 코드 개선: devices_context.py의 TypeError를 IntEnum을 사용하여 해결하고, devices 폴더 내 주요 Python 파일에 DEBUG_MODE 플래그를 추가하여 디버깅 편의성을 높였습니다.
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
+
+v0.1.0 - 2025-12-17 (시스템 초기 구축 및 FSM 설계)
+>>>>>>> Stashed changes
 
 1. 하드웨어 (Hardware)
 Shimadzu 전장부: I/O 신호 결선 및 동작 테스트 완료 (I/O Check Completed).
