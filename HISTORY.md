@@ -16,7 +16,7 @@ v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
 (특이사항 없음)
 
 4. 기타 (Other)
-Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정, 그리퍼 파지실패 로직에 활용
+Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정: 그리퍼 파지실패 로직에 활용
 
 v0.1.0 - 2025-12-20 (Automated Testing Workflow Refactoring)
 
