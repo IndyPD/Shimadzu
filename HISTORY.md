@@ -8,14 +8,15 @@ v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
 (특이사항 없음)
 
 2. 소프트웨어 (Software)
-초기 로그 파일 추가 및 로직 테스트 노트북 생성: 시스템 초기화 및 장치 명령 기록을 위한 신규 로그 파일을 생성했습니다.
-로직 테스트용 Jupyter Notebook 추가: shimadzu_logic 프로젝트의 메인 로직을 테스트할 수 있는 logic_test.ipynb를 추가했습니다. 여기에는 글로벌 블랙보드 설정 및 장치 명령 실행 환경 구축이 포함되어 있습니다.
+초기 로그 파일 추가 및 로직 테스트 노트북 생성: 시스템 초기화 및 장치 명령 기록을 위한 신규 로그 파일을 생성
+로직 테스트용 Jupyter Notebook 추가: shimadzu_logic 프로젝트의 메인 로직을 테스트할 수 있는 logic_test.ipynb를 추가
+여기에는 글로벌 블랙보드 설정 및 장치 명령 실행 환경 구축이 포함
 
 3. 이슈 (Issues)
 (특이사항 없음)
 
 4. 기타 (Other)
-(특이사항 없음)
+Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정, 그리퍼 파지실패 로직에 활용
 
 v0.1.0 - 2025-12-20 (Automated Testing Workflow Refactoring)
 
