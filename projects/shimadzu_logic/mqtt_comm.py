@@ -39,19 +39,22 @@ class MqttComm:
         # 3. 상태 관리 변수
         self.running = True
         self.thread = None
-        self.logic_thread = None
-        self.status_thread = None
         self.connected = False
         
-        # ID 생성을 위한 카운터
-        self.counters = {"tensile": 0, "manual": 0, "binpick": 0, "logic_to_bp": 0}
-
-        # 제어 상태 변수 (이전 코드 호환성 유지)
-        self.tensile_command = 0
-        self.binpick_command = 0
-        self.do_control_state = 0
-        self.last_command_id = None
-        self.last_command_payload = {}
+        if self.role == 'logic':
+            self.logic_thread = None
+            self.status_thread = None
+            # ID 생성을 위한 카운터
+            self.counters = {"tensile": 0, "manual": 0, "binpick": 0, "logic_to_bp": 0}
+            # 제어 상태 변수 (이전 코드 호환성 유지)
+            self.tensile_command = 0
+            self.binpick_command = 0
+            self.do_control_state = 0
+            self.last_command_id = None
+            self.last_command_payload = {}
+        elif self.role == 'ui':
+            # ID 생성을 위한 카운터 (UI 전용)
+            self.counters = {"tensile": 0, "manual": 0, "binpick": 0}
 
     def _load_rules(self, path):
         # 1. 입력된 경로 그대로 확인
@@ -141,89 +144,102 @@ class MqttComm:
     # ==========================================================================
 
     def send_tensile_cmd(self, action, batch_id):
-        self.counters["tensile"] += 1
-        msg_id = f"{self.rules['id_prefixes']['tensile']}{self.counters['tensile']:03d}"
-        payload = {"kind": "command", "cmd": "tensile_control", "action": action, "batch_id": batch_id}
-        frame = self._create_frame("ui.command", "logic", msg_id, payload)
-        self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
+        if self.role == 'ui':
+            self.counters["tensile"] += 1
+            msg_id = f"{self.rules['id_prefixes']['tensile']}{self.counters['tensile']:03d}"
+            payload = {"kind": "command", "cmd": "tensile_control", "action": action, "batch_id": batch_id}
+            frame = self._create_frame("ui.command", "logic", msg_id, payload)
+            self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
 
     def send_do_control(self, address, value):
-        self.counters["manual"] += 1
-        msg_id = f"{self.rules['id_prefixes']['manual']}{self.counters['manual']:03d}"
-        payload = {
-            "kind": "command", "cmd": "system_control", "action": "do_control",
-            "params": {"address": address, "value": value}
-        }
-        frame = self._create_frame("ui.command", "logic", msg_id, payload)
-        self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
+        if self.role == 'ui':
+            self.counters["manual"] += 1
+            msg_id = f"{self.rules['id_prefixes']['manual']}{self.counters['manual']:03d}"
+            payload = {
+                "kind": "command", "cmd": "system_control", "action": "do_control",
+                "params": {"address": address, "value": value}
+            }
+            frame = self._create_frame("ui.command", "logic", msg_id, payload)
+            self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
 
     def send_binpick_cmd(self, action, job_id):
-        self.counters["binpick"] += 1
-        prefix = self.rules['id_prefixes'].get(f"binpick_{action}", "ui-binpick-")
-        msg_id = f"{prefix}{self.counters['binpick']:03d}"
-        payload = {"kind": "command", "cmd": "binpick_control", "action": action, "job_id": job_id}
-        frame = self._create_frame("ui.command", "logic", msg_id, payload)
-        self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
+        if self.role == 'ui':
+            self.counters["binpick"] += 1
+            prefix = self.rules['id_prefixes'].get(f"binpick_{action}", "ui-binpick-")
+            msg_id = f"{prefix}{self.counters['binpick']:03d}"
+            payload = {"kind": "command", "cmd": "binpick_control", "action": action, "job_id": job_id}
+            frame = self._create_frame("ui.command", "logic", msg_id, payload)
+            self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
 
     # ==========================================================================
     # Logic 역할 함수 (ACK 및 상태 보고)
     # ==========================================================================
 
     def _handle_ui_command(self, header, payload):
-        cmd = payload.get("cmd")
-        action = payload.get("action")
-        self.last_command_id = header.get("msg_id")
-        self.last_command_payload = payload
+        if self.role == 'logic':
+            cmd = payload.get("cmd")
+            action = payload.get("action")
+            self.last_command_id = header.get("msg_id")
+            self.last_command_payload = payload
 
-        if cmd == "tensile_control":
-            # 가상 제어 상태 업데이트 (logic_processing_loop에서 처리)
-            self.tensile_command = 1 # 예시: START
-        elif cmd == "binpick_control":
-            self.binpick_command = 1
-        elif cmd == "system_control" and action == "do_control":
-            self.do_control_state = 1
+            if cmd == "tensile_control":
+                # 가상 제어 상태 업데이트 (logic_processing_loop에서 처리)
+                self.tensile_command = 1 # 예시: START
+            elif cmd == "binpick_control":
+                self.binpick_command = 1
+            elif cmd == "system_control" and action == "do_control":
+                self.do_control_state = 1
 
-        # 더미 모드일 경우 즉시 자동 ACK
-        if self.is_dummy:
-            self._send_auto_ack(header, payload)
+            # 더미 모드일 경우 즉시 자동 ACK
+            if self.is_dummy:
+                self._send_auto_ack(header, payload)
 
     def _send_auto_ack(self, header, payload):
-        req_id = header.get("msg_id")
-        cmd = payload.get("cmd")
-        
-        ack_id = self.rules["ack_ids"]["standard"]
-        if cmd == "system_control":
-            ack_id = f"{self.rules['ack_ids']['manual_prefix']}001"
-        
-        ack_payload = {
-            "kind": "ack", "ack_of": req_id, "status": "ok", 
-            "reason": "Simulated Success", "data": {}
-        }
-        frame = self._create_frame("logic.event", "ui", ack_id, ack_payload, False)
-        self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(frame))
+        if self.role == 'logic':
+            req_id = header.get("msg_id")
+            cmd = payload.get("cmd")
+            
+            ack_id = self.rules["ack_ids"]["standard"]
+            if cmd == "system_control":
+                ack_id = f"{self.rules['ack_ids']['manual_prefix']}001"
+            
+            ack_payload = {
+                "kind": "ack", "ack_of": req_id, "status": "ok", 
+                "reason": "Simulated Success", "data": {}
+            }
+            frame = self._create_frame("logic.event", "ui", ack_id, ack_payload, False)
+            self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(frame))
 
     def _logic_processing_loop(self):
         """실제 장비 제어 로직 시뮬레이션 루프"""
-        while self.running:
-            if self.tensile_command != 0:
-                Logger.info(f"[LOGIC] 인장기 공정 처리 중...")
-                time.sleep(1)
-                self.tensile_command = 0
-            time.sleep(0.1)
+        if self.role == 'logic':
+            while self.running:
+                if self.tensile_command != 0:
+                    Logger.info(f"[LOGIC] 인장기 공정 처리 중...")
+                    time.sleep(1)
+                    self.tensile_command = 0
+                time.sleep(0.1)
 
     def _status_publishing_loop(self):
         """주기적 상태 보고 (Section 4 준수)"""
-        while self.running:
-            # 1. DIO Status (0.5s)
-            dio_payload = {
-                "kind": "event", "evt": "system_dio_status",
-                "di_values": [random.randint(0,1) for _ in range(48)],
-                "do_values": [random.randint(0,1) for _ in range(32)]
-            }
-            self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
-                self._create_frame("logic.event", "ui", self.rules["event_ids"]["dio_status"], dio_payload, False)))
-            
-            time.sleep(0.5)
+        if self.role == 'logic':
+            while self.running:
+                # 1. DIO Status (0.5s)
+                dio_payload = {
+                    "kind": "event", "evt": "system_dio_status",
+                    "di_values": [random.randint(0,1) for _ in range(48)],
+                    "do_values": [random.randint(0,1) for _ in range(32)]
+                }
+                self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
+                    self._create_frame("logic.event", "ui", self.rules["event_ids"]["dio_status"], dio_payload, False)))
+                
+                time.sleep(0.5)
+
+    def _handle_logic_event(self, header, payload):
+        """UI 역할에서 Logic의 이벤트를 처리하는 함수"""
+        if self.role == 'ui':
+            # UI에서 Logic의 이벤트를 처리하는 로직 (필요 시 Blackboard 업데이트 등 추가)
+            Logger.info(f"[UI] Logic 이벤트 수신: {payload.get('evt') or payload.get('kind')}")
 
     # ==========================================================================
     # 실행 및 종료
