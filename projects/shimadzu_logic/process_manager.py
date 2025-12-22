@@ -47,10 +47,10 @@ class ProcessManager:
         
         # FSM 인스턴스 생성
         # Device FSM
-        # Logger.info("Initializing Device FSM...")
-        # self.device_fsm = DeviceFsm(DeviceContext())
-        # self.device_fsm.start_service_background()
-        # Logger.info("Device FSM initialized.")
+        Logger.info("Initializing Device FSM...")
+        self.device_fsm = DeviceFsm(DeviceContext())
+        self.device_fsm.start_service_background()
+        Logger.info("Device FSM initialized.")
 
         # # Robot FSM
         # Logger.info("Initializing Robot FSM...")

@@ -116,6 +116,7 @@ class RobotContext(ContextBase):
 
             return self.violation_code
         except Exception as e:
+            Logger.error(f"[RobotContext] Exception in check_violation: {e}")
             reraise(e)
 
     def robot_state(self):

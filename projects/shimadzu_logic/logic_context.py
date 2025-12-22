@@ -49,4 +49,5 @@ class LogicContext(ContextBase):
 
             return self.violation_code
         except Exception as e:
+            Logger.error(f"[LogicContext] Exception in check_violation: {e}")
             reraise(e)

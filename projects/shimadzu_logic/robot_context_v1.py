@@ -95,6 +95,7 @@ class RobotContext(ContextBase):
 
             return self.violation_code
         except Exception as e:
+            Logger.error(f"[RobotContextV1] Exception in check_violation: {e}")
             reraise(e)
 
     def _check_emergency_stop(self) -> bool:
@@ -161,7 +162,7 @@ class RobotContext(ContextBase):
     def _check_external_safety(self):
         """외부 안전 장치 상태 확인"""
         # 안전 정지 상태 확인
-        if bb.get("ui/state/safe/stop", 0):
+        if bb.get("ui/state/safe/stop"):
             self.violation_code |= RobotViolation.HW_VIOLATION.value
             Logger.warn("Safety stop activated")
 
@@ -195,11 +196,11 @@ class RobotContext(ContextBase):
 
     def get_gripper_state(self):
         """그리퍼 상태 확인"""
-        return bb.get("int_var/grip_state/val", 0)
+        return bb.get("int_var/grip_state/val")
 
     def get_current_position(self):
         """현재 로봇 위치"""
-        return bb.get("int_var/robot/position/val", 0)
+        return bb.get("int_var/robot/position/val")
 
     # ========================================
     # 기본 제어 명령
@@ -338,20 +339,21 @@ class RobotContext(ContextBase):
         bb.set("int_var/cmd/val", motion_cmd)
         self.current_motion_cmd = motion_cmd
         
-    def wait_motion_ack(self, expected_ack_code: int, timeout: float = 5.0) -> bool:
+    def wait_motion_ack(self, motion_cmd: int, timeout: float = 5.0) -> bool:
         """
         모션 ACK 대기 (Conty가 명령을 받았는지 확인)
         
         Args:
-            expected_ack_code: 예상되는 ACK 코드 (motion + 500)
+            motion_cmd: 모션 명령 코드
             timeout: 타임아웃 시간 (초)
             
         Returns:
             bool: 성공 여부
         """
+        expected_ack_code = motion_cmd + 500
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_ack = bb.get("int_var/motion_ack/val", 0)
+            motion_ack = bb.get("int_var/motion_ack/val")
             if motion_ack == expected_ack_code:
                 Logger.debug(f"Motion ACK received: {motion_ack}")
                 return True
@@ -363,7 +365,7 @@ class RobotContext(ContextBase):
             
             time.sleep(0.05)
         
-        Logger.error(f"Motion ACK timeout: expected {expected_ack_code}, current {bb.get('int_var/motion_ack/val', 0)}")
+        Logger.error(f"Motion ACK timeout: expected {expected_ack_code} (cmd {motion_cmd}), current {bb.get('int_var/motion_ack/val')}")
         return False
 
     def wait_motion_done(self, expected_done_code: int, timeout: float = 30.0) -> bool:
@@ -379,7 +381,7 @@ class RobotContext(ContextBase):
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_done = bb.get("int_var/motion_done/val", 0)
+            motion_done = bb.get("int_var/motion_done/val")
             if motion_done == expected_done_code:
                 Logger.info(f"Motion done: {motion_done}")
                 self.last_motion_done = motion_done
@@ -392,7 +394,7 @@ class RobotContext(ContextBase):
             
             time.sleep(0.1)
         
-        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val', 0)}")
+        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val')}")
         return False
     
     def wait_motion_complete(self, motion_cmd: int, ack_timeout: float = 5.0, done_timeout: float = 30.0) -> bool:
@@ -407,9 +409,8 @@ class RobotContext(ContextBase):
         Returns:
             bool: 성공 여부
         """
-        # 1. ACK 대기 (motion + 500)
-        expected_ack = motion_cmd + 500
-        if not self.wait_motion_ack(expected_ack, timeout=ack_timeout):
+        # 1. ACK 대기 (내부에서 motion_cmd + 500 체크)
+        if not self.wait_motion_ack(motion_cmd, timeout=ack_timeout):
             Logger.error(f"Motion {motion_cmd}: ACK not received")
             return False
         
@@ -510,7 +511,7 @@ class RobotContext(ContextBase):
             time.sleep(1.0)  # 측정 대기
             
             # TODO: 두께 측정값 읽기
-            thickness = bb.get("device/gauge/thickness", 0.0)
+            thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement {i}: {thickness}")
             
             # 마지막 측정이 아니면 다시 잡기
@@ -674,10 +675,10 @@ class RobotContext(ContextBase):
     def get_system_comm_status(self) -> dict:
         """통신 상태 조회"""
         return {
-            "robot": bb.get("sys/robot/comm/state", 0),
-            "external": bb.get("sys/ext/comm/state", 0),
-            "remote_io": bb.get("sys/remoteio/comm/state", 0),
-            "gauge": bb.get("sys/gauge/comm/state", 0)
+            "robot": bb.get("sys/robot/comm/state"),
+            "external": bb.get("sys/ext/comm/state"),
+            "remote_io": bb.get("sys/remoteio/comm/state"),
+            "gauge": bb.get("sys/gauge/comm/state")
         }
 
     def reset_init_variables(self):

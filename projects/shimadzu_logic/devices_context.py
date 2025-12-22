@@ -165,7 +165,7 @@ class DeviceContext(ContextBase):
             # 장비 모든 상태 확인 후  error code 생성
             if gauge_violation[0] or smz_violation[0] or remoteio_violation[0] :
                 self.violation_code = gauge_violation[1] | smz_violation[1] | remoteio_violation[1]
-
+            self.violation_code = 0
             return self.violation_code
         except Exception as e:
             Logger.error(f"[device] Error in check_violation: {e}")

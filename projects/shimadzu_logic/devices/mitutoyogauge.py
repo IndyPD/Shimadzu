@@ -5,7 +5,7 @@ import sys
 import json
 import os
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 # 설정 파일 경로
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'MitutoyoGauge.json')
