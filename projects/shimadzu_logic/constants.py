@@ -1,4 +1,10 @@
 from pkg.fsm.base import *
+from datetime import datetime
+import inspect
+import threading
+
+def get_time():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 class IndyState(OpState) :
     SYSTEM_OFF = 0
@@ -293,7 +299,7 @@ class RobotViolation(ViolationType):
     TOOL_CHANGE_FAIL = 1 << 1       # 툴 교체 실패 (툴 미장착 등)
     QR_READ_FAIL = 1 << 2           # QR 리딩 실패 (코드 인식 불가 등)
     GRIPPER_FAIL = 1 << 3           # 그리퍼 동작 실패 (시편 놓침 등)
-    MOTION_VIOLATION = 1 << 4       # 이동 중 충돌, 티칭 오류, 경로 이탈 등
+    COLLISION_VIOLATION = 1 << 4       # 이동 중 충돌, 티칭 오류, 경로 이탈 등
     ISO_EMERGENCY_BUTTON = 1 << 8
     HW_VIOLATION = 1 << 9
     HW_NOT_READY = 1 << 10

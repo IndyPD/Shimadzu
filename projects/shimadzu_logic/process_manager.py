@@ -14,7 +14,7 @@ from .devices_fsm import DeviceFsm
 from .devices_context import DeviceContext
 
 # Robot FSM 및 Context 임포트
-from .robot_fsm import RobotFSM
+from .robot_fsm_v1 import RobotFSM
 from .robot_context import RobotContext
 
 # Logic FSM 및 Context 임포트
