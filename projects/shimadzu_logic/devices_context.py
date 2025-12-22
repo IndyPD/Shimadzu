@@ -74,6 +74,10 @@ class DeviceContext(ContextBase):
         self.th_IO_reader = Thread(target=self._thread_IO_reader, daemon=True)
         self.th_IO_reader.start()
 
+        # UI DO 제어 핸들러 스레드 추가
+        self.th_UI_DO_handler = Thread(target=self._thread_UI_DO_handler, daemon=True)
+        self.th_UI_DO_handler.start()
+
         Logger.info(f"[device] All device Init Complete")
     
     def shimadzu_test(self) :
@@ -112,6 +116,26 @@ class DeviceContext(ContextBase):
         while self.th_IO_reader :
             time.sleep(0.1)
             self.read_IO_status()
+
+    def _thread_UI_DO_handler(self):
+        """
+        Blackboard의 트리거를 감시하여 UI로부터의 DO 제어 명령을 처리하는 스레드입니다.
+        """
+        while True:
+            try:
+                if bb.get("ui/cmd/do_control/trigger") == 1:
+                    data = bb.get("ui/cmd/do_control/data")
+                    if isinstance(data, dict):
+                        address = data.get("address")
+                        val = data.get("value")
+                        if address is not None and val is not None:
+                            self.UI_DO_Control(int(address), int(val))
+                    
+                    # 처리 완료 후 트리거 리셋
+                    bb.set("ui/cmd/do_control/trigger", 0)
+            except Exception as e:
+                Logger.error(f"[device] Error in _thread_UI_DO_handler: {e}")
+            time.sleep(0.1)
 
     def check_violation(self) -> int:
         self.violation_code = 0
@@ -247,6 +271,26 @@ class DeviceContext(ContextBase):
             reraise(e)
             self.remote_comm_state = False
 
+    def UI_DO_Control(self, address: int, value: int) -> bool:
+        '''
+        UI로부터 요청받은 특정 주소(address)의 디지털 출력(DO)을 제어합니다.
+        :param address: 제어할 DO 비트 인덱스
+        :param value: 설정할 값 (0 또는 1)
+        :return: 성공 여부
+        '''
+        try:
+            if not hasattr(self, 'iocontroller') or self.iocontroller is None:
+                Logger.error("[device] UI_DO_Control: iocontroller is not initialized.")
+                return False
+            output_data = self.remote_output_data.copy()
+            output_data[address] = value
+            self.iocontroller.write_output_data(output_data)
+            Logger.info(f"[device] UI_DO_Control: DO {address} set to {value}")
+            return True
+        except Exception as e:
+            Logger.error(f"[device] Error in UI_DO_Control: {e}")
+            reraise(e)
+            return False
 
     def chuck_open(self) :
         '''

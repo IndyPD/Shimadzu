@@ -2,6 +2,21 @@
 
 이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지하며, 가독성을 위해 백틱 기호는 사용하지 않습니다.
 
+v0.1.0 - 2025-12-22
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+robot_fsm : 내용 추가
+mqtt_comm : mqtt 통신을 통한 DIO제어 확인
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+Zimmer그리퍼 아날로그 값 데이터 취득을 위해 케이블 수정: 그리퍼 파지실패 로직에 활용
+
 v0.1.0 - 2025-12-21 (Add initial log file and create logic test notebook)
 
 1. 하드웨어 (Hardware)

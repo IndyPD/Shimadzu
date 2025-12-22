@@ -157,7 +157,7 @@ class MqttComm:
             msg_id = f"{self.rules['id_prefixes']['manual']}{self.counters['manual']:03d}"
             payload = {
                 "kind": "command", "cmd": "system_control", "action": "do_control",
-                "params": {"address": address, "value": value}
+                "params": {"addr": address, "value": value}
             }
             frame = self._create_frame("ui.command", "logic", msg_id, payload)
             self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
@@ -187,8 +187,12 @@ class MqttComm:
                 self.tensile_command = 1 # 예시: START
             elif cmd == "binpick_control":
                 self.binpick_command = 1
-            elif cmd == "system_control" and action == "do_control":
-                self.do_control_state = 1
+            elif cmd == "system_control":
+                if action == "do_control":
+                    data = payload.get("params")
+                    if data:
+                        bb.set("ui/cmd/do_control/data", data)
+                        bb.set("ui/cmd/do_control/trigger", 1)
 
             # 더미 모드일 경우 즉시 자동 ACK
             if self.is_dummy:
