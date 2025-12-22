@@ -1,7 +1,8 @@
 from .constants import *
 from pkg.fsm.shared import *
 from pkg.utils.process_control import Flagger, reraise, FlagDelay
-
+from pkg.utils.blackboard import GlobalBlackboard
+bb = GlobalBlackboard()
 
 class LogicStatus:
     # Neuromeka 전체 시스템 상태 플래그
@@ -60,3 +61,4 @@ class LogicContext(ContextBase):
             return self.violation_code
         except Exception as e:
             reraise(e)
+

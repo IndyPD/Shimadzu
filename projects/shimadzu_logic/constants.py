@@ -1,5 +1,24 @@
 from pkg.fsm.base import *
 
+class IndyState(OpState) :
+    SYSTEM_OFF = 0
+    SYSTEM_ON = 1
+    VIOLATE = 2
+    RECOVER_HARD = 3
+    RECOVER_SOFT = 4
+    IDLE = 5
+    MOVING = 6
+    TEACHING = 7
+    COLLISION = 8
+    STOP_AND_OFF = 9
+    COMPLIANCE = 10
+    BRAKE_CONTROL = 11
+    SYSTEM_RESET = 12
+    SYSTEM_SWITCH = 13
+    VIOLATE_HARD = 15
+    MANUAL_RECOVER = 16
+    TELE_OP = 17
+
 
 # =======================================================
 # 1. LogicState (Neuromeka 전체 제어 상태) 정의

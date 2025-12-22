@@ -77,6 +77,8 @@ class RobotProgramAutoOnStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
         Logger.info("Robot: Turning on Auto Mode.")
     def operate(self, context: RobotContext) -> RobotEvent:
+        # TODO Conty프로그램 run 명령 전달
+        # bb.set("robot/program/run",1)
         return RobotEvent.PROGRAM_AUTO_ON_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         pass
@@ -95,6 +97,9 @@ class RobotWaitAutoCommandStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         # if bb.get("robot/start_process"):
         #     return RobotEvent.START_PROCESS
+        if bb.get("test/robot/motion") :
+            return RobotEvent.DO_AUTO_MOTION_MOVE_HOME
+        
         return RobotEvent.NONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         pass

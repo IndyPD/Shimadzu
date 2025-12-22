@@ -29,6 +29,7 @@
         "is_packaging_pos": false,
         "is_detect_pos": false
     },
+    
     "int_var/cmd/val": 0,
     "int_var/motion_done/val": 0,
     "int_var/robot/position/val" : 0,
