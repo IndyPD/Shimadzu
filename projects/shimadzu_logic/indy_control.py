@@ -508,7 +508,7 @@ class RobotCommunication:
             bb.set("ui/state/safe/stop",di_05)
         else :
             bb.set("ui/state/safe/stop",0)
-
+        
 
         # ''' Get Indy endtool data '''
         # endtool_do = self.indy.get_endtool_do()['signals']  # type: ignore

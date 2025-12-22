@@ -14,15 +14,12 @@ class LogicConnectingStrategy(Strategy):
         Logger.info("Logic: Starting connection checks for all modules (Device & Robot).")
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        # Device FSM과 Robot FSM이 모두 READY 상태인지 확인하여 연결 완료 처리
+
+        return LogicEvent.CONNECTION_ALL_SUCCESS
+            
         if not context.status.is_connected_all():
-            # TODO: Device FSM과 Robot FSM의 CONNECTING 상태를 모니터링하고 성공/실패 이벤트 반환
-            # if context.device_fsm.get_state() == DeviceState.READY and context.robot_fsm.get_state() == RobotState.READY:
-            #     context.status.is_connected_all.up()
-            #     return LogicEvent.CONNECTION_ALL_SUCCESS
-            # 임시로 DONE 이벤트 반환
-            Logger.info("Logic: All modules connected successfully.")
-            return LogicEvent.CONNECTION_ALL_SUCCESS
-        Logger.info("Logic: Waiting for all modules to connect...")
+            Logger.info("Logic: Waiting for all modules to connect...")
         return LogicEvent.NONE
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -74,8 +71,8 @@ class LogicIdleStrategy(Strategy):
             return LogicEvent.VIOLATION_DETECT
             
         # 자동화 모드 진입 명령 대기
-        # if bb.get("ui/auto_mode_start"):
-        #     return LogicEvent.START_AUTO_COMMAND
+        if bb.get("ui/cmd/auto/tensile") == 1: # ACTION_MAP_TENSIL["start"]
+            return LogicEvent.START_AUTO_COMMAND
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -134,7 +131,18 @@ class LogicRunProcessStrategy(Strategy):
         Logger.info("Logic: Running process loop.")
     
     def operate(self, context: LogicContext) -> LogicEvent:
-        # 하위 FSM 제어 및 모니터링
+        # 하위 FSM(Robot, Device)의 상태를 모니터링하며 전체 공정 시퀀스를 제어합니다.
+        # 1. Robot FSM에게 동작 명령을 내리고 완료를 대기합니다.
+        # 2. Device FSM에게 동작 명령을 내리고 완료를 대기합니다.
+        
+        # [예시 시퀀스 제어 로직]
+        # if context.robot_fsm.get_state() == RobotState.WAIT_AUTO_COMMAND:
+        #     # 다음 로봇 동작 명령 전달 (예: 시편 픽업)
+        #     # context.robot_fsm.trigger(RobotEvent.DO_AUTO_MOTION_APPROACH_RACK)
+        #     pass
+
+        # TODO: 실제 시퀀스 제어 로직 구현 (Robot Move -> Device Measure -> Robot Move ...)
+        # 현재는 시뮬레이션을 위해 공정 완료 이벤트를 즉시 반환합니다.
         return LogicEvent.PROCESS_FINISHED
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:

@@ -1,0 +1,32 @@
+{
+  "topics": {
+    "ui_cmd": "/ui/cmd",
+    "logic_evt": "/logic/evt",
+    "logic_cmd": "/logic/cmd",
+    "binpick_evt": "/binpick/evt"
+  },
+  "ack_ids": {
+    "standard": "logic-ack-001",
+    "rejected": "logic-ack-002",
+    "manual_prefix": "logic-ack-m-",
+    "binpick": "logic-ack-001"
+  },
+  "event_ids": {
+    "dio_status": "logic-evt-dio-001",
+    "system_status": "logic-evt-state-001",
+    "binpick_status": "bp-status-001"
+  },
+  "id_prefixes": {
+    "tensile": "ui-tensile-cmd-",
+    "manual": "ui-manual-cmd-",
+    "binpick_start": "ui-start-",
+    "binpick_pause": "ui-pause-",
+    "binpick_shake": "ui-shake-",
+    "logic_to_bp": "logic-cmd-"
+  },
+  "roles": {
+    "ui": "ui",
+    "logic": "logic",
+    "binpick": "binpick"
+  }
+}

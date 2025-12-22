@@ -23,20 +23,31 @@ terminate_flag = threading.Event()
 app_server = None
 process = None
 robot = None
+mqtt_communicator = None
+
+def stop():
+    """외부에서 시스템을 안전하게 종료하기 위한 함수"""
+    terminate_flag.set()
 
 def sig_handler(signum, frame):
     Logger.warn(f"[SIGNAL] Received signal {signum}. Gracefully shutting down...")
-    terminate_flag.set()
-                
-            
+    stop()
 
-def main():
+def main(blocking=False):
     ''' Signal handler '''
-    global robot, process, app_server
+    global robot, process, app_server, mqtt_communicator
+    should_cleanup = blocking
+
+    # Ensure the termination flag is reset at start
+    terminate_flag.clear()
+
     # signal.signal은 main 스레드에서만 동작하므로,
     # run.py와 같이 main 함수를 직접 실행하는 경우에만 유효합니다.
-    signal.signal(signal.SIGINT, sig_handler)
-    signal.signal(signal.SIGTERM, sig_handler)
+    try:
+        signal.signal(signal.SIGINT, sig_handler)
+        signal.signal(signal.SIGTERM, sig_handler)
+    except ValueError:
+        Logger.info("[SYSTEM] Signal handlers skipped (Notebook environment).")
 
     Logger.info(f"[SYSTEM] Starting {project_name} System...")
 
@@ -53,8 +64,10 @@ def main():
         # time.sleep(0.1)
 
         #MQTT 통신 시작
-        mqtt_communicator = mqtt_comm.MqttComm()
-        mqtt_communicator.start()
+        mqtt_communicator = mqtt_comm.MqttComm(role='logic', is_dummy=False, 
+                                               rule_path="projects/shimadzu_logic/configs/mqtt_rule.json",
+                                               stop_event=terminate_flag)
+        mqtt_communicator.run()
         time.sleep(0.1)
         
         # ProcessManager를 생성하고 시작합니다.
@@ -65,21 +78,25 @@ def main():
 
         Logger.info(f"[SYSTEM] {project_name} system initialized. Running...")
 
-        # 메인 스레드는 여기에서 종료되도록 변경
-        # FSM 스레드가 백그라운드에서 계속 실행됩니다.
+        # if not blocking:
+        #     return
+
+        # 메인 스레드 대기 루프: terminate_flag가 set될 때까지 대기합니다.
         # while not terminate_flag.is_set():
         #     time.sleep(0.5)
 
     except Exception as e:
         Logger.error(f"[SYSTEM ERROR] Unexpected exception: {e}")
         Logger.error(traceback.format_exc())
+        should_cleanup = True
 
     finally:
-        if mqtt_communicator:
-            mqtt_communicator.stop()
-        if process:
-            process.stop()
-        Logger.info("[SYSTEM] System Shutdown Complete.")
+        if should_cleanup:
+            if mqtt_communicator:
+                mqtt_communicator.stop()
+            if process:
+                process.stop()
+            Logger.info("[SYSTEM] System Shutdown Complete.")
 
 if __name__ == '__main__':
     main()

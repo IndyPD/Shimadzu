@@ -47,22 +47,22 @@ class ProcessManager:
         
         # FSM 인스턴스 생성
         # Device FSM
-        Logger.info("Initializing Device FSM...")
-        self.device_fsm = DeviceFsm(DeviceContext())
-        self.device_fsm.start_service_background()
-        Logger.info("Device FSM initialized.")
+        # Logger.info("Initializing Device FSM...")
+        # self.device_fsm = DeviceFsm(DeviceContext())
+        # self.device_fsm.start_service_background()
+        # Logger.info("Device FSM initialized.")
 
-        # Robot FSM
+        # # Robot FSM
         # Logger.info("Initializing Robot FSM...")
         # self.robot_fsm = RobotFSM(RobotContext())
         # self.robot_fsm.start_service_background()
         # Logger.info("Robot FSM initialized.")
 
-        # Logic FSM
-        # Logger.info("Initializing Logic FSM...")
-        # self.logic_fsm = LogicFSM(LogicContext())
-        # self.logic_fsm.start_service_background()
-        # Logger.info("Logic FSM initialized.")
+        # # Logic FSM
+        Logger.info("Initializing Logic FSM...")
+        self.logic_fsm = LogicFSM(LogicContext())
+        self.logic_fsm.start_service_background()
+        Logger.info("Logic FSM initialized.")
 
 
         time.sleep(5)
@@ -77,8 +77,9 @@ class ProcessManager:
 
     def stop(self):
         self.running = False
-
-        
+        if hasattr(self, 'logic_fsm'):
+            self.logic_fsm.stop()
+            
         Logger.info("[ProcessManager] All FSMs stopped.")
 
     def check_device_state(self) :

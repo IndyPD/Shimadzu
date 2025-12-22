@@ -107,7 +107,6 @@ class ReadyStrategy(Strategy):
     def operate(self, context: DeviceContext) -> DeviceEvent:
         if context.check_violation():
             return DeviceEvent.VIOLATION_DETECT
-            
         # 작업자의 START_COMMAND 대기 로직이 여기에 추가되어야 함
         # 예시: if bb.get("user/start_request"): return DeviceEvent.START_COMMAND
         

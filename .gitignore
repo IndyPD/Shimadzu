@@ -1,10 +1,18 @@
-# Jupyter Notebook
-logic_test.ipynb
-.ipynb_checkpoints/
+# Log folders and files
+LOG/
+logs/
+*.log
 
-# Python
+# Python bytecode and cache
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Local Configs
-projects/shimadzu_logic/configs/remote_io_copy.json
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE settings
+.vscode/
+.idea/
