@@ -52,10 +52,6 @@
   "ui/state/robot/gripper_state": 0,
   "ui/state/program_state": 0,
   "ui/state/safe/stop": 0,
-  "recipe/pot1/shift/basket": 0,
-  "recipe/pot2/shift/basket": 0,
-  "recipe/pot1/shift/basket/init": false,
-  "recipe/pot2/shift/basket/init": false,
   "ui/command/robot/gripper": 0,
   "ui/command/program_control": 0,
   "ui/command/go_home": 0,
@@ -170,7 +166,5 @@
   "device/shimadzu/ask_register/params": {},
   "recover/sw/done": false,
   "ui/state/error": 0,
-  "ui/state/input_unit/state": 0,
-  "ui/state/pot1/state": 0,
-  "ui/state/pot2/state": 0
+  "ui/state/input_unit/state": 0
 }

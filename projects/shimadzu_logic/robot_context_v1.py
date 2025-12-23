@@ -95,16 +95,16 @@ class RobotContext(ContextBase):
 
             return self.violation_code
         except Exception as e:
-            Logger.error(f"[RobotContextV1] Exception in check_violation: {e}")
+            Logger.error(f"[RobotContext] Exception in check_violation: {e}")
             reraise(e)
 
     def _check_emergency_stop(self) -> bool:
         """비상 정지 버튼 상태 확인 (4개 EMO 스위치)"""
         emo_switches = [
-            bb.get("device/remote/input/EMO_01_SW"),
-            bb.get("device/remote/input/EMO_02_SW"),
-            bb.get("device/remote/input/EMO_03_SW"),
-            bb.get("device/remote/input/EMO_04_SW")
+            bb.get("device/remote/input/EMO_01_SW", 0),
+            bb.get("device/remote/input/EMO_02_SW", 0),
+            bb.get("device/remote/input/EMO_03_SW", 0),
+            bb.get("device/remote/input/EMO_04_SW", 0)
         ]
         return any(emo_switches)
 
@@ -162,7 +162,7 @@ class RobotContext(ContextBase):
     def _check_external_safety(self):
         """외부 안전 장치 상태 확인"""
         # 안전 정지 상태 확인
-        if bb.get("ui/state/safe/stop"):
+        if bb.get("ui/state/safe/stop", 0):
             self.violation_code |= RobotViolation.HW_VIOLATION.value
             Logger.warn("Safety stop activated")
 
@@ -196,11 +196,11 @@ class RobotContext(ContextBase):
 
     def get_gripper_state(self):
         """그리퍼 상태 확인"""
-        return bb.get("int_var/grip_state/val")
+        return bb.get("int_var/grip_state/val", 0)
 
     def get_current_position(self):
         """현재 로봇 위치"""
-        return bb.get("int_var/robot/position/val")
+        return bb.get("int_var/robot/position/val", 0)
 
     # ========================================
     # 기본 제어 명령
@@ -322,22 +322,57 @@ class RobotContext(ContextBase):
     # 모션 제어 (엑셀 문서 기반)
     # ========================================
     
-    def send_motion_command(self, motion_cmd: int):
+    def send_motion_command(self, motion_cmd: int, max_retries: int = 3) -> bool:
         """
-        모션 명령 전송
+        모션 명령 전송 with ACK 재시도
+        
+        안전한 통신 흐름:
+        1. ACK/DONE 초기화 (이전 값 제거)
+        2. 초기화 확인 (0으로 리셋 확인)
+        3. CMD 전송
+        4. ACK 대기 (motion_cmd + 500)
+        5. ACK 받으면 CMD 리셋
         
         Args:
-            motion_cmd: 모션 명령 코드 (엑셀 문서 참조)
-                - 1~6: 홈에서 각 위치로 이동
-                - 21~26: 각 위치에서 홈으로 복귀
-                - 90: 그리퍼 열기, 91: 그리퍼 닫기
-                - 100: 홈 이동 (복구)
-                - 101~102: 툴 변경
-                - 1000+: 공정 모션
+            motion_cmd: 모션 명령 코드
+            max_retries: 최대 재시도 횟수
+            
+        Returns:
+            bool: ACK 수신 성공 여부
         """
-        Logger.info(f"Sending motion command: {motion_cmd}")
-        bb.set("int_var/cmd/val", motion_cmd)
-        self.current_motion_cmd = motion_cmd
+        # 0. ACK/DONE 초기화
+        bb.set("int_var/motion_ack/val", 0)
+        bb.set("int_var/motion_done/val", 0)
+        
+        # 0-1. 초기화 확인 (안전장치)
+        time.sleep(0.05)  # 초기화 반영 대기
+        if bb.get("int_var/motion_ack/val", -1) != 0 or bb.get("int_var/motion_done/val", -1) != 0:
+            Logger.error(f"Failed to reset ACK/DONE before sending cmd {motion_cmd}")
+            return False
+        
+        # 1. CMD 전송 with 재시도
+        for attempt in range(1, max_retries + 1):
+            Logger.info(f"Sending motion command: {motion_cmd} (attempt {attempt}/{max_retries})")
+            bb.set("int_var/cmd/val", motion_cmd)
+            self.current_motion_cmd = motion_cmd
+            
+            # 2. ACK 대기 (5초)
+            if self.wait_motion_ack(motion_cmd, timeout=5.0):
+                # 3. ACK 받음 - CMD 리셋
+                bb.set("int_var/cmd/val", 0)
+                Logger.debug(f"Motion {motion_cmd}: CMD reset after ACK")
+                return True
+            
+            # ACK 못 받음
+            if attempt < max_retries:
+                Logger.warn(f"Motion ACK not received for cmd {motion_cmd}, retrying in 0.5s...")
+                bb.set("int_var/cmd/val", 0)  # CMD 리셋 후 재시도
+                time.sleep(0.5)
+            else:
+                Logger.error(f"Motion command {motion_cmd} failed after {max_retries} attempts")
+                bb.set("int_var/cmd/val", 0)  # 실패해도 CMD는 리셋
+        
+        return False
         
     def wait_motion_ack(self, motion_cmd: int, timeout: float = 5.0) -> bool:
         """
@@ -353,9 +388,9 @@ class RobotContext(ContextBase):
         expected_ack_code = motion_cmd + 500
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_ack = bb.get("int_var/motion_ack/val")
+            motion_ack = bb.get("int_var/motion_ack/val", 0)
             if motion_ack == expected_ack_code:
-                Logger.debug(f"Motion ACK received: {motion_ack}")
+                Logger.debug(f"Motion ACK received: {motion_ack} (cmd={motion_cmd})")
                 return True
             
             # Violation 체크
@@ -365,7 +400,7 @@ class RobotContext(ContextBase):
             
             time.sleep(0.05)
         
-        Logger.error(f"Motion ACK timeout: expected {expected_ack_code} (cmd {motion_cmd}), current {bb.get('int_var/motion_ack/val')}")
+        Logger.error(f"Motion ACK timeout: expected {expected_ack_code} (cmd={motion_cmd}), current {bb.get('int_var/motion_ack/val', 0)}")
         return False
 
     def wait_motion_done(self, expected_done_code: int, timeout: float = 30.0) -> bool:
@@ -381,7 +416,7 @@ class RobotContext(ContextBase):
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_done = bb.get("int_var/motion_done/val")
+            motion_done = bb.get("int_var/motion_done/val", 0)
             if motion_done == expected_done_code:
                 Logger.info(f"Motion done: {motion_done}")
                 self.last_motion_done = motion_done
@@ -394,36 +429,53 @@ class RobotContext(ContextBase):
             
             time.sleep(0.1)
         
-        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val')}")
+        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val', 0)}")
         return False
     
-    def wait_motion_complete(self, motion_cmd: int, ack_timeout: float = 5.0, done_timeout: float = 30.0) -> bool:
+    def wait_motion_complete(self, motion_cmd: int, ack_timeout: float = 5.0, done_timeout: float = 30.0, max_retries: int = 3) -> bool:
         """
         모션 명령 전송 후 ACK 확인 → 완료 대기 (통합 메서드)
         
+        안전한 통신 흐름:
+        1. ACK/DONE 초기화 (send_motion_command 내부)
+        2. CMD 전송 + ACK 대기 + CMD 리셋
+        3. DONE 대기
+        4. DONE 받으면 ACK/DONE 초기화 (다음 모션 준비)
+        
         Args:
             motion_cmd: 모션 명령 코드
-            ack_timeout: ACK 대기 타임아웃 (초)
+            ack_timeout: ACK 대기 타임아웃 (초) - 사용 안 됨
             done_timeout: 완료 대기 타임아웃 (초)
+            max_retries: ACK 재시도 횟수
             
         Returns:
             bool: 성공 여부
         """
-        # 1. ACK 대기 (내부에서 motion_cmd + 500 체크)
-        if not self.wait_motion_ack(motion_cmd, timeout=ack_timeout):
-            Logger.error(f"Motion {motion_cmd}: ACK not received")
+        # 1. CMD 전송 + ACK 확인 (재시도 포함, 내부에서 ACK/DONE 초기화)
+        if not self.send_motion_command(motion_cmd, max_retries=max_retries):
+            Logger.error(f"Motion {motion_cmd}: Failed to send command with ACK")
             return False
         
-        # 2. 완료 대기 (motion + 10000)
+        # 2. 완료 대기 (motion_cmd + 10000)
         expected_done = motion_cmd + 10000
         if not self.wait_motion_done(expected_done, timeout=done_timeout):
             Logger.error(f"Motion {motion_cmd}: Completion timeout")
             return False
         
+        # 3. 완료 후 ACK/DONE 초기화 (다음 모션 준비)
+        bb.set("int_var/motion_ack/val", 0)
+        bb.set("int_var/motion_done/val", 0)
+        Logger.debug(f"Motion {motion_cmd}: ACK/DONE reset after completion")
+        
         return True
 
     def motion_command_reset(self):
-        """모션 명령 초기화"""
+        """
+        모션 명령 초기화
+        
+        Note: wait_motion_complete 사용 시 ACK 후 자동으로 리셋되므로 
+        일반적으로 직접 호출할 필요 없음
+        """
         bb.set("int_var/cmd/val", 0)
         Logger.debug("Motion command reset")
 
@@ -443,15 +495,12 @@ class RobotContext(ContextBase):
             return False
         
         # 1. 홈 -> 랙 앞 (motion 1)
-        self.send_motion_command(1)
-        if not self.wait_motion_done(10001):
+        if not self.wait_motion_complete(1):
             return False
         
         # 2. 랙 앞 -> n층 앞 (motion 1{floor}0)
         floor_motion = 1000 + floor * 10
-        self.send_motion_command(floor_motion)
-        expected_done = floor_motion + 10000
-        if not self.wait_motion_done(expected_done):
+        if not self.wait_motion_complete(floor_motion):
             return False
         
         Logger.info(f"Successfully moved to rack floor {floor}")
@@ -467,9 +516,7 @@ class RobotContext(ContextBase):
         """
         # 1. n층 N번 위치로 이동
         pick_motion = 1000 + floor * 10 + position
-        self.send_motion_command(pick_motion)
-        expected_done = pick_motion + 10000
-        if not self.wait_motion_done(expected_done):
+        if not self.wait_motion_complete(pick_motion):
             return False
         
         # 2. 그리퍼 닫기
@@ -478,9 +525,7 @@ class RobotContext(ContextBase):
         
         # 3. n층 앞으로 복귀
         retract_motion = 2000 + floor * 10
-        self.send_motion_command(retract_motion)
-        expected_done = retract_motion + 10000
-        if not self.wait_motion_done(expected_done):
+        if not self.wait_motion_complete(retract_motion):
             return False
         
         Logger.info(f"Successfully picked specimen from floor {floor}, position {position}")
@@ -494,16 +539,14 @@ class RobotContext(ContextBase):
             num_measurements: 측정 횟수 (1~3)
         """
         # 1. 두께 측정기 앞 이동
-        self.send_motion_command(3000)
-        if not self.wait_motion_done(13000):
+        if not self.wait_motion_complete(3000):
             return False
         
         # 2. 측정 수행
         for i in range(1, num_measurements + 1):
             # 측정 위치에 시편 놓기
             place_motion = 3000 + i
-            self.send_motion_command(place_motion)
-            if not self.wait_motion_done(place_motion + 10000):
+            if not self.wait_motion_complete(place_motion):
                 return False
             
             # 그리퍼 열기
@@ -511,20 +554,18 @@ class RobotContext(ContextBase):
             time.sleep(1.0)  # 측정 대기
             
             # TODO: 두께 측정값 읽기
-            thickness = bb.get("device/gauge/thickness")
+            thickness = bb.get("device/gauge/thickness", 0.0)
             Logger.info(f"Thickness measurement {i}: {thickness}")
             
             # 마지막 측정이 아니면 다시 잡기
             if i < num_measurements:
                 grab_motion = 3010 + i
-                self.send_motion_command(grab_motion)
-                if not self.wait_motion_done(grab_motion + 10000):
+                if not self.wait_motion_complete(grab_motion):
                     return False
                 self.gripper_control(open=False)
         
         # 3. 두께 측정기 앞으로 복귀
-        self.send_motion_command(4000)
-        if not self.wait_motion_done(14000):
+        if not self.wait_motion_complete(4000):
             return False
         
         Logger.info(f"Thickness measurement completed ({num_measurements} measurements)")
@@ -533,13 +574,11 @@ class RobotContext(ContextBase):
     def align_specimen(self) -> bool:
         """시편 정렬"""
         # 1. 정렬기 앞 이동
-        self.send_motion_command(5000)
-        if not self.wait_motion_done(15000):
+        if not self.wait_motion_complete(5000):
             return False
         
         # 2. 시편 놓기
-        self.send_motion_command(5001)
-        if not self.wait_motion_done(15001):
+        if not self.wait_motion_complete(5001):
             return False
         
         self.gripper_control(open=True)
@@ -548,15 +587,13 @@ class RobotContext(ContextBase):
         time.sleep(2.0)  # TODO: 정렬 완료 신호 대기로 변경
         
         # 4. 시편 잡기
-        self.send_motion_command(5011)
-        if not self.wait_motion_done(15011):
+        if not self.wait_motion_complete(5011):
             return False
         
         self.gripper_control(open=False)
         
         # 5. 정렬기 앞 복귀
-        self.send_motion_command(6000)
-        if not self.wait_motion_done(16000):
+        if not self.wait_motion_complete(6000):
             return False
         
         Logger.info("Specimen alignment completed")
@@ -565,21 +602,18 @@ class RobotContext(ContextBase):
     def place_in_tensile_machine(self) -> bool:
         """인장시험기에 시편 장착"""
         # 1. 인장시험기 앞 이동
-        self.send_motion_command(7000)
-        if not self.wait_motion_done(17000):
+        if not self.wait_motion_complete(7000):
             return False
         
         # 2. 시편 장착 위치 이동
-        self.send_motion_command(7001)
-        if not self.wait_motion_done(17001):
+        if not self.wait_motion_complete(7001):
             return False
         
         # 3. 그리퍼 열기
         self.gripper_control(open=True)
         
         # 4. 인장시험기 앞 복귀
-        self.send_motion_command(8000)
-        if not self.wait_motion_done(18000):
+        if not self.wait_motion_complete(8000):
             return False
         
         Logger.info("Specimen placed in tensile machine")
@@ -588,21 +622,18 @@ class RobotContext(ContextBase):
     def collect_from_tensile_machine(self) -> bool:
         """인장시험 후 시편 수거"""
         # 1. 인장시험기 앞 이동
-        self.send_motion_command(7000)
-        if not self.wait_motion_done(17000):
+        if not self.wait_motion_complete(7000):
             return False
         
         # 2. 시편 수거 위치 이동
-        self.send_motion_command(7011)
-        if not self.wait_motion_done(17011):
+        if not self.wait_motion_complete(7011):
             return False
         
         # 3. 그리퍼 닫기
         self.gripper_control(open=False)
         
         # 4. 인장시험기 앞 복귀
-        self.send_motion_command(8000)
-        if not self.wait_motion_done(18000):
+        if not self.wait_motion_complete(8000):
             return False
         
         Logger.info("Specimen collected from tensile machine")
@@ -611,13 +642,11 @@ class RobotContext(ContextBase):
     def discard_to_scrap(self) -> bool:
         """스크랩 배출"""
         # 1. 스크랩 배출대 앞 이동
-        self.send_motion_command(7020)
-        if not self.wait_motion_done(17020):
+        if not self.wait_motion_complete(7020):
             return False
         
         # 2. 스크랩 버리기
-        self.send_motion_command(7021)
-        if not self.wait_motion_done(17021):
+        if not self.wait_motion_complete(7021):
             return False
         
         # 3. 그리퍼 열기
@@ -675,10 +704,10 @@ class RobotContext(ContextBase):
     def get_system_comm_status(self) -> dict:
         """통신 상태 조회"""
         return {
-            "robot": bb.get("sys/robot/comm/state"),
-            "external": bb.get("sys/ext/comm/state"),
-            "remote_io": bb.get("sys/remoteio/comm/state"),
-            "gauge": bb.get("sys/gauge/comm/state")
+            "robot": bb.get("sys/robot/comm/state", 0),
+            "external": bb.get("sys/ext/comm/state", 0),
+            "remote_io": bb.get("sys/remoteio/comm/state", 0),
+            "gauge": bb.get("sys/gauge/comm/state", 0)
         }
 
     def reset_init_variables(self):
