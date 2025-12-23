@@ -43,7 +43,15 @@ class LogicState(OpState):
     CHECK_DEVICE_STATUS = 8   # 3. 장비 상태 확인
     WAIT_PROCESS = 9          # 4. 자동화 공정 대기
     RUN_PROCESS = 10          # 5. 자동화 공정 실행
-    PROCESS_COMPLETE = 11     # 6. 자동화 공정 완료
+    DETERMINE_TASK = 11       # 6. 작업 내용 판단
+    PICK_SPECIMEN = 12        # 7. 시편 잡고 나오기
+    MEASURE_THICKNESS = 13    # 8. 시편 두께 측정
+    ALIGN_SPECIMEN = 14       # 9. 시편 정렬
+    LOAD_TENSILE_MACHINE = 15 # 10. 시편 인장시험기에 장착
+    START_TENSILE_TEST = 16   # 11. 시편 인장 시험 시작
+    COLLECT_AND_DISCARD = 17  # 12. 시편 수거 및 버리기
+    PROCESS_COMPLETE = 18     # 13. 자동화 공정 완료
+
     
 # 2. LogicEvent (Neuromeka 전체 제어 이벤트) 정의
 class LogicEvent(OpEvent):
@@ -75,6 +83,14 @@ class LogicEvent(OpEvent):
     DO_STOP = 24                # 정지 실행
     DO_PAUSE = 25               # 일시 정지 실행
     DO_STEP_STOP = 26           # 단계 정지 실행
+    DO_DETERMINE_TASK = 27      # 작업 내용 판단 실행
+    DO_PICK_SPECIMEN = 28       # 시편 잡고 나오기 실행
+    DO_MEASURE_THICKNESS = 29   # 시편 두께 측정 실행
+    DO_ALIGN_SPECIMEN = 30      # 시편 정렬 실행
+    DO_LOAD_TENSILE_MACHINE = 31 # 시편 인장시험기에 장착 실행
+    DO_START_TENSILE_TEST = 32  # 시편 인장 시험 시작 실행
+    DO_COLLECT_AND_DISCARD = 33 # 시편 수거 및 버리기 실행
+    DO_PROCESS_COMPLETE = 34    # 자동화 공정 완료 실행
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
 class LogicViolation(ViolationType):

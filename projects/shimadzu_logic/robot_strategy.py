@@ -13,7 +13,7 @@ class RobotConnectingStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
         Logger.info("Robot: Attempting to connect to robot controller.")
     def operate(self, context: RobotContext) -> RobotEvent:
-        if not context.check_violation() & RobotViolation.CONNECTION_TIMEOUT.value:
+        if not context.check_violation() & RobotViolation.CONNECTION_TIMEOUT:
             return RobotEvent.CONNECTION_SUCCESS
         return RobotEvent.NONE
     
@@ -22,7 +22,7 @@ class RobotConnectingStrategy(Strategy):
         
 class RobotErrorStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
-        violation_names = [v.name for v in RobotViolation if v.value & context.violation_code]
+        violation_names = [v.name for v in RobotViolation if v & context.violation_code]
         Logger.error(f"Robot Violation Detected: {'|'.join(violation_names)}", popup=True)
     def operate(self, context: RobotContext) -> RobotEvent:
         if not context.check_violation():

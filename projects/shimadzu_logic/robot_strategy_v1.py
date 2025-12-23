@@ -18,7 +18,7 @@ class RobotConnectingStrategy(Strategy):
         
     def operate(self, context: RobotContext) -> RobotEvent:
         # 연결 체크: CONNECTION_TIMEOUT 위반이 없으면 연결 성공
-        if not (context.check_violation() & RobotViolation.CONNECTION_TIMEOUT.value):
+        if not (context.check_violation() & RobotViolation.CONNECTION_TIMEOUT):
             context.status.is_connected.up()
             return RobotEvent.CONNECTION_SUCCESS
         return RobotEvent.NONE
@@ -33,7 +33,7 @@ class RobotErrorStrategy(Strategy):
     """에러 상태 처리"""
     
     def prepare(self, context: RobotContext, **kwargs):
-        violation_names = [v.name for v in RobotViolation if v.value & context.violation_code]
+        violation_names = [v.name for v in RobotViolation if v & context.violation_code]
         Logger.error(f"Robot Violation Detected: {' | '.join(violation_names)}", popup=True)
         
         # 에러 표시

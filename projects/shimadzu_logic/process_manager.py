@@ -59,10 +59,10 @@ class ProcessManager:
         # Logger.info("Robot FSM initialized.")
 
         # # Logic FSM
-        Logger.info("Initializing Logic FSM...")
-        self.logic_fsm = LogicFSM(LogicContext())
-        self.logic_fsm.start_service_background()
-        Logger.info("Logic FSM initialized.")
+        # Logger.info("Initializing Logic FSM...")
+        # self.logic_fsm = LogicFSM(LogicContext())
+        # self.logic_fsm.start_service_background()
+        # Logger.info("Logic FSM initialized.")
 
 
         time.sleep(5)

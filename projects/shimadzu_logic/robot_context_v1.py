@@ -69,19 +69,19 @@ class RobotContext(ContextBase):
         try:
             # 1. 비상 정지 버튼 체크
             if self._check_emergency_stop():
-                self.violation_code |= RobotViolation.ISO_EMERGENCY_BUTTON.value
+                self.violation_code |= RobotViolation.ISO_EMERGENCY_BUTTON
 
             # 2. 하드웨어 오류 상태
             if self.status.is_error_state():
-                self.violation_code |= RobotViolation.HW_VIOLATION.value
+                self.violation_code |= RobotViolation.HW_VIOLATION
             
             # 3. 로봇 연결 상태
             if not self.status.is_connected():
-                self.violation_code |= RobotViolation.CONNECTION_TIMEOUT.value
+                self.violation_code |= RobotViolation.CONNECTION_TIMEOUT
                 
             # 4. 로봇 준비 상태
             if self.status.is_connected() and not self.status.is_ready():
-                self.violation_code |= RobotViolation.HW_NOT_READY.value
+                self.violation_code |= RobotViolation.HW_NOT_READY
             
             # 5. Indy Robot State 상세 체크
             self._check_indy_robot_state()
@@ -90,7 +90,7 @@ class RobotContext(ContextBase):
             self._check_external_safety()
 
             if self.violation_code != 0:
-                violation_names = [v.name for v in RobotViolation if v.value & self.violation_code]
+                violation_names = [v.name for v in RobotViolation if v & self.violation_code]
                 Logger.error(f"{get_time()}: [Robot FSM] Violation detected: {' | '.join(violation_names)}")
 
             return self.violation_code
@@ -136,25 +136,25 @@ class RobotContext(ContextBase):
 
         # NOT_READY 상태들
         if current_indy_state in (Robot_OP_State.OP_SYSTEM_OFF, Robot_OP_State.OP_STOP_AND_OFF):
-            self.violation_code |= RobotViolation.HW_NOT_READY.value
+            self.violation_code |= RobotViolation.HW_NOT_READY
 
         # VIOLATION 상태들
         if current_indy_state in (Robot_OP_State.OP_VIOLATE, Robot_OP_State.OP_VIOLATE_HARD,
                                   Robot_OP_State.OP_SYSTEM_SWITCH):
-            self.violation_code |= RobotViolation.HW_VIOLATION.value
+            self.violation_code |= RobotViolation.HW_VIOLATION
 
         # COLLISION 상태
         if current_indy_state == Robot_OP_State.OP_COLLISION:
-            self.violation_code |= RobotViolation.COLLISION_VIOLATION.value
+            self.violation_code |= RobotViolation.COLLISION_VIOLATION
 
         # BRAKE_CONTROL 상태
         if current_indy_state == Robot_OP_State.OP_BRAKE_CONTROL:
-            self.violation_code |= RobotViolation.HW_VIOLATION.value
+            self.violation_code |= RobotViolation.HW_VIOLATION
 
         # RECOVERING 상태들
         if current_indy_state in (Robot_OP_State.OP_RECOVER_HARD, Robot_OP_State.OP_RECOVER_SOFT,
                                   Robot_OP_State.OP_MANUAL_RECOVER):
-            self.violation_code |= RobotViolation.HW_VIOLATION.value
+            self.violation_code |= RobotViolation.HW_VIOLATION
 
         if self.violation_code != 0:
             Logger.error(f"{get_time()}: [Indy State] {current_indy_state.name} (violation={self.violation_code})")
@@ -163,7 +163,7 @@ class RobotContext(ContextBase):
         """외부 안전 장치 상태 확인"""
         # 안전 정지 상태 확인
         if bb.get("ui/state/safe/stop"):
-            self.violation_code |= RobotViolation.HW_VIOLATION.value
+            self.violation_code |= RobotViolation.HW_VIOLATION
             Logger.warn("Safety stop activated")
 
     # ========================================

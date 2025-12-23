@@ -32,7 +32,7 @@ class ConnectingStrategy(Strategy):
 class ErrorStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
         Logger.info("[device] enter ErrorStrategy")
-        violation_names = [violation.name for violation in DeviceViolation if violation.value & context.violation_code]
+        violation_names = [violation.name for violation in DeviceViolation if violation & context.violation_code]
         # Logger.error(f"Violation Detected: "
         #              f"{'|'.join(violation_names)}", popup=True)
 
@@ -82,7 +82,7 @@ class StopOffStrategy(Strategy):
             ExecutionUnit("Off", function=Logger.info,
                           args=("[device] turned off",),
                           end_conditions=ConditionUnit(
-                              lambda: context.check_violation() & DeviceViolation.ISO_EMERGENCY_BUTTON.value
+                              lambda: context.check_violation() & DeviceViolation.ISO_EMERGENCY_BUTTON
                           ))
         ])
 

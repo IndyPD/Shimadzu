@@ -15,11 +15,10 @@ class LogicConnectingStrategy(Strategy):
 
     def operate(self, context: LogicContext) -> LogicEvent:
         # Device FSM과 Robot FSM이 모두 READY 상태인지 확인하여 연결 완료 처리
-
-        return LogicEvent.CONNECTION_ALL_SUCCESS
-            
-        if not context.status.is_connected_all():
-            Logger.info("Logic: Waiting for all modules to connect...")
+        if context.status.is_connected_all():
+            return LogicEvent.CONNECTION_ALL_SUCCESS
+        
+        Logger.info("Logic: Waiting for all modules to connect...")
         return LogicEvent.NONE
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -27,7 +26,7 @@ class LogicConnectingStrategy(Strategy):
 
 class LogicErrorStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
-        violation_names = [v.name for v in LogicViolation if v.value & context.violation_code]
+        violation_names = [v.name for v in LogicViolation if v & context.violation_code]
         Logger.error(f"Logic Critical Violation Detected: {'|'.join(violation_names)}", popup=True)
         # TODO: 모든 서브 모듈에 정지/에러 명령 전파
     def operate(self, context: LogicContext) -> LogicEvent:
@@ -87,8 +86,8 @@ class LogicWaitCommandStrategy(Strategy):
         Logger.info("Logic: Waiting for batch start command.")
     
     def operate(self, context: LogicContext) -> LogicEvent:
-        # if bb.get("ui/start_batch"):
-        #     return LogicEvent.START_AUTO_COMMAND
+        if bb.get("ui/cmd/auto/tensile") == 1:
+            return LogicEvent.START_AUTO_COMMAND
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -143,8 +142,71 @@ class LogicRunProcessStrategy(Strategy):
 
         # TODO: 실제 시퀀스 제어 로직 구현 (Robot Move -> Device Measure -> Robot Move ...)
         # 현재는 시뮬레이션을 위해 공정 완료 이벤트를 즉시 반환합니다.
-        return LogicEvent.PROCESS_FINISHED
+        return LogicEvent.DONE
     
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicDetermineTaskStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Determining next task.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: 배치 계획에 따라 다음 작업(시편 번호 등) 결정
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicPickSpecimenStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Picking specimen.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Robot FSM에 시편 픽업 명령 전달 및 완료 대기
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicMeasureThicknessStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Measuring thickness.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Robot/Device FSM 협업하여 두께 측정 수행
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicAlignSpecimenStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Aligning specimen.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Robot/Device FSM 협업하여 시편 정렬 수행
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicLoadTensileMachineStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Loading tensile machine.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Robot FSM으로 시편 장착, Device FSM으로 그리퍼 체결
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicStartTensileTestStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Starting tensile test.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Device FSM에 시험 시작 명령 전달 및 완료 대기
+        return LogicEvent.DONE
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        pass
+
+class LogicCollectAndDiscardStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Collecting and discarding specimen.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        # TODO: Device 그리퍼 해제 후 Robot이 시편 수거하여 폐기함으로 이동
+        return LogicEvent.DONE
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         pass
 

@@ -6,13 +6,8 @@ import random
 import threading 
 from uuid import uuid4
 from datetime import datetime
-from pkg.utils.logging import Logger
-from pkg.fsm.base import *
-
-# ==============================================================================
-# [Blackboard] 외부 상태 공유를 위한 글로벌 객체
-# ==============================================================================
 from pkg.utils.blackboard import GlobalBlackboard
+
 bb = GlobalBlackboard()
 
 class MqttComm:
@@ -27,6 +22,14 @@ class MqttComm:
         self.host = host
         self.port = port
         self.stop_event = stop_event
+
+        self.Logger = None
+        self.bb = None
+        if self.role == 'logic':
+            from pkg.utils.logging import Logger
+            from pkg.utils.blackboard import GlobalBlackboard
+            self.Logger = Logger
+            self.bb = GlobalBlackboard()
 
         # 1. 규칙 로드
         self.rules = self._load_rules(rule_path)
@@ -74,7 +77,7 @@ class MqttComm:
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             self.connected = True
-            Logger.info(f"[{self.role.upper()}] 브로커 연결 성공")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] 브로커 연결 성공")
             topics = self.rules["topics"]
             
             if self.role == 'logic':
@@ -82,9 +85,9 @@ class MqttComm:
                     topic = topics[key]
                     res, _ = self.client.subscribe(topic)
                     if res == mqtt.MQTT_ERR_SUCCESS:
-                        Logger.info(f"[{self.role.upper()}] 토픽 구독 성공: {topic}")
+                        if self.Logger: self.Logger.info(f"[{self.role.upper()}] 토픽 구독 성공: {topic}")
                     else:
-                        Logger.error(f"[{self.role.upper()}] 토픽 구독 실패 (code: {res}): {topic}")
+                        if self.Logger: self.Logger.error(f"[{self.role.upper()}] 토픽 구독 실패 (code: {res}): {topic}")
 
                 # 재연결 시 스레드 중복 생성 방지
                 if self.logic_thread is None or not self.logic_thread.is_alive():
@@ -97,22 +100,22 @@ class MqttComm:
                 topic = topics["logic_evt"]
                 res, _ = self.client.subscribe(topic)
                 if res == mqtt.MQTT_ERR_SUCCESS:
-                    Logger.info(f"[{self.role.upper()}] 토픽 구독 성공: {topic}")
+                    if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] 토픽 구독 성공: {topic}")
                 else:
-                    Logger.error(f"[{self.role.upper()}] 토픽 구독 실패 (code: {res}): {topic}")
+                    if self.role == 'logic' and self.Logger: self.Logger.error(f"[{self.role.upper()}] 토픽 구독 실패 (code: {res}): {topic}")
         else:
-            Logger.info(f"[{self.role.upper()}] 연결 실패: {rc}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] 연결 실패: {rc}")
             self.connected = False
 
     def _on_message(self, client, userdata, msg):
         try:
-            Logger.info(f"received message {msg.payload.decode('utf-8')}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"received message {msg.payload.decode('utf-8')}")
             data = json.loads(msg.payload.decode('utf-8'))
             header = data.get("header", {})
             payload = data.get("payload", {})
             
             # 수신 로그
-            Logger.info(f"<<< [{self.role.upper()} RCV] {msg.topic} | MsgID: {header.get('msg_id')}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"<<< [{self.role.upper()} RCV] {msg.topic} | MsgID: {header.get('msg_id')}")
 
             if self.role == 'logic' and msg.topic == self.rules["topics"]["ui_cmd"]:
                 self._handle_ui_command(header, payload)
@@ -120,7 +123,7 @@ class MqttComm:
                 self._handle_logic_event(header, payload)
                 
         except Exception as e:
-            Logger.info(f"메시지 처리 에러: {e}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"메시지 처리 에러: {e}")
 
     # ==========================================================================
     # 메시지 생성 및 전송 (Common)
@@ -190,9 +193,9 @@ class MqttComm:
             elif cmd == "system_control":
                 if action == "do_control":
                     data = payload.get("params")
-                    if data:
-                        bb.set("ui/cmd/do_control/data", data)
-                        bb.set("ui/cmd/do_control/trigger", 1)
+                    if data and self.role == 'logic' and self.bb:
+                        self.bb.set("ui/cmd/do_control/data", data)
+                        self.bb.set("ui/cmd/do_control/trigger", 1)
 
             # 더미 모드일 경우 즉시 자동 ACK
             if self.is_dummy:
@@ -219,7 +222,7 @@ class MqttComm:
         if self.role == 'logic':
             while self.running:
                 if self.tensile_command != 0:
-                    Logger.info(f"[LOGIC] 인장기 공정 처리 중...")
+                    if self.Logger: self.Logger.info(f"[LOGIC] 인장기 공정 처리 중...")
                     time.sleep(1)
                     self.tensile_command = 0
                 time.sleep(0.1)
@@ -229,11 +232,14 @@ class MqttComm:
         if self.role == 'logic':
             while self.running:
                 # 1. DIO Status (0.5s)
+                di_values = bb.get("device/remote/input/entire")
+                do_values = bb.get("device/remote/output/entire")
                 dio_payload = {
                     "kind": "event", "evt": "system_dio_status",
-                    "di_values": [random.randint(0,1) for _ in range(48)],
-                    "do_values": [random.randint(0,1) for _ in range(32)]
+                    "di_values": di_values,
+                    "do_values": do_values
                 }
+                # bb.get()
                 self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
                     self._create_frame("logic.event", "ui", self.rules["event_ids"]["dio_status"], dio_payload, False)))
                 
@@ -243,7 +249,7 @@ class MqttComm:
         """UI 역할에서 Logic의 이벤트를 처리하는 함수"""
         if self.role == 'ui':
             # UI에서 Logic의 이벤트를 처리하는 로직 (필요 시 Blackboard 업데이트 등 추가)
-            Logger.info(f"[UI] Logic 이벤트 수신: {payload.get('evt') or payload.get('kind')}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[UI] Logic 이벤트 수신: {payload.get('evt') or payload.get('kind')}")
 
     # ==========================================================================
     # 실행 및 종료
@@ -251,7 +257,7 @@ class MqttComm:
 
     def run(self):
         """MQTT 통신을 별도 스레드에서 실행하여 메인 루프가 차단되지 않도록 합니다."""
-        Logger.info(f"[{self.role.upper()}] MQTT 통신 스레드를 시작합니다.")
+        if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] MQTT 통신 스레드를 시작합니다.")
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
@@ -271,7 +277,7 @@ class MqttComm:
         """종료 시그널(Event)을 감시하여 시스템을 종료하는 루프"""
         while self.running:
             if self.stop_event.is_set():
-                Logger.info(f"[{self.role.upper()}] 외부 종료 시그널 감지. MQTT를 정지합니다.")
+                if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] 외부 종료 시그널 감지. MQTT를 정지합니다.")
                 self.stop()
                 break
             time.sleep(0.1)
@@ -280,11 +286,11 @@ class MqttComm:
         try:
             self.client.connect(self.host, self.port, 60)
             # loop_forever는 내부적으로 재연결을 처리하며 이 스레드를 점유합니다.
-            Logger.info(f"[{self.role.upper()}] MQTT loop_forever를 시작합니다. (Host: {self.host}:{self.port})")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] MQTT loop_forever를 시작합니다. (Host: {self.host}:{self.port})")
             self.client.loop_forever(retry_first_connection=True)
-            Logger.info(f"[{self.role.upper()}] MQTT loop_forever가 종료되었습니다.")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] MQTT loop_forever가 종료되었습니다.")
         except Exception as e:
-            Logger.info(f"[{self.role.upper()}] MQTT 런타임 에러: {e}")
+            if self.role == 'logic' and self.Logger: self.Logger.info(f"[{self.role.upper()}] MQTT 런타임 에러: {e}")
 
     def stop(self):
         self.running = False

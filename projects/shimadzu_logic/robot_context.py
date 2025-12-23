@@ -59,17 +59,17 @@ class RobotContext(ContextBase):
         try:
             # 1. 비상 정지 및 일반 HW 오류
             if self.status.is_emg_pushed():
-                self.violation_code |= RobotViolation.ISO_EMERGENCY_BUTTON.value
+                self.violation_code |= RobotViolation.ISO_EMERGENCY_BUTTON
 
             if self.status.is_error_state():
-                self.violation_code |= RobotViolation.HW_VIOLATION.value
+                self.violation_code |= RobotViolation.HW_VIOLATION
             
             # 2. 로봇 연결 및 준비 상태
             if not self.status.is_connected():
-                self.violation_code |= RobotViolation.CONNECTION_TIMEOUT.value
+                self.violation_code |= RobotViolation.CONNECTION_TIMEOUT
                 
             if self.status.is_connected() and not self.status.is_ready():
-                 self.violation_code |= RobotViolation.HW_NOT_READY.value
+                 self.violation_code |= RobotViolation.HW_NOT_READY
             
             # 3. Indy Robot State Check
             indy_data = bb.get("indy")
@@ -89,25 +89,25 @@ class RobotContext(ContextBase):
                 else:
                     # NOT_READY 상태들
                     if current_indy_state in (Robot_OP_State.OP_SYSTEM_OFF, Robot_OP_State.OP_STOP_AND_OFF):
-                        self.violation_code |= RobotViolation.HW_NOT_READY.value
+                        self.violation_code |= RobotViolation.HW_NOT_READY
 
                     # VIOLATION 상태들
                     if current_indy_state in (Robot_OP_State.OP_VIOLATE, Robot_OP_State.OP_VIOLATE_HARD,
                                               Robot_OP_State.OP_SYSTEM_SWITCH):
-                        self.violation_code |= RobotViolation.HW_VIOLATION.value
+                        self.violation_code |= RobotViolation.HW_VIOLATION
 
                     # COLLISION 상태
                     if current_indy_state == Robot_OP_State.OP_COLLISION:
-                        self.violation_code |= RobotViolation.COLLISION_VIOLATION.value
+                        self.violation_code |= RobotViolation.COLLISION_VIOLATION
 
                     # BRAKE_CONTROL 상태
                     if current_indy_state == Robot_OP_State.OP_BRAKE_CONTROL:
-                        self.violation_code |= RobotViolation.HW_VIOLATION.value
+                        self.violation_code |= RobotViolation.HW_VIOLATION
 
                     # RECOVERING 상태들
                     if current_indy_state in (Robot_OP_State.OP_RECOVER_HARD, Robot_OP_State.OP_RECOVER_SOFT,
                                               Robot_OP_State.OP_MANUAL_RECOVER):
-                        self.violation_code |= RobotViolation.HW_VIOLATION.value
+                        self.violation_code |= RobotViolation.HW_VIOLATION
 
                     if self.violation_code != 0:
                         Logger.error(f"{get_time()}: [Robot FSM] Violation detected "
