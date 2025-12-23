@@ -101,10 +101,10 @@ class RobotContext(ContextBase):
     def _check_emergency_stop(self) -> bool:
         """비상 정지 버튼 상태 확인 (4개 EMO 스위치)"""
         emo_switches = [
-            bb.get("device/remote/input/EMO_01_SW", 0),
-            bb.get("device/remote/input/EMO_02_SW", 0),
-            bb.get("device/remote/input/EMO_03_SW", 0),
-            bb.get("device/remote/input/EMO_04_SW", 0)
+            bb.get("device/remote/input/EMO_01_SW"),
+            bb.get("device/remote/input/EMO_02_SW"),
+            bb.get("device/remote/input/EMO_03_SW"),
+            bb.get("device/remote/input/EMO_04_SW")
         ]
         return any(emo_switches)
 
@@ -162,7 +162,7 @@ class RobotContext(ContextBase):
     def _check_external_safety(self):
         """외부 안전 장치 상태 확인"""
         # 안전 정지 상태 확인
-        if bb.get("ui/state/safe/stop", 0):
+        if bb.get("ui/state/safe/stop"):
             self.violation_code |= RobotViolation.HW_VIOLATION.value
             Logger.warn("Safety stop activated")
 
@@ -196,11 +196,11 @@ class RobotContext(ContextBase):
 
     def get_gripper_state(self):
         """그리퍼 상태 확인"""
-        return bb.get("int_var/grip_state/val", 0)
+        return bb.get("int_var/grip_state/val")
 
     def get_current_position(self):
         """현재 로봇 위치"""
-        return bb.get("int_var/robot/position/val", 0)
+        return bb.get("int_var/robot/position/val")
 
     # ========================================
     # 기본 제어 명령
@@ -346,7 +346,7 @@ class RobotContext(ContextBase):
         
         # 0-1. 초기화 확인 (안전장치)
         time.sleep(0.05)  # 초기화 반영 대기
-        if bb.get("int_var/motion_ack/val", -1) != 0 or bb.get("int_var/motion_done/val", -1) != 0:
+        if bb.get("int_var/motion_ack/val") != 0 or bb.get("int_var/motion_done/val") != 0:
             Logger.error(f"Failed to reset ACK/DONE before sending cmd {motion_cmd}")
             return False
         
@@ -388,7 +388,7 @@ class RobotContext(ContextBase):
         expected_ack_code = motion_cmd + 500
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_ack = bb.get("int_var/motion_ack/val", 0)
+            motion_ack = bb.get("int_var/motion_ack/val")
             if motion_ack == expected_ack_code:
                 Logger.debug(f"Motion ACK received: {motion_ack} (cmd={motion_cmd})")
                 return True
@@ -400,7 +400,7 @@ class RobotContext(ContextBase):
             
             time.sleep(0.05)
         
-        Logger.error(f"Motion ACK timeout: expected {expected_ack_code} (cmd={motion_cmd}), current {bb.get('int_var/motion_ack/val', 0)}")
+        Logger.error(f"Motion ACK timeout: expected {expected_ack_code} (cmd={motion_cmd}), current {bb.get('int_var/motion_ack/val')}")
         return False
 
     def wait_motion_done(self, expected_done_code: int, timeout: float = 30.0) -> bool:
@@ -416,7 +416,7 @@ class RobotContext(ContextBase):
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
-            motion_done = bb.get("int_var/motion_done/val", 0)
+            motion_done = bb.get("int_var/motion_done/val")
             if motion_done == expected_done_code:
                 Logger.info(f"Motion done: {motion_done}")
                 self.last_motion_done = motion_done
@@ -429,7 +429,7 @@ class RobotContext(ContextBase):
             
             time.sleep(0.1)
         
-        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val', 0)}")
+        Logger.error(f"Motion timeout: expected {expected_done_code}, current {bb.get('int_var/motion_done/val')}")
         return False
     
     def wait_motion_complete(self, motion_cmd: int, ack_timeout: float = 5.0, done_timeout: float = 30.0, max_retries: int = 3) -> bool:
@@ -554,7 +554,7 @@ class RobotContext(ContextBase):
             time.sleep(1.0)  # 측정 대기
             
             # TODO: 두께 측정값 읽기
-            thickness = bb.get("device/gauge/thickness", 0.0)
+            thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement {i}: {thickness}")
             
             # 마지막 측정이 아니면 다시 잡기
@@ -704,10 +704,10 @@ class RobotContext(ContextBase):
     def get_system_comm_status(self) -> dict:
         """통신 상태 조회"""
         return {
-            "robot": bb.get("sys/robot/comm/state", 0),
-            "external": bb.get("sys/ext/comm/state", 0),
-            "remote_io": bb.get("sys/remoteio/comm/state", 0),
-            "gauge": bb.get("sys/gauge/comm/state", 0)
+            "robot": bb.get("sys/robot/comm/state"),
+            "external": bb.get("sys/ext/comm/state"),
+            "remote_io": bb.get("sys/remoteio/comm/state"),
+            "gauge": bb.get("sys/gauge/comm/state")
         }
 
     def reset_init_variables(self):
