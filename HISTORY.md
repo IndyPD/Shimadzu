@@ -2,6 +2,24 @@
 
 이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지하며, 가독성을 위해 백틱 기호는 사용하지 않습니다.
 
+v0.1.0 - 2025-12-24
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+LogicContext 로깅 및 디버깅 강화: bb.set 호출 시점, LogicEvent.DONE 및 VIOLATION_DETECT 반환 직전에 상세 Logger.info/error 로그를 남기도록 개선
+공정 명령 체계 표준화 및 상수 재정의: Motion_command(M01~M10)를 실제 공정 순서에 맞게 재정렬하고, Device_command 클래스를 신설하여 하드코딩된 장비 명령 문자열을 상수로 대체
+LogicFSM 및 전략(Strategy) 시퀀스 확장: 10단계 자동화 공정(시편 취출부터 스크랩 처리까지)에 맞춰 FSM 상태 전이 규칙과 개별 전략 클래스(LogicStrategy)를 모두 동기화하여 수정
+전략 클래스 공통 인터페이스 개선: 모든 전략 클래스(Logic, Robot, Device)의 exit 함수에 종료 이벤트 로그 출력 로직을 추가하여 상태 전이 추적 용이성 확보
+코드 품질 및 안정성 개선: Blackboard 데이터 취득 시 불필요한 기본값 인자 제거 및 LogicContext 내 주요 변수 오타(taget_floor 등) 수정
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+Command.md 문서화: 로봇(Motion) 및 장비(Device) 제어 명령 프로토콜과 1~10번까지의 전체 공정 흐름에 대한 상세 기술 문서 작성
+
 v0.1.0 - 2025-12-23
 
 1. 하드웨어 (Hardware)
