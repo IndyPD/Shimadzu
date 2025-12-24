@@ -207,7 +207,7 @@ class RobotContext(ContextBase):
     # ========================================
     
     def direct_teaching(self, onoff):
-        """직접교시 모드 전환"""
+        """다이렉트 티칭 모드 전환"""
         if onoff:
             bb.set("indy_command/direct_teaching_on", True)
             bb.set("robot/dt/mode", 1)
@@ -360,7 +360,7 @@ class RobotContext(ContextBase):
             if self.wait_motion_ack(motion_cmd, timeout=5.0):
                 # 3. ACK 받음 - CMD 리셋
                 bb.set("int_var/cmd/val", 0)
-                Logger.debug(f"Motion {motion_cmd}: CMD reset after ACK")
+                Logger.info(f"Motion {motion_cmd}: CMD reset after ACK")
                 return True
             
             # ACK 못 받음
@@ -390,7 +390,7 @@ class RobotContext(ContextBase):
         while time.time() - start_time < timeout:
             motion_ack = bb.get("int_var/motion_ack/val")
             if motion_ack == expected_ack_code:
-                Logger.debug(f"Motion ACK received: {motion_ack} (cmd={motion_cmd})")
+                Logger.info(f"Motion ACK received: {motion_ack} (cmd={motion_cmd})")
                 return True
             
             # Violation 체크
@@ -465,7 +465,7 @@ class RobotContext(ContextBase):
         # 3. 완료 후 ACK/DONE 초기화 (다음 모션 준비)
         bb.set("int_var/motion_ack/val", 0)
         bb.set("int_var/motion_done/val", 0)
-        Logger.debug(f"Motion {motion_cmd}: ACK/DONE reset after completion")
+        Logger.info(f"Motion {motion_cmd}: ACK/DONE reset after completion")
         
         return True
 
@@ -477,182 +477,526 @@ class RobotContext(ContextBase):
         일반적으로 직접 호출할 필요 없음
         """
         bb.set("int_var/cmd/val", 0)
-        Logger.debug("Motion command reset")
+        Logger.info("Motion command reset")
 
     # ========================================
-    # 복합 모션 (자주 사용되는 시퀀스)
+    # 복합 모션 (공정 중 모션 - 엑셀 문서 기반)
     # ========================================
     
-    def move_to_rack_floor(self, floor: int) -> bool:
+    # ----------------------------------------
+    # 툴 체인지 (Tool Change)
+    # ----------------------------------------
+    
+    def change_tool_binpicking(self) -> bool:
         """
-        랙 n층 앞으로 이동
+        툴 변경 - Binpicking용 툴
+        
+        모션 흐름:
+        101: 툴 위치 이동 (H → T)
+        102: 툴 2번 센서 진입
+        103: 툴 1번 센서 진입
+        104: 툴 삽입 후 위로 이동 → 홈
+        """
+        if not self.wait_motion_complete(101, done_timeout=20.0):
+            return False
+        
+        if not self.wait_motion_complete(102, done_timeout=15.0):
+            return False
+        
+        if not self.wait_motion_complete(103, done_timeout=15.0):
+            return False
+        
+        if not self.wait_motion_complete(104, done_timeout=20.0):
+            return False
+        
+        Logger.info("Tool changed to binpicking successfully")
+        return True
+    
+    def change_tool_normal(self) -> bool:
+        """
+        툴 변경 - Normal용 툴
+        
+        모션 흐름:
+        105: 툴 위치 이동 (H → T)
+        106: 툴 3번 센서 진입
+        107: 툴 4번 센서 진입
+        108: 툴 삽입 후 위로 이동 → 홈
+        """
+        if not self.wait_motion_complete(105, done_timeout=20.0):
+            return False
+        
+        if not self.wait_motion_complete(106, done_timeout=15.0):
+            return False
+        
+        if not self.wait_motion_complete(107, done_timeout=15.0):
+            return False
+        
+        if not self.wait_motion_complete(108, done_timeout=20.0):
+            return False
+        
+        Logger.info("Tool changed to normal successfully")
+        return True
+    
+    # ----------------------------------------
+    # 랙 (Rack)
+    # ----------------------------------------
+    
+    def move_to_rack_front(self) -> bool:
+        """
+        랙 앞 이동
+        
+        1000: H → AA (랙 어프로치)
+        """
+        if not self.wait_motion_complete(1000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Moved to rack front (approach)")
+        return True
+    
+    def move_to_rack_floor_front(self, floor: int) -> bool:
+        """
+        랙 n층 앞 이동
         
         Args:
             floor: 층수 (1~10)
+        
+        1{nF}0: A{nF}_QR → A{nF}
+        예: 1010 (1층), 1020 (2층), ..., 1100 (10층)
         """
         if not 1 <= floor <= 10:
             Logger.error(f"Invalid floor number: {floor}")
             return False
         
-        # 1. 홈 -> 랙 앞 (motion 1)
-        if not self.wait_motion_complete(1):
+        motion_cmd = 1000 + floor * 10
+        if not self.wait_motion_complete(motion_cmd, done_timeout=20.0):
             return False
         
-        # 2. 랙 앞 -> n층 앞 (motion 1{floor}0)
-        floor_motion = 1000 + floor * 10
-        if not self.wait_motion_complete(floor_motion):
-            return False
-        
-        Logger.info(f"Successfully moved to rack floor {floor}")
+        Logger.info(f"Moved to rack floor {floor} front")
         return True
-
-    def pick_specimen_from_rack(self, floor: int, position: int) -> bool:
+    
+    def move_to_rack_qr_position(self, floor: int) -> bool:
         """
-        랙에서 시편 픽업
+        랙 n층 QR 인식 위치
         
         Args:
             floor: 층수 (1~10)
-            position: 위치 번호 (1~N)
+        
+        1{nF}0 + 300: AA → A{nF}_QR
+        예: 1310 (1층 QR), 1320 (2층 QR), ..., 1400 (10층 QR)
         """
-        # 1. n층 N번 위치로 이동
+        if not 1 <= floor <= 10:
+            Logger.error(f"Invalid floor number: {floor}")
+            return False
+        
+        motion_cmd = 1000 + floor * 10 + 300
+        if not self.wait_motion_complete(motion_cmd, done_timeout=20.0):
+            return False
+        
+        Logger.info(f"Moved to rack floor {floor} QR scan position")
+        return True
+    
+    def pick_specimen_from_rack(self, floor: int, position: int) -> bool:
+        """
+        랙 n층 N번 시편 픽업
+        
+        Args:
+            floor: 층수 (1~10)
+            position: 시편 번호 (1~N, 보통 1~10)
+        
+        모션 흐름:
+        1{nF}{N}: A{nF} → A{nF}_0N (시편 위치 이동)
+        그리퍼 닫기
+        2{nF}0: A{nF}_0N → A{nF} (n층 앞 복귀)
+        """
+        if not 1 <= floor <= 10:
+            Logger.error(f"Invalid floor number: {floor}")
+            return False
+        
+        if not 1 <= position <= 10:
+            Logger.error(f"Invalid position number: {position}")
+            return False
+        
+        # 1. n층 N번 시편 위치 이동
         pick_motion = 1000 + floor * 10 + position
-        if not self.wait_motion_complete(pick_motion):
+        if not self.wait_motion_complete(pick_motion, done_timeout=20.0):
             return False
         
         # 2. 그리퍼 닫기
         self.gripper_control(open=False)
         time.sleep(1.0)  # 그리핑 안정화
         
-        # 3. n층 앞으로 복귀
-        retract_motion = 2000 + floor * 10
-        if not self.wait_motion_complete(retract_motion):
+        # 3. n층 앞 복귀
+        return_motion = 2000 + floor * 10
+        if not self.wait_motion_complete(return_motion, done_timeout=20.0):
             return False
         
-        Logger.info(f"Successfully picked specimen from floor {floor}, position {position}")
+        Logger.info(f"Picked specimen from rack floor {floor}, position {position}")
         return True
-
+    
+    def return_from_rack_front(self) -> bool:
+        """
+        랙 앞 복귀
+        
+        2000: A{nF} → AR (랙 복귀)
+        """
+        if not self.wait_motion_complete(2000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Returned from rack front")
+        return True
+    
+    # ----------------------------------------
+    # 두께 측정기 (Thickness Gauge)
+    # ----------------------------------------
+    
+    def move_to_thickness_gauge_front(self) -> bool:
+        """
+        두께 측정기 앞 이동
+        
+        3000: AR → BA
+        """
+        if not self.wait_motion_complete(3000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Moved to thickness gauge front")
+        return True
+    
+    def place_specimen_on_gauge(self, measurement_num: int) -> bool:
+        """
+        두께 측정기에 시편 놓기
+        
+        Args:
+            measurement_num: 측정 번호 (1~3)
+        
+        3001/3002/3003: BA → B (시편 놓기)
+        그리퍼 열기
+        """
+        if not 1 <= measurement_num <= 3:
+            Logger.error(f"Invalid measurement number: {measurement_num}")
+            return False
+        
+        motion_cmd = 3000 + measurement_num
+        if not self.wait_motion_complete(motion_cmd, done_timeout=15.0):
+            return False
+        
+        # 그리퍼 열기
+        self.gripper_control(open=True)
+        time.sleep(0.5)
+        
+        Logger.info(f"Placed specimen on gauge (measurement {measurement_num})")
+        return True
+    
+    def pick_specimen_from_gauge(self, measurement_num: int) -> bool:
+        """
+        두께 측정기에서 시편 잡기
+        
+        Args:
+            measurement_num: 측정 번호 (1~3)
+        
+        3011/3012/3013: BA → B (시편 잡기)
+        그리퍼 닫기
+        """
+        if not 1 <= measurement_num <= 3:
+            Logger.error(f"Invalid measurement number: {measurement_num}")
+            return False
+        
+        motion_cmd = 3010 + measurement_num
+        if not self.wait_motion_complete(motion_cmd, done_timeout=15.0):
+            return False
+        
+        # 그리퍼 닫기
+        self.gripper_control(open=False)
+        time.sleep(0.5)
+        
+        Logger.info(f"Picked specimen from gauge (measurement {measurement_num})")
+        return True
+    
+    def return_from_thickness_gauge_front(self) -> bool:
+        """
+        두께 측정기 앞 복귀
+        
+        4000: B → BR
+        """
+        if not self.wait_motion_complete(4000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Returned from thickness gauge front")
+        return True
+    
     def measure_thickness(self, num_measurements: int = 3) -> bool:
         """
-        두께 측정 수행
+        두께 측정 수행 (전체 시퀀스)
         
         Args:
             num_measurements: 측정 횟수 (1~3)
+        
+        흐름:
+        1. 두께 측정기 앞 이동 (3000)
+        2. 각 측정마다:
+           - 시편 놓기 (3001/3002/3003)
+           - 그리퍼 열기
+           - (측정 대기)
+           - 시편 잡기 (3011/3012/3013)
+           - 그리퍼 닫기
+        3. 두께 측정기 앞 복귀 (4000)
         """
         # 1. 두께 측정기 앞 이동
-        if not self.wait_motion_complete(3000):
+        if not self.move_to_thickness_gauge_front():
             return False
         
         # 2. 측정 수행
         for i in range(1, num_measurements + 1):
-            # 측정 위치에 시편 놓기
-            place_motion = 3000 + i
-            if not self.wait_motion_complete(place_motion):
+            # 시편 놓기
+            if not self.place_specimen_on_gauge(i):
                 return False
             
-            # 그리퍼 열기
-            self.gripper_control(open=True)
-            time.sleep(1.0)  # 측정 대기
-            
             # TODO: 두께 측정값 읽기
+            time.sleep(1.0)  # 측정 대기
             thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement {i}: {thickness}")
             
             # 마지막 측정이 아니면 다시 잡기
             if i < num_measurements:
-                grab_motion = 3010 + i
-                if not self.wait_motion_complete(grab_motion):
+                if not self.pick_specimen_from_gauge(i):
                     return False
-                self.gripper_control(open=False)
         
-        # 3. 두께 측정기 앞으로 복귀
-        if not self.wait_motion_complete(4000):
+        # 3. 두께 측정기 앞 복귀
+        if not self.return_from_thickness_gauge_front():
             return False
         
         Logger.info(f"Thickness measurement completed ({num_measurements} measurements)")
         return True
-
+    
+    # ----------------------------------------
+    # 정렬기 (Aligner)
+    # ----------------------------------------
+    
+    def move_to_aligner_front(self) -> bool:
+        """
+        정렬기 앞 이동
+        
+        5000: BR → CA
+        """
+        if not self.wait_motion_complete(5000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Moved to aligner front")
+        return True
+    
+    def place_specimen_on_aligner(self) -> bool:
+        """
+        정렬기에 시편 놓기
+        
+        5001: CA → C
+        그리퍼 열기
+        """
+        if not self.wait_motion_complete(5001, done_timeout=15.0):
+            return False
+        
+        # 그리퍼 열기
+        self.gripper_control(open=True)
+        
+        Logger.info("Placed specimen on aligner")
+        return True
+    
+    def pick_specimen_from_aligner(self) -> bool:
+        """
+        정렬기에서 시편 잡기
+        
+        5011: CA → C
+        그리퍼 닫기
+        """
+        if not self.wait_motion_complete(5011, done_timeout=15.0):
+            return False
+        
+        # 그리퍼 닫기
+        self.gripper_control(open=False)
+        
+        Logger.info("Picked specimen from aligner")
+        return True
+    
+    def return_from_aligner_front(self) -> bool:
+        """
+        정렬기 앞 복귀
+        
+        6000: C → CR
+        """
+        if not self.wait_motion_complete(6000, done_timeout=20.0):
+            return False
+        
+        Logger.info("Returned from aligner front")
+        return True
+    
     def align_specimen(self) -> bool:
-        """시편 정렬"""
+        """
+        시편 정렬 (전체 시퀀스)
+        
+        흐름:
+        1. 정렬기 앞 이동 (5000)
+        2. 시편 놓기 (5001)
+        3. 그리퍼 열기
+        4. 정렬 대기
+        5. 시편 잡기 (5011)
+        6. 그리퍼 닫기
+        7. 정렬기 앞 복귀 (6000)
+        """
         # 1. 정렬기 앞 이동
-        if not self.wait_motion_complete(5000):
+        if not self.move_to_aligner_front():
             return False
         
         # 2. 시편 놓기
-        if not self.wait_motion_complete(5001):
+        if not self.place_specimen_on_aligner():
             return False
-        
-        self.gripper_control(open=True)
         
         # 3. 정렬 대기
         time.sleep(2.0)  # TODO: 정렬 완료 신호 대기로 변경
         
         # 4. 시편 잡기
-        if not self.wait_motion_complete(5011):
+        if not self.pick_specimen_from_aligner():
             return False
         
-        self.gripper_control(open=False)
-        
         # 5. 정렬기 앞 복귀
-        if not self.wait_motion_complete(6000):
+        if not self.return_from_aligner_front():
             return False
         
         Logger.info("Specimen alignment completed")
         return True
-
-    def place_in_tensile_machine(self) -> bool:
-        """인장시험기에 시편 장착"""
-        # 1. 인장시험기 앞 이동
-        if not self.wait_motion_complete(7000):
+    
+    # ----------------------------------------
+    # 인장시험기 (Tensile Tester)
+    # ----------------------------------------
+    
+    def move_to_tensile_tester_front(self) -> bool:
+        """
+        인장시험기 앞 이동
+        
+        7000: CR → DA
+        """
+        if not self.wait_motion_complete(7000, done_timeout=20.0):
             return False
         
-        # 2. 시편 장착 위치 이동
-        if not self.wait_motion_complete(7001):
+        Logger.info("Moved to tensile tester front")
+        return True
+    
+    def place_specimen_in_tensile_tester(self) -> bool:
+        """
+        인장시험기에 시편 장착
+        
+        7001: DA → D
+        신호 대기
+        그리퍼 열기
+        """
+        if not self.wait_motion_complete(7001, done_timeout=15.0):
             return False
         
-        # 3. 그리퍼 열기
+        # TODO: 인장시험기 준비 신호 대기
+        time.sleep(1.0)
+        
+        # 그리퍼 열기
         self.gripper_control(open=True)
         
-        # 4. 인장시험기 앞 복귀
-        if not self.wait_motion_complete(8000):
-            return False
-        
-        Logger.info("Specimen placed in tensile machine")
+        Logger.info("Placed specimen in tensile tester")
         return True
-
-    def collect_from_tensile_machine(self) -> bool:
-        """인장시험 후 시편 수거"""
-        # 1. 인장시험기 앞 이동
-        if not self.wait_motion_complete(7000):
+    
+    def pick_specimen_from_tensile_tester(self) -> bool:
+        """
+        인장시험기에서 시편 수거
+        
+        대기 (시험 완료)
+        7011: DA → D
+        그리퍼 닫기
+        """
+        # TODO: 인장시험 완료 신호 대기
+        time.sleep(1.0)
+        
+        if not self.wait_motion_complete(7011, done_timeout=15.0):
             return False
         
-        # 2. 시편 수거 위치 이동
-        if not self.wait_motion_complete(7011):
-            return False
-        
-        # 3. 그리퍼 닫기
+        # 그리퍼 닫기
         self.gripper_control(open=False)
         
-        # 4. 인장시험기 앞 복귀
-        if not self.wait_motion_complete(8000):
+        Logger.info("Picked specimen from tensile tester")
+        return True
+    
+    def return_from_tensile_tester_front(self) -> bool:
+        """
+        인장시험기 앞 복귀
+        
+        8000: D → DR
+        """
+        if not self.wait_motion_complete(8000, done_timeout=20.0):
             return False
         
-        Logger.info("Specimen collected from tensile machine")
+        Logger.info("Returned from tensile tester front")
         return True
-
+    
+    # ----------------------------------------
+    # 스크랩 배출 (Scrap Disposer)
+    # ----------------------------------------
+    
+    def move_to_scrap_disposer_front(self) -> bool:
+        """
+        스크랩 배출대 앞 이동
+        
+        7020: DR → FA
+        """
+        if not self.wait_motion_complete(7020, done_timeout=20.0):
+            return False
+        
+        Logger.info("Moved to scrap disposer front")
+        return True
+    
+    def drop_scrap(self) -> bool:
+        """
+        스크랩 배출대에 스크랩 버리기
+        
+        7021: FA → F
+        그리퍼 열기
+        """
+        if not self.wait_motion_complete(7021, done_timeout=15.0):
+            return False
+        
+        # 그리퍼 열기
+        self.gripper_control(open=True)
+        
+        Logger.info("Dropped scrap")
+        return True
+    
+    def return_from_scrap_disposer_front(self) -> bool:
+        """
+        스크랩 배출대 앞 복귀
+        
+        7022: F → FR
+        """
+        if not self.wait_motion_complete(7022, done_timeout=20.0):
+            return False
+        
+        Logger.info("Returned from scrap disposer front")
+        return True
+    
     def discard_to_scrap(self) -> bool:
-        """스크랩 배출"""
+        """
+        스크랩 배출 (전체 시퀀스)
+        
+        흐름:
+        1. 스크랩 배출대 앞 이동 (7020)
+        2. 스크랩 버리기 (7021)
+        3. 그리퍼 열기
+        4. 스크랩 배출대 앞 복귀 (7022)
+        """
         # 1. 스크랩 배출대 앞 이동
-        if not self.wait_motion_complete(7020):
+        if not self.move_to_scrap_disposer_front():
             return False
         
         # 2. 스크랩 버리기
-        if not self.wait_motion_complete(7021):
+        if not self.drop_scrap():
             return False
         
-        # 3. 그리퍼 열기
-        self.gripper_control(open=True)
+        # 3. 스크랩 배출대 앞 복귀
+        if not self.return_from_scrap_disposer_front():
+            return False
         
-        Logger.info("Specimen discarded to scrap box")
+        Logger.info("Scrap disposal completed")
         return True
 
     # ========================================
