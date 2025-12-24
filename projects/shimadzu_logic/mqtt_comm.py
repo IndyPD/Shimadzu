@@ -6,9 +6,6 @@ import random
 import threading 
 from uuid import uuid4
 from datetime import datetime
-from pkg.utils.blackboard import GlobalBlackboard
-
-bb = GlobalBlackboard()
 
 class MqttComm:
     """
@@ -148,16 +145,16 @@ class MqttComm:
 
     def send_tensile_cmd(self, action, batch_id):
         if self.role == 'ui':
-            self.counters["tensile"] += 1
-            msg_id = f"{self.rules['id_prefixes']['tensile']}{self.counters['tensile']:03d}"
+            msg_id = f"{self.rules['id_prefixes']['tensile']}"
             payload = {"kind": "command", "cmd": "tensile_control", "action": action, "batch_id": batch_id}
             frame = self._create_frame("ui.command", "logic", msg_id, payload)
+            
             self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
 
     def send_do_control(self, address, value):
         if self.role == 'ui':
-            self.counters["manual"] += 1
-            msg_id = f"{self.rules['id_prefixes']['manual']}{self.counters['manual']:03d}"
+            # 카운터를 증가시키는 대신, 입력받은 address를 ID로 사용합니다.
+            msg_id = f"{self.rules['id_prefixes']['manual']}"
             payload = {
                 "kind": "command", "cmd": "system_control", "action": "do_control",
                 "params": {"addr": address, "value": value}
@@ -167,9 +164,8 @@ class MqttComm:
 
     def send_binpick_cmd(self, action, job_id):
         if self.role == 'ui':
-            self.counters["binpick"] += 1
-            prefix = self.rules['id_prefixes'].get(f"binpick_{action}", "ui-binpick-")
-            msg_id = f"{prefix}{self.counters['binpick']:03d}"
+            prefix = self.rules['id_prefixes'].get(f"binpick_{action}", "ui-binpick-cmd")
+            msg_id = f"{prefix}"
             payload = {"kind": "command", "cmd": "binpick_control", "action": action, "job_id": job_id}
             frame = self._create_frame("ui.command", "logic", msg_id, payload)
             self.client.publish(self.rules["topics"]["ui_cmd"], json.dumps(frame))
@@ -193,6 +189,7 @@ class MqttComm:
             elif cmd == "system_control":
                 if action == "do_control":
                     data = payload.get("params")
+                    # print(f"DO_control data : {data}")
                     if data and self.role == 'logic' and self.bb:
                         self.bb.set("ui/cmd/do_control/data", data)
                         self.bb.set("ui/cmd/do_control/trigger", 1)

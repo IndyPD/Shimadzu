@@ -435,3 +435,12 @@ class DigitalOutput(IntEnum):
     LOCAL_LAMP_C = 25
     EXT_FW = 26
     EXT_BW = 27
+
+# class Motion_command() :
+#     MOTION_01 = "pick_specimen"
+#     MOTION_02 = "measure_thickness"
+#     MOTION_03 = "align_specimen"
+#     MOTION_04 = "load_tensile_machine"
+#     MOTION_05 = "start_tensile_test"
+#     MOTION_06 = "collect_and_discard"
+#     MOTION_07 = "process_complete"

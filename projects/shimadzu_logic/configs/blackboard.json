@@ -168,5 +168,7 @@
   "ui/state/error": 0,
   "ui/state/input_unit/state": 0,
   "ui/state/pot1/state": 0,
-  "ui/state/pot2/state": 0
+  "ui/state/pot2/state": 0,
+  "ui/cmd/do_control/trigger": 0
+  
 }

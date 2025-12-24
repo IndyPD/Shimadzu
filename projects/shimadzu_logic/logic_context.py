@@ -85,6 +85,7 @@ class LogicContext(ContextBase):
         
         get_robot_cmd : dict = bb.get(robot_cmd_key)
         # device_cmd = bb.get(device_cmd)
+        # 1. 시편 잡으로 가기 로봇 명령 세팅
         if self._seq == 0 and get_robot_cmd == None :
             robot_cmd = {
                 "process" : "pick_specimen",
@@ -94,16 +95,21 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             bb.set(robot_cmd_key, robot_cmd)
-
+        # 1-1. 시편 잡기 명령 확인
         elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
             if (get_robot_cmd.get("process") == "pick_specimen" and
                 get_robot_cmd.get("state") == "done") :
                 bb.set(robot_cmd_key, None)
                 self._seq = 0
                 return LogicEvent.DONE
+            
+            # 에러 확인
             elif (get_robot_cmd.get("process") == "pick_specimen" and
                 get_robot_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
+            
+            # 작업 대기
             else :
                 return LogicEvent.NONE
     
@@ -118,6 +124,7 @@ class LogicContext(ContextBase):
         robot_cmd_key = "process/auto/robot/cmd"
         device_cmd_key = "process/auto/device/cmd"
         
+        # 1. 시편 잡고 두께 측정기 앞 이동 로봇 모션 명령 세팅
         get_robot_cmd : dict = bb.get(robot_cmd_key)
         # device_cmd = bb.get(device_cmd)
         if self._seq == 0 and get_robot_cmd == None :
@@ -130,15 +137,21 @@ class LogicContext(ContextBase):
             }
             bb.set(robot_cmd_key, robot_cmd)
 
+        # 1-1. 시편 잡고 두께 측정기 앞 이동 완료 확인
         elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
             if (get_robot_cmd.get("process") == "move_to_indigator" and
                 get_robot_cmd.get("state") == "done") :
                 bb.set(robot_cmd_key, None)
                 self._seq = 0
                 return LogicEvent.DONE
+            
+            # 에러 확인
             elif (get_robot_cmd.get("process") == "move_to_indigator" and
                 get_robot_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
+            
+            # 작업 대기
             else :
                 self._seq = 1
                 return LogicEvent.NONE
@@ -158,7 +171,8 @@ class LogicContext(ContextBase):
         '''
         robot_cmd_key = "process/auto/robot/cmd"
         device_cmd_key = "process/auto/device/cmd"
-        
+
+        # 1. 시편 잡고 두께 측정기 앞 이동 후 시편 두고 빠지는 모션 세팅
         get_robot_cmd : dict = bb.get(robot_cmd_key)
         if self._seq == 0 and get_robot_cmd == None :
             robot_cmd = {
@@ -169,11 +183,14 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             bb.set(robot_cmd_key, robot_cmd)
-
+            
+        # 1-1. 시편 잡고 두께 측정기 앞 이동 후 시편 두고 빠지는 모션 완료 확인
         elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
             if (get_robot_cmd.get("process") == "place_specimen_and_measure" and
                 get_robot_cmd.get("state") == "done") :
                 bb.set(robot_cmd_key, None)
+                # 두께 측정 명령 생성
                 device_cmd = {
                     "command" : "measure_thickness",
                     "result" : None,
@@ -182,24 +199,34 @@ class LogicContext(ContextBase):
                 }
                 bb.set(device_cmd_key, device_cmd)
                 self._seq = 1
+
+            # 에레 확인
             elif (get_robot_cmd.get("process") == "place_specimen_and_measure" and
                 get_robot_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
+            
+            # 작업 대기
             else :
                 return LogicEvent.NONE   
+
+        # 2. 두께 측정 완료 확인
         get_device_cmd : dict = bb.get(device_cmd_key)
         if self._seq == 1 and get_device_cmd :
+            # 완료 확인
             if (get_device_cmd.get("command") == "measure_thickness" and
                 get_device_cmd.get("is_done") == True) :
                 bb.set(f"process/auto/thickness/{Sequence}",get_device_cmd.get("result"))
                 bb.set(device_cmd_key, None)
                 self._seq = 0
                 return LogicEvent.DONE
+            
+            # 에러 확인
             elif (get_device_cmd.get("command") == "measure_thickness" and
                 get_device_cmd.get("is_done") == False and
                 get_device_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
             
+            # 작업 대기
             else :
                 return LogicEvent.NONE
                 
@@ -216,10 +243,10 @@ class LogicContext(ContextBase):
         :param Sequence: 두께 측정 3번하는거
         Pick_specimen_out_from_indigator 로봇 모션만 함
         '''
-        
         robot_cmd_key = "process/auto/robot/cmd"
         device_cmd_key = "process/auto/device/cmd"
         
+        # 1. 두께 측정기 안 시편 잡아오기 로봇 모션 세팅
         get_robot_cmd : dict = bb.get(robot_cmd_key)
         if self._seq == 0 and get_robot_cmd == None :
             robot_cmd = {
@@ -230,15 +257,21 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             bb.set(robot_cmd_key, robot_cmd)
+        # 1-1. 두께 측정기 안 시편 잡아오기 로봇 모션 완료 확인
         elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
             if (get_robot_cmd.get("process") == "Pick_specimen_out_from_indigator" and
                 get_robot_cmd.get("state") == "done") :
                 bb.set(robot_cmd_key, None)
                 self._seq = 0
                 return LogicEvent.DONE
+            
+            # 에러 확인
             elif (get_robot_cmd.get("process") == "Pick_specimen_out_from_indigator" and
                 get_robot_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
+            
+            # 작업 대기
             else :
                 return LogicEvent.NONE
 
@@ -248,15 +281,12 @@ class LogicContext(ContextBase):
                         Sequence : int = 0):
         '''
         Docstring for align_specimen
-        
-        :param floor: Description
-        :param specimen_num: Description
-        :param Sequence: Description
         place_specimen_and_measure 로봇 모션 and 정렬기 동작 함
         '''
         robot_cmd_key = "process/auto/robot/cmd"
         device_cmd_key = "process/auto/device/cmd"
         
+        # 1. 정렬기에 가져다 놓기 명령 전달
         get_robot_cmd : dict = bb.get(robot_cmd_key)
         if self._seq == 0 and get_robot_cmd == None :
             robot_cmd = {
@@ -267,19 +297,78 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             bb.set(robot_cmd_key, robot_cmd)
+
+        # 1-1. 정렬기 명령 전달 후 모션 완료 대기
         elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
             if (get_robot_cmd.get("process") == "align_specimen" and
                 get_robot_cmd.get("state") == "done") :
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
-                return LogicEvent.DONE
+                self._seq = 1
+                # 장비제어 명령 세팅 : 정렬기 정렬
+                device_cmd = {
+                    "command" : "align_specimen",
+                    "result" : None,
+                    "state" : "",
+                    "is_done" : False                               
+                }
+                bb.set(device_cmd_key, device_cmd)
+            # 에러 확인
             elif (get_robot_cmd.get("process") == "align_specimen" and
                 get_robot_cmd.get("state") == "error") :
                 return LogicEvent.VIOLATION_DETECT
+            # 작업 대기
             else :
                 return LogicEvent.NONE
-
-    def load_tensile_machine(self):
+            
+        # 2. 시편 정렬 명령 수행
+        if self._seq == 1 :
+            get_device_cmd : dict = bb.get(device_cmd_key)
+            if get_device_cmd :
+                # 완료 확인
+                if (get_device_cmd.get("command") == "align_specimen" and
+                    get_device_cmd.get("is_done") == True) :
+                    bb.set(device_cmd_key, None)
+                    self._seq = 2      
+                    # 로봇 모션 명령 세팅 : 정렬된 시편 잡고나오기
+                    robot_cmd = {
+                        "process" : "Pick_specimen_out_from_align",
+                        "target_floor" : 0,
+                        "target_num" : 0,
+                        "place_position" : 0,
+                        "state" : ""
+                    }                                  
+                # 에러 확인
+                elif (get_device_cmd.get("command") == "align_specimen" and
+                    get_device_cmd.get("is_done") == False and
+                    get_device_cmd.get("state") == "error") :
+                    return LogicEvent.VIOLATION_DETECT
+                # 작업 대기
+                else :
+                    return LogicEvent.NONE
+                
+        # 3. 정렬된 시편 잡고 나오는 모션 실행
+        if self._seq == 2 :
+            get_robot_cmd : dict = bb.get(robot_cmd_key)
+            if get_robot_cmd :
+                # 완료 확인
+                if (get_robot_cmd.get("process") == "Pick_specimen_out_from_align" and
+                    get_robot_cmd.get("state") == "done") :
+                    bb.set(robot_cmd_key, None)
+                    self._seq = 0
+                    return LogicEvent.DONE
+                # 에러 확인
+                elif (get_robot_cmd.get("process") == "Pick_specimen_out_from_align" and
+                      get_device_cmd.get("state") == "error") :
+                    return LogicEvent.VIOLATION_DETECT
+                # 작업 대기
+                else :
+                    return LogicEvent.NONE
+        
+    def load_tensile_machine(self, 
+                        floor : int = 0, 
+                        specimen_num : int = 0, 
+                        Sequence : int = 0):
         pass
 
     def start_tensile_test(self):

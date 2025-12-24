@@ -102,16 +102,16 @@ class RobotFSM(FiniteStateMachine):
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
             RobotState.AUTO_MOTION_APPROACH_PICK: {
-                RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE: RobotState.AUTO_MOTION_PICK_SPECIMEN,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
             RobotState.AUTO_MOTION_PICK_SPECIMEN: {
-                RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE: RobotState.AUTO_MOTION_RETRACT_FROM_TRAY,
                 RobotViolation.GRIPPER_FAIL: RobotState.ERROR,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
             RobotState.AUTO_MOTION_RETRACT_FROM_TRAY: {
-                RobotEvent.AUTO_MOTION_RETRACT_FROM_TRAY_DONE: RobotState.WAIT_AUTO_COMMAND,
+                RobotEvent.AUTO_MOTION_RETRACT_FROM_TRAY_DONE: RobotState.AUTO_MOTION_RETRACT_FROM_RACK,
                 RobotEvent.VIOLATION_DETECT: RobotState.ERROR,
             },
             RobotState.AUTO_MOTION_RETRACT_FROM_RACK: {

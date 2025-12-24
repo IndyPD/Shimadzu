@@ -99,8 +99,27 @@ class RobotWaitAutoCommandStrategy(Strategy):
         #     return RobotEvent.START_PROCESS
         if bb.get("test/robot/motion") :
             return RobotEvent.DO_AUTO_MOTION_MOVE_HOME
-        
-        return RobotEvent.NONE
+        # robot_cmd = {
+        #         "process" : "pick_specimen",
+        #         "target_floor" : floor,
+        #         "target_num" : specimen_num,
+        #         "place_position" : 0,
+        #         "state" : ""
+        #     }
+        robot_cmd_key = "process/auto/robot/cmd"
+        robot_cmd : dict = bb.get(robot_cmd_key)
+        if robot_cmd :
+            process = robot_cmd.get("process")
+            if process == "pick_specimen" :
+                floor = robot_cmd.get("target_floor")
+                specimen_num = robot_cmd.get("target_num")
+                return RobotEvent.DO_AUTO_MOTION_PICK_SPECIMEN
+            elif process == "move_to_indigator" :
+                return RobotEvent.DO_AUTO_MOTION_MOVE_TO_INDIGATOR
+                pass
+            pass
+        else :
+            return RobotEvent.NONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         pass
 
@@ -156,7 +175,10 @@ class RobotApproachPickStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
         Logger.info("Robot: Approaching Pick Position.")
     def operate(self, context: RobotContext) -> RobotEvent:
-        return RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE
+        if context.check_violation():
+            return RobotEvent.VIOLATION_DETECT
+        return motion_fuction()
+        # return RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         pass
 

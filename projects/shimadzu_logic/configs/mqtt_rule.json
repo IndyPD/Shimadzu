@@ -17,12 +17,12 @@
     "binpick_status": "bp-status-001"
   },
   "id_prefixes": {
-    "tensile": "ui-tensile-cmd-",
-    "manual": "ui-manual-cmd-",
+    "tensile": "ui-tensile-cmd",
+    "manual": "ui-manual-cmd",
     "binpick_start": "ui-start-",
     "binpick_pause": "ui-pause-",
     "binpick_shake": "ui-shake-",
-    "logic_to_bp": "logic-cmd-"
+    "logic_to_bp": "logic-cmd"
   },
   "roles": {
     "ui": "ui",

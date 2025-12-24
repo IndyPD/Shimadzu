@@ -16,6 +16,7 @@ from pkg.utils.blackboard import GlobalBlackboard
 bb = GlobalBlackboard()
 
 import time
+import threading
 
 class DeviceContext(ContextBase):
     violation_code: int
@@ -31,6 +32,8 @@ class DeviceContext(ContextBase):
         Logger.info(f"[device] Debug mode : {self.debug_mode}")
         Logger.info(f"[device] configs : {config.get('remote_io')}")
         Logger.info(f"[device] configs : {config.get('shimadzu_ip')} : {config.get('shimadzu_port')}")
+
+        self._io_lock = threading.Lock()
 
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
@@ -51,6 +54,15 @@ class DeviceContext(ContextBase):
         self.remote_output_data = self.iocontroller.current_do_value
         self.remote_comm_state = False
 
+        Lamp_on = 0
+        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_C,Lamp_on)
+        time.sleep(0.1)
+        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_L,Lamp_on)
+        time.sleep(0.1)
+        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_R,Lamp_on)
+        time.sleep(0.1)
+
+        
 
         # ShimadzuClient 장치 인스턴스 생성
         if self.dev_smz_enable :
@@ -126,10 +138,10 @@ class DeviceContext(ContextBase):
                 if bb.get("ui/cmd/do_control/trigger") == 1:
                     data = bb.get("ui/cmd/do_control/data")
                     if isinstance(data, dict):
-                        address = data.get("address")
+                        address = data.get("addr")
                         val = data.get("value")
-                        if address is not None and val is not None:
-                            self.UI_DO_Control(int(address), int(val))
+                        Logger.info(f"[Device] DO_Control : {address} {val}")
+                        self.UI_DO_Control(int(address), int(val))
                     
                     # 처리 완료 후 트리거 리셋
                     bb.set("ui/cmd/do_control/trigger", 0)
@@ -203,9 +215,13 @@ class DeviceContext(ContextBase):
         if not hasattr(self, 'iocontroller') or self.iocontroller is None:
             return
         try:
-            self.remote_input_data = self.iocontroller.read_input_data()
-            self.remote_output_data = self.iocontroller.read_output_data()
-            # Logger.info(f"Remote I/O Input Data: {self.remote_input_data}")
+            with self._io_lock:
+                self.remote_input_data = self.iocontroller.read_input_data()
+                self.remote_output_data = self.iocontroller.read_output_data()
+            
+            if self.remote_input_data is None or self.remote_output_data is None:
+                raise ValueError("Failed to read data from Remote I/O (received None)")
+
             bb.set("device/remote/input/entire", self.remote_input_data)
             bb.set("device/remote/output/entire", self.remote_output_data)
             
@@ -268,7 +284,6 @@ class DeviceContext(ContextBase):
             self.remote_comm_state = True
         except Exception as e:
             Logger.error(f"[device] Error in read_IO_status: {e}")
-            reraise(e)
             self.remote_comm_state = False
 
     def UI_DO_Control(self, address: int, value: int) -> bool:
@@ -282,9 +297,10 @@ class DeviceContext(ContextBase):
             if not hasattr(self, 'iocontroller') or self.iocontroller is None:
                 Logger.error("[device] UI_DO_Control: iocontroller is not initialized.")
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[address] = value
-            self.iocontroller.write_output_data(output_data)
+            with self._io_lock:
+                output_data = self.remote_output_data.copy()
+                output_data[address] = value
+                self.iocontroller.write_output_data(output_data)
             Logger.info(f"[device] UI_DO_Control: DO {address} set to {value}")
             return True
         except Exception as e:
