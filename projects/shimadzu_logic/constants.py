@@ -44,13 +44,17 @@ class LogicState(OpState):
     WAIT_PROCESS = 9          # 4. 자동화 공정 대기
     RUN_PROCESS = 10          # 5. 자동화 공정 실행
     DETERMINE_TASK = 11       # 6. 작업 내용 판단
-    PICK_SPECIMEN = 12        # 7. 시편 잡고 나오기
-    MEASURE_THICKNESS = 13    # 8. 시편 두께 측정
-    ALIGN_SPECIMEN = 14       # 9. 시편 정렬
-    LOAD_TENSILE_MACHINE = 15 # 10. 시편 인장시험기에 장착
-    START_TENSILE_TEST = 16   # 11. 시편 인장 시험 시작
-    COLLECT_AND_DISCARD = 17  # 12. 시편 수거 및 버리기
-    PROCESS_COMPLETE = 18     # 13. 자동화 공정 완료
+    PICK_SPECIMEN = 12                   # 7. 시편 잡기 (A)
+    MOVE_TO_INDIGATOR = 13               # 8. 측정기 이동 (B)
+    PLACE_SPECIMEN_AND_MEASURE = 14      # 9. 시편 거치 및 측정 (B)
+    PICK_SPECIMEN_OUT_FROM_INDIGATOR = 15 # 10. 측정기에서 시편 반출 (B)
+    ALIGN_SPECIMEN = 16                  # 11. 시편 정렬 (C)
+    LOAD_TENSILE_MACHINE = 17            # 12. 인장기 장착 (D)
+    RETREAT_TENSILE_MACHINE = 18         # 13. 인장기 후퇴 (D)
+    START_TENSILE_TEST = 19              # 14. 인장 시험 시작 (D)
+    PICK_TENSILE_MACHINE = 20            # 15. 인장기 시편 수거 (D)
+    RETREAT_AND_HANDLE_SCRAP = 21        # 16. 후퇴 및 스크랩 처리 (D)
+    PROCESS_COMPLETE = 22                # 17. 공정 완료
 
     
 # 2. LogicEvent (Neuromeka 전체 제어 이벤트) 정의
@@ -85,12 +89,16 @@ class LogicEvent(OpEvent):
     DO_STEP_STOP = 26           # 단계 정지 실행
     DO_DETERMINE_TASK = 27      # 작업 내용 판단 실행
     DO_PICK_SPECIMEN = 28       # 시편 잡고 나오기 실행
-    DO_MEASURE_THICKNESS = 29   # 시편 두께 측정 실행
-    DO_ALIGN_SPECIMEN = 30      # 시편 정렬 실행
-    DO_LOAD_TENSILE_MACHINE = 31 # 시편 인장시험기에 장착 실행
-    DO_START_TENSILE_TEST = 32  # 시편 인장 시험 시작 실행
-    DO_COLLECT_AND_DISCARD = 33 # 시편 수거 및 버리기 실행
-    DO_PROCESS_COMPLETE = 34    # 자동화 공정 완료 실행
+    DO_MOVE_TO_INDIGATOR = 29               # 측정기 이동 실행
+    DO_PLACE_SPECIMEN_AND_MEASURE = 30      # 시편 거치 및 측정 실행
+    DO_PICK_SPECIMEN_OUT_FROM_INDIGATOR = 31 # 측정기 시편 반출 실행
+    DO_ALIGN_SPECIMEN = 32                  # 시편 정렬 실행
+    DO_LOAD_TENSILE_MACHINE = 33            # 인장기 장착 실행
+    DO_RETREAT_TENSILE_MACHINE = 34         # 인장기 후퇴 실행
+    DO_START_TENSILE_TEST = 35              # 인장 시험 시작 실행
+    DO_PICK_TENSILE_MACHINE = 36            # 인장기 시편 수거 실행
+    DO_RETREAT_AND_HANDLE_SCRAP = 37        # 후퇴 및 스크랩 처리 실행
+    DO_PROCESS_COMPLETE = 38                # 공정 완료 실행
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
 class LogicViolation(ViolationType):
@@ -436,11 +444,26 @@ class DigitalOutput(IntEnum):
     EXT_FW = 26
     EXT_BW = 27
 
-# class Motion_command() :
-#     MOTION_01 = "pick_specimen"
-#     MOTION_02 = "measure_thickness"
-#     MOTION_03 = "align_specimen"
-#     MOTION_04 = "load_tensile_machine"
-#     MOTION_05 = "start_tensile_test"
-#     MOTION_06 = "collect_and_discard"
-#     MOTION_07 = "process_complete"
+class Motion_command:
+    M01_PICK_SPECIMEN = "pick_specimen"
+    M02_MOVE_TO_INDICATOR = "move_to_indigator"
+    M03_PLACE_AND_MEASURE = "place_specimen_and_measure"
+    M04_PICK_OUT_FROM_INDICATOR = "Pick_specimen_out_from_indigator"
+    M05_ALIGN_SPECIMEN = "align_specimen"
+    M06_PICK_OUT_FROM_ALIGN = "Pick_specimen_out_from_align"
+    M07_LOAD_TENSILE_MACHINE = "load_tensile_machine"
+    M08_RETREAT_TENSILE_MACHINE = "retreat_tensile_machine"
+    M09_PICK_TENSILE_MACHINE = "pick_tensile_machine"
+    M10_RETREAT_AND_HANDLE_SCRAP = "retreat_and_handle_scrap"
+
+class Device_command:
+    MEASURE_THICKNESS = "measure_thickness"
+    ALIGN_SPECIMEN = "align_specimen"
+    TENSILE_GRIPPER_ON = "tessile_gripper_on"
+    TENSILE_GRIPPER_OFF = "tessile_gripper_off"
+    EXT_FORWARD = "ext_forward"
+    EXT_BACKWARD = "ext_backward"
+    START_TENSILE_TEST = "start_tensile_test"
+    STOP_TENSILE_TEST = "stop_tensile_test"
+    PAUSE_TENSILE_TEST = "pause_tensile_test"
+    RESUME_TENSILE_TEST = "resume_tensile_test"

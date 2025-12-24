@@ -23,7 +23,7 @@ class ConnectingStrategy(Strategy):
             return DeviceEvent.CONNECTION_SUCCESS
             
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ConnectingStrategy")
+        Logger.info(f"[device] exit ConnectingStrategy with event: {event}")
 
 
 ##
@@ -43,7 +43,7 @@ class ErrorStrategy(Strategy):
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ErrorStrategy")
+        Logger.info(f"[device] exit ErrorStrategy with event: {event}")
 
 
 ##
@@ -68,7 +68,7 @@ class RecoveringStrategy(Strategy):
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit RecoveringStrategy")
+        Logger.info(f"[device] exit RecoveringStrategy with event: {event}")
 
 ##
 # @class StopOffStrategy
@@ -92,7 +92,7 @@ class StopOffStrategy(Strategy):
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit StopOffStrategy")
+        Logger.info(f"[device] exit StopOffStrategy with event: {event}")
 
 
 ##
@@ -150,7 +150,7 @@ class ReadyStrategy(Strategy):
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ReadyStrategy")
+        Logger.info(f"[device] exit ReadyStrategy with event: {event}")
 
 
 ## ----------------------------------------------------
@@ -169,7 +169,7 @@ class WaitCommandStrategy(Strategy):
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit WaitCommandStrategy")
+        Logger.info(f"[device] exit WaitCommandStrategy with event: {event}")
 
 class ReadQRStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -183,7 +183,7 @@ class ReadQRStrategy(Strategy):
         # 실패 시: return DeviceEvent.QR_READ_FAIL
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ReadQRStrategy")
+        Logger.info(f"[device] exit ReadQRStrategy with event: {event}")
 
 class MeasureThicknessStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -195,7 +195,7 @@ class MeasureThicknessStrategy(Strategy):
         return DeviceEvent.THICKNESS_MEASURE_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit MeasureThicknessStrategy")
+        Logger.info(f"[device] exit MeasureThicknessStrategy with event: {event}")
 
 class AlignerOpenStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -206,7 +206,7 @@ class AlignerOpenStrategy(Strategy):
         return DeviceEvent.ALIGNER_OPEN_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit AlignerOpenStrategy")
+        Logger.info(f"[device] exit AlignerOpenStrategy with event: {event}")
 
 class AlignerActionStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -217,7 +217,7 @@ class AlignerActionStrategy(Strategy):
         return DeviceEvent.ALIGNER_ACTION_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit AlignerActionStrategy")
+        Logger.info(f"[device] exit AlignerActionStrategy with event: {event}")
 
 class GripperMoveDownStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -228,7 +228,7 @@ class GripperMoveDownStrategy(Strategy):
         return DeviceEvent.GRIPPER_MOVE_DOWN_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit GripperMoveDownStrategy")
+        Logger.info(f"[device] exit GripperMoveDownStrategy with event: {event}")
 
 class GripperGripStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -239,7 +239,7 @@ class GripperGripStrategy(Strategy):
         return DeviceEvent.GRIPPER_GRIP_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit GripperGripStrategy")
+        Logger.info(f"[device] exit GripperGripStrategy with event: {event}")
 
 class RemovePreloadStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -250,7 +250,7 @@ class RemovePreloadStrategy(Strategy):
         return DeviceEvent.REMOVE_PRELOAD_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit RemovePreloadStrategy")
+        Logger.info(f"[device] exit RemovePreloadStrategy with event: {event}")
 
 class ExtensometerForwardStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -261,7 +261,7 @@ class ExtensometerForwardStrategy(Strategy):
         return DeviceEvent.EXTENSOMETER_FORWARD_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ExtensometerForwardStrategy")
+        Logger.info(f"[device] exit ExtensometerForwardStrategy with event: {event}")
 
 class StartTensileTestStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -273,7 +273,7 @@ class StartTensileTestStrategy(Strategy):
         return DeviceEvent.TENSILE_TEST_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit StartTensileTestStrategy")
+        Logger.info(f"[device] exit StartTensileTestStrategy with event: {event}")
 
 class ExtensometerBackwardStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -284,7 +284,7 @@ class ExtensometerBackwardStrategy(Strategy):
         return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit ExtensometerBackwardStrategy")
+        Logger.info(f"[device] exit ExtensometerBackwardStrategy with event: {event}")
 
 class GripperReleaseStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
@@ -295,4 +295,4 @@ class GripperReleaseStrategy(Strategy):
         return DeviceEvent.GRIPPER_RELEASE_DONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
-        Logger.info("[device] exit GripperReleaseStrategy")
+        Logger.info(f"[device] exit GripperReleaseStrategy with event: {event}")

@@ -18,7 +18,7 @@ class RobotConnectingStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
         
 class RobotErrorStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -29,7 +29,7 @@ class RobotErrorStrategy(Strategy):
             return RobotEvent.RECOVER
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
         return RobotEvent.NONE
 
 class RobotRecoveringStrategy(Strategy):
@@ -41,7 +41,7 @@ class RobotRecoveringStrategy(Strategy):
         return RobotEvent.DONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
         # return RobotEvent.NONE
 
 class RobotStopOffStrategy(Strategy):
@@ -52,7 +52,7 @@ class RobotStopOffStrategy(Strategy):
         return RobotEvent.DONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotReadyStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -67,7 +67,7 @@ class RobotReadyStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 # ----------------------------------------------------
 # 2. 로봇 작업 특화 전략
@@ -81,7 +81,7 @@ class RobotProgramAutoOnStrategy(Strategy):
         # bb.set("robot/program/run",1)
         return RobotEvent.PROGRAM_AUTO_ON_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotProgramManualOffStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -89,7 +89,7 @@ class RobotProgramManualOffStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.PROGRAM_MANUAL_OFF_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotWaitAutoCommandStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -110,18 +110,18 @@ class RobotWaitAutoCommandStrategy(Strategy):
         robot_cmd : dict = bb.get(robot_cmd_key)
         if robot_cmd :
             process = robot_cmd.get("process")
-            if process == "pick_specimen" :
+            if process == Motion_command.M01_PICK_SPECIMEN:
                 floor = robot_cmd.get("target_floor")
                 specimen_num = robot_cmd.get("target_num")
                 return RobotEvent.DO_AUTO_MOTION_PICK_SPECIMEN
-            elif process == "move_to_indigator" :
+            elif process == Motion_command.M02_MOVE_TO_INDICATOR:
                 return RobotEvent.DO_AUTO_MOTION_MOVE_TO_INDIGATOR
                 pass
             pass
         else :
             return RobotEvent.NONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotMoveHomeStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -129,7 +129,7 @@ class RobotMoveHomeStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_MOVE_HOME_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotToolChangeStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -137,7 +137,7 @@ class RobotToolChangeStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_TOOL_CHANGE_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachRackStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -145,7 +145,7 @@ class RobotApproachRackStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_APPROACH_RACK_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotAutoGripperOpenStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -153,7 +153,7 @@ class RobotAutoGripperOpenStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_GRIPPER_OPEN_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotAutoGripperCloseStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -161,7 +161,7 @@ class RobotAutoGripperCloseStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_GRIPPER_CLOSE_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotMoveToQRStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -169,7 +169,7 @@ class RobotMoveToQRStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_MOVE_TO_QR_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachPickStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -180,7 +180,7 @@ class RobotApproachPickStrategy(Strategy):
         return motion_fuction()
         # return RobotEvent.AUTO_MOTION_APPROACH_PICK_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotPickSpecimenStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -188,7 +188,7 @@ class RobotPickSpecimenStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromTrayStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -196,7 +196,7 @@ class RobotRetractFromTrayStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_TRAY_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromRackStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -204,7 +204,7 @@ class RobotRetractFromRackStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_RACK_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachThicknessStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -212,7 +212,7 @@ class RobotApproachThicknessStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_APPROACH_THICKNESS_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterThicknessPos1Strategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -220,7 +220,7 @@ class RobotEnterThicknessPos1Strategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_1_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterThicknessPos2Strategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -228,7 +228,7 @@ class RobotEnterThicknessPos2Strategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_2_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterThicknessPos3Strategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -236,7 +236,7 @@ class RobotEnterThicknessPos3Strategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_THICKNESS_POS_3_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromThicknessStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -244,7 +244,7 @@ class RobotRetractFromThicknessStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_THICKNESS_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachAlignerStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -252,7 +252,7 @@ class RobotApproachAlignerStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_APPROACH_ALIGNER_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterAlignerStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -260,7 +260,7 @@ class RobotEnterAlignerStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_ALIGNER_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromAlignerStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -268,7 +268,7 @@ class RobotRetractFromAlignerStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_ALIGNER_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachTensileStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -276,7 +276,7 @@ class RobotApproachTensileStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_APPROACH_TENSILE_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterTensileStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -284,7 +284,7 @@ class RobotEnterTensileStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_TENSILE_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromTensileStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -292,7 +292,7 @@ class RobotRetractFromTensileStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_TENSILE_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotApproachScrapStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -300,7 +300,7 @@ class RobotApproachScrapStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_APPROACH_SCRAP_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotEnterScrapStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -308,7 +308,7 @@ class RobotEnterScrapStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         return RobotEvent.AUTO_MOTION_ENTER_SCRAP_DONE
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
 class RobotRetractFromScrapStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
@@ -317,4 +317,4 @@ class RobotRetractFromScrapStrategy(Strategy):
         return RobotEvent.AUTO_MOTION_RETRACT_FROM_SCRAP_DONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")

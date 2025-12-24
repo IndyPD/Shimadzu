@@ -22,7 +22,7 @@ class LogicConnectingStrategy(Strategy):
         return LogicEvent.NONE
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicErrorStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -35,7 +35,7 @@ class LogicErrorStrategy(Strategy):
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicRecoveringStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -46,7 +46,7 @@ class LogicRecoveringStrategy(Strategy):
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
         # return LogicEvent.NONE
 
 class LogicStopOffStrategy(Strategy):
@@ -58,7 +58,7 @@ class LogicStopOffStrategy(Strategy):
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
         # return LogicEvent.NONE
 
 class LogicIdleStrategy(Strategy):
@@ -75,7 +75,7 @@ class LogicIdleStrategy(Strategy):
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 # ----------------------------------------------------
 # 2. Logic 배치 시퀀스 전략
@@ -91,7 +91,7 @@ class LogicWaitCommandStrategy(Strategy):
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicRegisterProcessInfoStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -102,7 +102,7 @@ class LogicRegisterProcessInfoStrategy(Strategy):
         return LogicEvent.REGISTRATION_DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicCheckDeviceStatusStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -113,7 +113,7 @@ class LogicCheckDeviceStatusStrategy(Strategy):
         return LogicEvent.STATUS_CHECK_DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicWaitProcessStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -123,7 +123,7 @@ class LogicWaitProcessStrategy(Strategy):
         return LogicEvent.PROCESS_START
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicRunProcessStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -145,7 +145,7 @@ class LogicRunProcessStrategy(Strategy):
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicDetermineTaskStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -154,61 +154,112 @@ class LogicDetermineTaskStrategy(Strategy):
         # TODO: 배치 계획에 따라 다음 작업(시편 번호 등) 결정
         return LogicEvent.DONE
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicPickSpecimenStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         Logger.info("Logic: Picking specimen.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Robot FSM에 시편 픽업 명령 전달 및 완료 대기
-        return LogicEvent.DONE
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        return context.pick_specimen(floor, num)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicMeasureThicknessStrategy(Strategy):
+class LogicMoveToIndigatorStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
-        Logger.info("Logic: Measuring thickness.")
+        Logger.info("Logic: Moving to indigator.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Robot/Device FSM 협업하여 두께 측정 수행
-        return LogicEvent.DONE
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        return context.move_to_indigator(floor, num)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicPlaceSpecimenAndMeasureStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Placing specimen and measuring.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.place_specimen_and_measure(floor, num, seq)
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicPickSpecimenOutFromIndigatorStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Picking specimen out from indigator.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.Pick_specimen_out_from_indigator(floor, num, seq)
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicAlignSpecimenStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         Logger.info("Logic: Aligning specimen.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Robot/Device FSM 협업하여 시편 정렬 수행
-        return LogicEvent.DONE
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.align_specimen(floor, num, seq)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicLoadTensileMachineStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         Logger.info("Logic: Loading tensile machine.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Robot FSM으로 시편 장착, Device FSM으로 그리퍼 체결
-        return LogicEvent.DONE
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.load_tensile_machine(floor, num, seq)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicRetreatTensileMachineStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Retreating from tensile machine.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.retreat_tensile_machine(floor, num, seq)
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicStartTensileTestStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         Logger.info("Logic: Starting tensile test.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Device FSM에 시험 시작 명령 전달 및 완료 대기
-        return LogicEvent.DONE
+        return context.start_tensile_test()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicCollectAndDiscardStrategy(Strategy):
+class LogicPickTensileMachineStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
-        Logger.info("Logic: Collecting and discarding specimen.")
+        Logger.info("Logic: Picking from tensile machine.")
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: Device 그리퍼 해제 후 Robot이 시편 수거하여 폐기함으로 이동
-        return LogicEvent.DONE
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.pick_tensile_machine(floor, num, seq)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicRetreatAndHandleScrapStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Retreating and handling scrap.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.retreat_and_handle_scrap(floor, num, seq)
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicProcessCompleteStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
@@ -218,4 +269,4 @@ class LogicProcessCompleteStrategy(Strategy):
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        pass
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")

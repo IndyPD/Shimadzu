@@ -49,6 +49,7 @@ class RobotErrorStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ErrorStrategy with event: {event}")
         if event == RobotEvent.RECOVER:
             Logger.info("Violation cleared, starting recovery")
 
@@ -73,6 +74,7 @@ class RobotRecoveringStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RecoveringStrategy with event: {event}")
         if event == RobotEvent.DONE:
             Logger.info("Recovery completed successfully")
             context.control_tower_lamp(green=True)
@@ -98,6 +100,7 @@ class RobotStopOffStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit StopOffStrategy with event: {event}")
         if event == RobotEvent.DONE:
             Logger.info("Emergency stop released, reconnecting...")
 
@@ -122,7 +125,7 @@ class RobotReadyStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit WaitAutoCommandStrategy with event: {event}")
 
 
 # ========================================
@@ -146,6 +149,7 @@ class RobotProgramAutoOnStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ProgramAutoOnStrategy with event: {event}")
         Logger.info("Auto mode enabled, waiting for commands")
 
 
@@ -161,6 +165,7 @@ class RobotProgramManualOffStrategy(Strategy):
         return RobotEvent.PROGRAM_MANUAL_OFF_DONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ProgramManualOffStrategy with event: {event}")
         Logger.info("Manual mode enabled")
 
 
@@ -184,7 +189,7 @@ class RobotWaitAutoCommandStrategy(Strategy):
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
-        pass
+        Logger.info(f"[Robot] exit ReadyStrategy with event: {event}")
 
 
 # ========================================
@@ -207,6 +212,7 @@ class RobotMoveHomeStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterScrapStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -262,6 +268,7 @@ class RobotAutoGripperOpenStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachScrapStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -280,6 +287,7 @@ class RobotAutoGripperCloseStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RetractFromTensileStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -302,6 +310,7 @@ class RobotApproachRackStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterTensileStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -335,6 +344,7 @@ class RobotMoveToQRStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachTensileStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -357,6 +367,7 @@ class RobotApproachPickStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RetractFromAlignerStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -390,6 +401,7 @@ class RobotPickSpecimenStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterAlignerStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -412,6 +424,7 @@ class RobotRetractFromTrayStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachAlignerStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -430,6 +443,7 @@ class RobotRetractFromRackStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RetractFromThicknessStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -452,6 +466,7 @@ class RobotApproachThicknessStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterThicknessPos3Strategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -478,6 +493,7 @@ class RobotEnterThicknessPos1Strategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterThicknessPos2Strategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -511,6 +527,7 @@ class RobotEnterThicknessPos2Strategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit EnterThicknessPos1Strategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -552,6 +569,7 @@ class RobotEnterThicknessPos3Strategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachThicknessStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -578,6 +596,7 @@ class RobotRetractFromThicknessStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RetractFromRackStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -600,6 +619,7 @@ class RobotApproachAlignerStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit RetractFromTrayStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -641,6 +661,7 @@ class RobotEnterAlignerStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit PickSpecimenStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -673,6 +694,7 @@ class RobotRetractFromAlignerStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachPickStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -695,6 +717,7 @@ class RobotApproachTensileStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit MoveToQRStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -723,6 +746,7 @@ class RobotEnterTensileStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ApproachRackStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -755,6 +779,7 @@ class RobotRetractFromTensileStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit AutoGripperCloseStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -777,6 +802,7 @@ class RobotApproachScrapStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit AutoGripperOpenStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -800,6 +826,7 @@ class RobotEnterScrapStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit ToolChangeStrategy with event: {event}")
         context.motion_command_reset()
 
 
@@ -820,4 +847,5 @@ class RobotRetractFromScrapStrategy(Strategy):
         return RobotEvent.VIOLATION_DETECT
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
+        Logger.info(f"[Robot] exit MoveHomeStrategy with event: {event}")
         context.motion_command_reset()
