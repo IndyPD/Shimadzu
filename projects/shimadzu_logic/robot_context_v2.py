@@ -840,6 +840,8 @@ class RobotContext(ContextBase):
         6. 그리퍼 닫기
         7. 정렬기 앞 복귀 (6000)
         """
+        #TODO Align DI신호 읽어서 다 PULL 되어있나 확인하고 안되어있으면 DO로 다 PULL
+        
         # 1. 정렬기 앞 이동
         if not self.move_to_aligner_front():
             return False
