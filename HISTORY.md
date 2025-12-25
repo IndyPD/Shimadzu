@@ -2,6 +2,26 @@
 
 이 문서는 프로젝트의 주요 변경 사항, 릴리스, 그리고 중요한 이정표를 기록합니다. 앞으로 아래의 정해진 형식에 따라 기록을 유지하며, 가독성을 위해 백틱 기호는 사용하지 않습니다.
 
+v0.1.0 - 2025-12-25 (LogicFSM 및 전략 강화: 시편 처리 개선 및 DB 통합)
+
+1. 하드웨어 (Hardware)
+(특이사항 없음)
+
+2. 소프트웨어 (Software)
+LogicFSM 상태 및 이벤트 추가: QR 판독을 위한 랙 이동 및 정렬기 시편 반출 단계 추가
+신규 전략 구현: LogicMoveToRackForQRReadStrategy 및 LogicPickSpecimenOutFromAlignStrategy 추가
+공정 흐름 제어 최적화: 시편별 공정 시퀀스 및 상태 전이 관리를 위해 LogicDetermineTaskStrategy 업데이트
+데이터베이스 연동 강화: LogicRegisterProcessInfoStrategy에서 DB 초기화 및 배치 데이터 로드 기능 개선
+DBHandler 도입: 데이터베이스 연결 및 배치 데이터 조회/업데이트 전담 클래스 구현
+문서화: 시스템 데이터 구조 이해를 위한 상세 DB 스키마 명세서(DB.md) 작성
+리팩토링: 코드 가독성 및 유지보수성 향상을 위한 전반적인 코드 정리
+
+3. 이슈 (Issues)
+(특이사항 없음)
+
+4. 기타 (Other)
+(특이사항 없음)
+
 v0.1.0 - 2025-12-24
 
 1. 하드웨어 (Hardware)

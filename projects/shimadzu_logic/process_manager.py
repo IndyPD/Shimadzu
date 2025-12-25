@@ -12,6 +12,7 @@ from pkg.utils.logging import Logger
 # Device FSM 및 Context 임포트
 from .devices_fsm import DeviceFsm
 from .devices_context import DeviceContext
+from .DB_handler import DBHandler
 
 # Robot FSM 및 Context 임포트
 from .robot_fsm_v1 import RobotFSM
@@ -31,6 +32,7 @@ class ProcessManager:
         self.thread = None
         self.robot_error = None
         self.prog_stopped = None
+        self.db = DBHandler()
 
         config_path = 'projects/shimadzu_logic/configs/configs.json'
         config : dict = load_json(config_path)
@@ -48,19 +50,19 @@ class ProcessManager:
         # FSM 인스턴스 생성
         # Device FSM
         Logger.info("Initializing Device FSM...")
-        self.device_fsm = DeviceFsm(DeviceContext())
+        self.device_fsm = DeviceFsm(DeviceContext(self.db))
         self.device_fsm.start_service_background()
         Logger.info("Device FSM initialized.")
 
         # # Robot FSM
         # Logger.info("Initializing Robot FSM...")
-        # self.robot_fsm = RobotFSM(RobotContext())
+        # self.robot_fsm = RobotFSM(RobotContext()) # 로봇은 현재 DB 직접 사용 안함
         # self.robot_fsm.start_service_background()
         # Logger.info("Robot FSM initialized.")
 
-        # # Logic FSM
+        # Logic FSM
         # Logger.info("Initializing Logic FSM...")
-        # self.logic_fsm = LogicFSM(LogicContext())
+        # self.logic_fsm = LogicFSM(LogicContext(self.db))
         # self.logic_fsm.start_service_background()
         # Logger.info("Logic FSM initialized.")
 
@@ -79,6 +81,8 @@ class ProcessManager:
         self.running = False
         if hasattr(self, 'logic_fsm'):
             self.logic_fsm.stop()
+        if self.db:
+            self.db.disconnect()
             
         Logger.info("[ProcessManager] All FSMs stopped.")
 

@@ -4,7 +4,7 @@ import time
 import os
 import json
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 # 설정 파일 경로
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'QR_comm.json')
@@ -45,6 +45,7 @@ class QRReader:
         # 테스트 결과 동기화를 위한 변수
         self._test_result_event = threading.Event()
         self._test_success = False
+        self._last_qr_data = None
 
         # 외부에서 등록 가능한 콜백 함수
         self.on_qr_data = None      # QR 데이터 수신 시 호출: func(data_str)
@@ -143,23 +144,29 @@ class QRReader:
         elif line.startswith("ER,"):
             # 에러 응답 수신
             self._test_success = False
+            self._last_qr_data = {"raw": line, "error": "Device returned ER"}
             self._test_result_event.set()
         else:
             # 실제 QR 데이터 (예: 002,TEST_002:01:100%:98)
             parsed_dict = self.parse_qr_data(line)
-            
-            self._test_success = True
+            self._last_qr_data = parsed_dict
+
+            if "error" in parsed_dict:
+                # 파싱 실패 시 (예: 'ERROR::0%:0') 실패로 처리하여 에러 카운트 증가 유도
+                self._test_success = False
+            else:
+                self._test_success = True
+                # 점수(score)가 80점 이상이면 QUIT 명령을 전송하여 리더기를 멈춤
+                if 'score' in parsed_dict:
+                    try:
+                        score_val = int(parsed_dict['score'])
+                        if score_val >= 80:
+                            if DEBUG_MODE: print(f"🎯 점수 {score_val}점 감지 (80점 이상). QUIT 명령을 전송합니다.")
+                            self.quit()
+                    except (ValueError, TypeError):
+                        pass
+
             self._test_result_event.set()
-            
-            # 점수(score)가 80점 이상이면 QUIT 명령을 전송하여 리더기를 멈춤
-            if 'score' in parsed_dict:
-                try:
-                    score_val = int(parsed_dict['score'])
-                    if score_val >= 80:
-                        if DEBUG_MODE: print(f"🎯 점수 {score_val}점 감지 (80점 이상). QUIT 명령을 전송합니다.")
-                        self.quit()
-                except (ValueError, TypeError):
-                    pass
 
             if self.on_qr_data:
                 self.on_qr_data(parsed_dict)
@@ -188,32 +195,51 @@ class QRReader:
         """LOFF 명령 전송 (리더기 끄기)"""
         return self.send_command("LOFF")
 
-    def request_test(self, test_no: int) -> bool:
+    def request_test(self, test_no: int, max_error_count: int = 10) -> dict:
         """
-        TESTn 명령을 전송하고 최대 5초간 결과를 확인합니다.
-        계속해서 ER 응답이 오거나 응답이 없으면 False를 반환합니다.
+        TESTn 명령을 전송하고 결과를 확인합니다.
+        연속으로 지정된 횟수(max_error_count)만큼 에러 응답이 오거나 타임아웃 시 에러 정보를 담은 dict를 반환합니다.
         """
         start_time = time.time()
-        timeout_limit = 5.0
+        timeout_limit = max_error_count * 2.5  # 시도 횟수에 비례하여 타임아웃 설정
+        error_count = 0
         
-        while time.time() - start_time < timeout_limit:
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed >= timeout_limit:
+                if DEBUG_MODE: print(f"⏰ QR Reader: request_test timed out after {elapsed:.2f}s")
+                break
+
             self._test_result_event.clear()
             self._test_success = False
+            self._last_qr_data = None
             
             if not self.send_command(f"TEST{test_no}"):
-                self.quit()
-                return False
+                return {"status": "error", "message": "send_command_failed"}
             
-            # 응답 대기 (최대 2초)
+            # 응답 대기 (남은 시간 또는 최대 2초 중 작은 값)
             remaining = timeout_limit - (time.time() - start_time)
-            if self._test_result_event.wait(timeout=min(2.0, remaining)):
+            if remaining > 0 and self._test_result_event.wait(timeout=min(2.0, remaining)):
                 if self._test_success:
-                    return True
+                    return {"status": "success", "data": self._last_qr_data}
+                else:
+                    # ER 응답을 받은 경우 카운트 증가
+                    error_count += 1
+                    if DEBUG_MODE: print(f"⚠️ QR Reader: Error response ({error_count}/{max_error_count})")
+                    if error_count >= max_error_count:
+                        if DEBUG_MODE: print(f"🛑 QR Reader: Stopped after {max_error_count} consecutive errors.")
+                        break
             
-            time.sleep(0.5)  # 재시도 전 대기
+            # 아직 시간이 남았다면 재시도 전 잠시 대기
+            if time.time() - start_time < timeout_limit:
+                time.sleep(0.5)
             
         self.quit()
-        return False
+        return {
+            "status": "error", 
+            "message": "max_errors_reached" if error_count >= max_error_count else "timeout",
+            "last_data": self._last_qr_data
+        }
 
     def quit(self):
         """QUIT 명령 전송 (종료)"""
@@ -248,7 +274,7 @@ if __name__ == "__main__":
                 
                 if cmd == '1': qr.trigger_on()
                 elif cmd == '2': qr.trigger_off()
-                elif cmd == '3': qr.request_test(1)
+                elif cmd == '3': qr.request_test(1,20)
                 elif cmd == '4': qr.quit()
                 elif cmd == 'q':
                     break

@@ -98,8 +98,18 @@ class LogicRegisterProcessInfoStrategy(Strategy):
         Logger.info("Logic: Registering process info.")
         
     def operate(self, context: LogicContext) -> LogicEvent:
-        # DB/MES 등록 로직
-        return LogicEvent.REGISTRATION_DONE
+        # 1. 기존 실행 데이터 초기화 (10개 슬롯 생성 및 ID 리셋)
+        context.db.clear_batch_test_items()
+        context.db.clear_test_tray_items()
+
+        # 2. DB에서 공정 계획 로드 및 실행 테이블 기입
+        # get_batch_data 내부에서 데이터 가공 및 Blackboard(bb) 저장이 자동으로 수행됩니다.
+        batch_info = context.db.get_batch_data()
+        if batch_info:
+            return LogicEvent.REGISTRATION_DONE
+        
+        Logger.error(f"Logic: Failed to load batch data from DB.")
+        return LogicEvent.VIOLATION_DETECT
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
@@ -150,9 +160,158 @@ class LogicRunProcessStrategy(Strategy):
 class LogicDetermineTaskStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         Logger.info("Logic: Determining next task.")
+
     def operate(self, context: LogicContext) -> LogicEvent:
-        # TODO: 배치 계획에 따라 다음 작업(시편 번호 등) 결정
-        return LogicEvent.DONE
+        batch_data = bb.get("process/auto/batch_data")
+        if not batch_data or 'processData' not in batch_data:
+            return LogicEvent.VIOLATION_DETECT
+
+        # 1. 현재 진행 중인 시편 찾기 (RUNNING: 2)
+        current_specimen = next((s for s in batch_data['processData'] if s.get('seq_status') == 2), None)
+        
+        # 2. 진행 중인 시편이 없으면 다음 READY(1) 시편 시작
+        if not current_specimen:
+            current_specimen = next((s for s in batch_data['processData'] if s.get('seq_status') == 1), None)
+            if not current_specimen:
+                # 모든 시편 완료
+                return LogicEvent.DO_PROCESS_COMPLETE
+            
+            # 새 시편 시작: 상태 업데이트
+            current_specimen['seq_status'] = 2 # RUNNING
+            bb.set("process/auto/current_specimen_no", 1) # 시편 번호 1번부터 시작
+            bb.set("process/auto/batch_data", batch_data)
+            
+            # DB 업데이트 (Tray RUNNING, Specimen 1 RUNNING)
+            context.db.update_processing_status(batch_data['batch_id'], current_specimen['tray_no'], 1, 2)
+            context.db.insert_summary_log(batch_data['batch_id'], current_specimen['tray_no'], 1, "START")
+            
+            # 작업 정보 설정
+            bb.set("process/auto/target_floor", current_specimen['tray_no'])
+            bb.set("process/auto/target_num", 1) # Robot에게 1번 시편 위치 지시
+            bb.set("process/auto/sequence", current_specimen['seq_order'])
+            
+            # 첫 번째 단계 시작 (Command.md 1번: QR 인식)
+            bb.set("process/auto/current_step", 1)
+            Logger.info(f"Logic: Starting Specimen {current_specimen['seq_order']} at Tray {current_specimen['tray_no']}")
+            return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
+
+        # 3. 진행 중인 시편의 다음 단계 결정 (Command.md 흐름 준수)
+        step = bb.get("process/auto/current_step") or 1
+        
+        if step == 1: # QR 인식 완료 -> 시편 가져오기 (2번)
+            bb.set("process/auto/current_step", 2)
+            return LogicEvent.DO_PICK_SPECIMEN
+        elif step == 2: # 시편 가져오기 완료 -> 측정기 이동 (3번)
+            bb.set("process/auto/current_step", 3)
+            return LogicEvent.DO_MOVE_TO_INDIGATOR
+        elif step == 3: # 측정기 이동 완료 -> 시편 거치 및 측정 (4번)
+            bb.set("process/auto/current_step", 4)
+            return LogicEvent.DO_PLACE_SPECIMEN_AND_MEASURE
+        elif step == 4: # 측정 완료 -> 측정기 시편 반출 (5번)
+            bb.set("process/auto/current_step", 5)
+            return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_INDIGATOR
+        elif step == 5: # 반출 완료 -> 시편 정렬 (6번)
+            bb.set("process/auto/current_step", 6)
+            return LogicEvent.DO_ALIGN_SPECIMEN
+        elif step == 6: # 정렬 완료
+            # 만약 다음 시편을 미리 준비 중이었다면, 여기서 멈추고 이전 시편 수거를 위해 스위칭
+            if bb.get("process/auto/pre_preparing"):
+                prev_spec_no = bb.get("process/auto/current_specimen_no") - 1
+                bb.set("process/auto/waiting_at_aligner", True)
+                
+                # 이전 시편으로 컨텍스트 전환 (수거 단계 11번으로)
+                bb.set("process/auto/current_specimen_no", prev_spec_no)
+                bb.set("process/auto/target_num", prev_spec_no)
+                bb.set("process/auto/current_step", 11)
+                
+                Logger.info(f"Logic: Specimen {prev_spec_no+1} pre-prepared. Switching back to collect Specimen {prev_spec_no}.")
+                return LogicEvent.DO_PICK_TENSILE_MACHINE
+            
+            bb.set("process/auto/current_step", 7)
+            return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN
+        elif step == 7: # 반출 완료 -> 인장기 장착 (8번)
+            bb.set("process/auto/current_step", 8)
+            return LogicEvent.DO_LOAD_TENSILE_MACHINE
+        elif step == 8: # 장착 완료 -> 인장기 후퇴 (9번)
+            bb.set("process/auto/current_step", 9)
+            return LogicEvent.DO_RETREAT_TENSILE_MACHINE
+        elif step == 9: # 후퇴 완료 -> 인장 시험 시작 (10번)
+            bb.set("process/auto/current_step", 10)
+            return LogicEvent.DO_START_TENSILE_TEST
+        elif step == 10: # 인장 시험 시작 명령 전송 완료
+            # 시험 대기 시간 동안 다음 시편을 미리 준비 (트레이 내 5개 루프)
+            curr_spec_no = bb.get("process/auto/current_specimen_no") or 1
+            
+            if curr_spec_no < 5:
+                # 동일 트레이의 다음 시편 준비 시작 (Pipelining)
+                bb.set("process/auto/pre_preparing", True)
+                
+                next_spec_no = curr_spec_no + 1
+                bb.set("process/auto/current_specimen_no", next_spec_no)
+                bb.set("process/auto/target_num", next_spec_no)
+                bb.set("process/auto/current_step", 1) # 1번(QR)부터 시작
+                
+                # DB 업데이트 (다음 시편 시작 상태)
+                context.db.update_processing_status(batch_data['batch_id'], current_specimen['tray_no'], next_spec_no, 2)
+                Logger.info(f"Logic: Pipelining - Pre-preparing Specimen {next_spec_no} while {curr_spec_no} is testing.")
+                return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
+            else:
+                # 마지막 시편인 경우 준비할 것이 없으므로 바로 수거 단계로 진행
+                bb.set("process/auto/current_step", 11)
+                return LogicEvent.DO_PICK_TENSILE_MACHINE
+        elif step == 11: # 수거 완료 -> 후퇴 및 스크랩 처리 (12번)
+            bb.set("process/auto/current_step", 12)
+            return LogicEvent.DO_RETREAT_AND_HANDLE_SCRAP
+        elif step == 12: # 스크랩 처리 완료
+            # 만약 정렬기에서 대기 중인 다음 시편이 있다면 해당 시편으로 복귀
+            if bb.get("process/auto/waiting_at_aligner"):
+                next_spec_no = bb.get("process/auto/current_specimen_no") + 1
+                bb.set("process/auto/waiting_at_aligner", False)
+                bb.set("process/auto/pre_preparing", False)
+                
+                bb.set("process/auto/current_specimen_no", next_spec_no)
+                bb.set("process/auto/target_num", next_spec_no)
+                bb.set("process/auto/current_step", 7) # 정렬기 반출(7번)부터 재개
+                
+                Logger.info(f"Logic: Collection done. Resuming Specimen {next_spec_no} from aligner.")
+                return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN
+
+            spec_no = bb.get("process/auto/current_specimen_no") or 1
+            
+            # 현재 시편 완료 기록 (3.2, 3.3)
+            context.db.update_processing_status(batch_data['batch_id'], current_specimen['tray_no'], spec_no, 3)
+            context.db.insert_summary_log(batch_data['batch_id'], current_specimen['tray_no'], spec_no, "DONE")
+            
+            if spec_no < 5:
+                # 다음 시편으로 루프 (동일 트레이)
+                next_spec_no = spec_no + 1
+                bb.set("process/auto/current_specimen_no", next_spec_no)
+                bb.set("process/auto/target_num", next_spec_no)
+                bb.set("process/auto/current_step", 1)
+                context.db.update_processing_status(batch_data['batch_id'], current_specimen['tray_no'], next_spec_no, 2)
+                Logger.info(f"Logic: Moving to next specimen {next_spec_no} in Tray {current_specimen['tray_no']}")
+                return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
+            else:
+                # 트레이 내 모든 시편 완료 -> 다음 트레이 탐색
+                current_specimen['seq_status'] = 3 # DONE
+                bb.set("process/auto/batch_data", batch_data)
+                bb.set("process/auto/current_step", 0)
+                Logger.info(f"Logic: Completed all specimens in Tray {current_specimen['tray_no']}")
+                return self.operate(context) # 재귀 호출로 다음 트레이 탐색
+
+        return LogicEvent.VIOLATION_DETECT
+
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicMoveToRackForQRReadStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Moving to rack for QR read.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.move_to_rack_for_QRRead(floor, num, seq)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
@@ -206,6 +365,17 @@ class LogicAlignSpecimenStrategy(Strategy):
         num = bb.get("process/auto/target_num")
         seq = bb.get("process/auto/sequence")
         return context.align_specimen(floor, num, seq)
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicPickSpecimenOutFromAlignStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Picking specimen out from aligner.")
+    def operate(self, context: LogicContext) -> LogicEvent:
+        floor = bb.get("process/auto/target_floor")
+        num = bb.get("process/auto/target_num")
+        seq = bb.get("process/auto/sequence")
+        return context.Pick_specimen_out_from_align(floor, num, seq)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 

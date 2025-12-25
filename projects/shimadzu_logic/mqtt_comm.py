@@ -229,8 +229,8 @@ class MqttComm:
         if self.role == 'logic':
             while self.running:
                 # 1. DIO Status (0.5s)
-                di_values = bb.get("device/remote/input/entire")
-                do_values = bb.get("device/remote/output/entire")
+                di_values = self.bb.get("device/remote/input/entire")
+                do_values = self.bb.get("device/remote/output/entire")
                 dio_payload = {
                     "kind": "event", "evt": "system_dio_status",
                     "di_values": di_values,

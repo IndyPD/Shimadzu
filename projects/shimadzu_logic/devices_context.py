@@ -8,6 +8,7 @@ from pkg.utils.file_io import load_json, save_json
 from .devices.mitutoyogauge import MitutoyoGauge
 from .devices.remote_io import AutonicsEIPClient
 from .devices.shimadzu_client import ShimadzuClient
+from .devices.QR_reader import QRReader
 
 from pkg.configs.global_config import GlobalConfig
 global_config = GlobalConfig()
@@ -17,12 +18,15 @@ bb = GlobalBlackboard()
 
 import time
 import threading
+from .DB_handler import DBHandler
 
 class DeviceContext(ContextBase):
     violation_code: int
+    db: DBHandler
 
-    def __init__(self):
+    def __init__(self, db_handler: DBHandler):
         ContextBase.__init__(self)
+        self.db = db_handler
 
         # 스크립트 위치를 기준으로 설정 파일의 절대 경로 생성
         config_dir = os.path.join(os.path.dirname(__file__), 'configs')
@@ -38,6 +42,7 @@ class DeviceContext(ContextBase):
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
         self.dev_smz_enable = False 
+        self.dev_qr_enable = True
         
         # MitutoyoGauge 장치 인스턴스 생성
         if self.dev_gauge_enable :
@@ -54,15 +59,13 @@ class DeviceContext(ContextBase):
         self.remote_output_data = self.iocontroller.current_do_value
         self.remote_comm_state = False
 
-        Lamp_on = 0
-        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_C,Lamp_on)
-        time.sleep(0.1)
-        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_L,Lamp_on)
-        time.sleep(0.1)
-        self.UI_DO_Control(DigitalOutput.LOCAL_LAMP_R,Lamp_on)
-        time.sleep(0.1)
-
-        
+        # QRReader 장치 인스턴스 생성
+        if self.dev_qr_enable:
+            self.qr_reader = QRReader()
+            # QR 데이터 수신 시 블랙보드에 자동으로 저장하도록 콜백 등록
+            self.qr_reader.on_qr_data = lambda data: bb.set("device/qr/result", data)
+            self.qr_reader.connect()
+            Logger.info("[device] QR Reader Initialized")
 
         # ShimadzuClient 장치 인스턴스 생성
         if self.dev_smz_enable :
@@ -91,6 +94,21 @@ class DeviceContext(ContextBase):
         self.th_UI_DO_handler.start()
 
         Logger.info(f"[device] All device Init Complete")
+
+        # 초기 장비 설정
+        # 장비 내 램프 켜기
+        self.lamp_on()
+        
+        # 정렬기 후퇴
+        self.align_stop()
+        time.sleep(1)
+
+        self.align_pull()
+        time.sleep(0.1)
+
+        # 측정기 받침 내리기
+        self.indicator_down()
+        time.sleep(0.1)
     
     def shimadzu_test(self) :
         # you are there 명령어 테스트
@@ -307,7 +325,60 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in UI_DO_Control: {e}")
             reraise(e)
             return False
+    # TODO Lamp C, L, R 제어 함수 만들기
+    def lamp_on(self) :
+        '''
+        Docstring for lamp_on
+        :return: sucess True, fail False
+        '''
+        try :
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.LOCAL_LAMP_C] = 1
+            output_data[DigitalOutput.LOCAL_LAMP_L] = 1
+            output_data[DigitalOutput.LOCAL_LAMP_R] = 1
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.LOCAL_LAMP_C] == 1 and
+                read_data[DigitalOutput.LOCAL_LAMP_L] == 1 and
+                read_data[DigitalOutput.LOCAL_LAMP_R] == 1):
+                Logger.info(f"[device] Lamp On Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Lamp On Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in lamp_on: {e}")
+            reraise(e)
+            return False
+    
+    def lamp_off(self) :
+        '''
+        Docstring for lamp_on
+        :return: sucess True, fail False
+        '''
+        try :
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.LOCAL_LAMP_C] = 0
+            output_data[DigitalOutput.LOCAL_LAMP_L] = 0
+            output_data[DigitalOutput.LOCAL_LAMP_R] = 0
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
+            read_data = self.iocontroller.read_output_data()
+            if (read_data[DigitalOutput.LOCAL_LAMP_C] == 0 and
+                read_data[DigitalOutput.LOCAL_LAMP_L] == 0 and
+                read_data[DigitalOutput.LOCAL_LAMP_R] == 0):
+                Logger.info(f"[device] Lamp Off Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Lamp Off Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in lamp_off: {e}")
+            reraise(e)
+            return False
 
+    # 인장기 그리퍼 열기/닫기 확인 함수들
     def chuck_open(self) :
         '''
         Docstring for chuck_open
@@ -374,7 +445,8 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in chuck_check: {e}")
             reraise(e)
             return False
-        
+
+    # 신율계 전후진 제어 및 확인 함수들    
     def EXT_move_forword(self) :
         '''
         Docstring for EXT_move_forword
@@ -756,6 +828,36 @@ class DeviceContext(ContextBase):
                 return False
         except Exception as e:
             Logger.error(f"[device] Error in get_dial_gauge_status: {e}")
+            reraise(e)
+            return False
+
+    def qr_read(self, max_error_count: int = 10) -> bool:
+        '''
+        QR 코드를 읽고 결과를 블랙보드에 저장합니다.
+        :param max_error_count: 연속 에러(파싱 실패 포함) 허용 횟수
+        :return: 성공 시 True, 실패 시 False
+        '''
+        if not self.dev_qr_enable:
+            return False
+            
+        try:
+            # 연결 상태 확인 및 필요 시 재연결
+            if not self.qr_reader.is_connected:
+                if not self.qr_reader.connect():
+                    return False
+
+            # TEST1 명령 전송 및 결과 대기 (입력받은 에러 횟수 적용)
+            result = self.qr_reader.request_test(1, max_error_count)
+            if result.get("status") == "success":
+                qr_data = result.get("data")
+                bb.set("device/qr/result", qr_data)
+                Logger.info(f"[device] QR Read Success: {qr_data}")
+                return True
+            
+            Logger.error(f"[device] QR Read Failed: {result.get('message')}")
+            return False
+        except Exception as e:
+            Logger.error(f"[device] Error in qr_read: {e}")
             reraise(e)
             return False
 

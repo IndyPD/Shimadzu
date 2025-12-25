@@ -163,9 +163,31 @@ class WaitCommandStrategy(Strategy):
         Logger.info("[device] Device: Waiting for process start command.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # Logic FSM 등 상위에서 START_COMMAND를 주면 전이
-        # if bb.get("device/start_command"):
-        #     return DeviceEvent.START_COMMAND
+        # Logic FSM 등 상위에서 명령을 주면 해당 상태로 전이
+        device_cmd_key = "process/auto/device/cmd"
+        device_cmd = bb.get(device_cmd_key)
+
+        if device_cmd and isinstance(device_cmd, dict):
+            # LogicContext에서 command 또는 process 키를 혼용하여 사용하므로 둘 다 확인합니다.
+            cmd = device_cmd.get("command") or device_cmd.get("process")
+
+            if cmd == Device_command.QR_READ:
+                return DeviceEvent.DO_READ_QR
+            elif cmd == Device_command.MEASURE_THICKNESS:
+                return DeviceEvent.DO_MEASURE_THICKNESS
+            elif cmd == Device_command.ALIGN_SPECIMEN:
+                return DeviceEvent.DO_ALIGNER_ACTION
+            elif cmd == Device_command.TENSILE_GRIPPER_ON:
+                return DeviceEvent.DO_GRIPPER_GRIP
+            elif cmd == Device_command.TENSILE_GRIPPER_OFF:
+                return DeviceEvent.DO_GRIPPER_RELEASE
+            elif cmd == Device_command.EXT_FORWARD:
+                return DeviceEvent.DO_EXTENSOMETER_FORWARD
+            elif cmd == Device_command.EXT_BACKWARD:
+                return DeviceEvent.DO_EXTENSOMETER_BACKWARD
+            elif cmd == Device_command.START_TENSILE_TEST:
+                return DeviceEvent.DO_TENSILE_TEST
+
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
@@ -178,9 +200,23 @@ class ReadQRStrategy(Strategy):
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # QR 리딩 로직 수행
-        # 성공 시:
-        return DeviceEvent.QR_READ_DONE
-        # 실패 시: return DeviceEvent.QR_READ_FAIL
+        if context.qr_read(max_error_count=10):
+            # Logic FSM에 완료 및 결과 전달
+            cmd_data = bb.get("process/auto/device/cmd")
+            if isinstance(cmd_data, dict):
+                cmd_data["is_done"] = True
+                cmd_data["result"] = bb.get("device/qr/result")
+                cmd_data["state"] = "done"
+                bb.set("process/auto/device/cmd", cmd_data)
+            return DeviceEvent.QR_READ_DONE
+        else:
+            # Logic FSM에 에러 상태 전달
+            cmd_data = bb.get("process/auto/device/cmd")
+            if isinstance(cmd_data, dict):
+                cmd_data["state"] = "error"
+                cmd_data["is_done"] = False
+                bb.set("process/auto/device/cmd", cmd_data)
+            return DeviceEvent.QR_READ_FAIL
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info(f"[device] exit ReadQRStrategy with event: {event}")

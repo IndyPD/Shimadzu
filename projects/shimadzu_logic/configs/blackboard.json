@@ -169,6 +169,16 @@
   "ui/state/input_unit/state": 0,
   "ui/state/pot1/state": 0,
   "ui/state/pot2/state": 0,
-  "ui/cmd/do_control/trigger": 0
-  
+  "ui/cmd/do_control/trigger": 0,
+  "ui/cmd/do_control/data": {},
+  "ui/cmd/auto/batch_id": "",
+  "process/auto/robot/cmd": null,
+  "process/auto/device/cmd": null,
+  "process/auto/batch_data": {},
+  "process/auto/target_floor": 0,
+  "process/auto/target_num": 0,
+  "process/auto/sequence": 0,
+  "process/auto/qr_data": {},
+  "process/auto/thickness": {},
+  "device/qr/result": null
 }

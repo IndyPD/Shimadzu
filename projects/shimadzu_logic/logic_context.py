@@ -1,10 +1,12 @@
 import time
+import threading
 from .constants import *
 from pkg.fsm.shared import *
 from pkg.utils.process_control import Flagger, reraise, FlagDelay
 from pkg.utils.blackboard import GlobalBlackboard
 from .devices_fsm import DeviceFsm
 from .robot_fsm import RobotFSM
+from .DB_handler import DBHandler
 bb = GlobalBlackboard()
 
 ## MOTION CMD Value
@@ -36,11 +38,17 @@ class LogicStatus:
 class LogicContext(ContextBase):
     status: LogicStatus
     violation_code: int
-    def __init__(self):
+    db: DBHandler
+    def __init__(self, db_handler: DBHandler):
         ContextBase.__init__(self)
         self.status = LogicStatus()
         self.violation_code = 0x00
         self._seq = 0
+        self.db = db_handler
+
+        # DB 동기화 스레드 시작 (test_tray_items 주기적 업데이트)
+        self.th_db_sync = threading.Thread(target=self._thread_db_sync, daemon=True)
+        self.th_db_sync.start()
 
     def check_violation(self) -> int:
         self.violation_code = 0x00
@@ -60,6 +68,122 @@ class LogicContext(ContextBase):
         except Exception as e:
             Logger.error(f"[Logic] Exception in check_violation: {e}")
             reraise(e)
+
+    def _thread_db_sync(self):
+        """
+        Blackboard의 공정 데이터를 DB의 test_tray_items 테이블에 주기적으로 동기화합니다.
+        """
+        while True:
+            try:
+                batch_data = bb.get("process/auto/batch_data")
+                thickness_map = bb.get("process/auto/thickness") or {}
+                current_spec_no = bb.get("process/auto/current_specimen_no") or 1
+                
+                if isinstance(batch_data, dict) and "processData" in batch_data:
+                    batch_id = batch_data.get("batch_id")
+                    for item in batch_data["processData"]:
+                        tray_no = item.get("tray_no")
+                        specimen_no = current_spec_no if item.get("seq_status") == 2 else 1
+                        seq_status = item.get("seq_status")
+                        
+                        # 상태 문자열 매핑 (DB.md 3.2 status_str)
+                        status_map = {1: "READY", 2: "RUNNING", 3: "DONE"}
+                        status_str = status_map.get(seq_status, "UNKNOWN")
+                        
+                        # 두께 정보 (dimension) 반영
+                        dimension = thickness_map.get(str(specimen_no))
+
+                        self.db.update_test_tray_info(
+                            tray_no=tray_no,
+                            specimen_no=specimen_no,
+                            status=seq_status,
+                            status_str=status_str,
+                            batch_id=batch_id,
+                            lot=item.get("lot"),
+                            test_spec=item.get("test_method"),
+                            dimension=dimension
+                        )
+            except Exception as e:
+                Logger.error(f"[Logic] Error in _thread_db_sync: {e}")
+            
+            time.sleep(5.0) # 5초 주기로 동기화
+    
+    def move_to_rack_for_QRRead(self, floor : int = 0, specimen_num : int = 0, Sequence : int = 0) :
+        '''
+        # Position A Rack
+        Docstring for move_to_rack_for_QRRead
+        :param floor: 작업 대상 층
+        :param specimen_num: 작업 대상 쟁반 내 순번
+        move_to_rack_for_QRRead 로봇 모션, QR Read
+        '''
+
+        get_robot_cmd : dict = bb.get(robot_cmd_key)
+        
+        # 1. rack 앞 이동 후 층별 QR위치 이동 로봇 명령 세팅
+        if self._seq == 0 and get_robot_cmd == None :
+            robot_cmd = {
+                "process" : Motion_command.M00_MOVE_TO_RACK,
+                "target_floor" : floor,
+                "target_num" : specimen_num,
+                "position" : Sequence,
+                "state" : ""
+            }
+            Logger.info(f"[Logic] bb.set({robot_cmd_key}, {robot_cmd})")
+            bb.set(robot_cmd_key, robot_cmd)
+        # 1-1. rack 앞 이동 후 층별 QR위치 이동 모션 완료 확인
+        elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
+            if (get_robot_cmd.get("process") == Motion_command.M00_MOVE_TO_RACK and
+                get_robot_cmd.get("state") == "done") :
+                Logger.info(f"[Logic] bb.set({robot_cmd_key}, None)")
+                bb.set(robot_cmd_key, None)
+                
+                Logger.info("[Logic] move_to_rack_for_QRRead: LogicEvent.DONE")
+                device_cmd = {
+                    "process" : Device_command.QR_READ,
+                    "result" : None,
+                    "state" : "",
+                    "is_done" : False
+                }
+                bb.set(device_cmd_key, device_cmd)
+                Logger.info(f"[Logic] bb.set({device_cmd_key}, {device_cmd})")
+                self._seq = 1
+
+            # 에러 확인
+            elif (get_robot_cmd.get("process") == Motion_command.M00_MOVE_TO_RACK and
+                  get_robot_cmd.get("state") == "error") :
+                Logger.error(f"[Logic] move_to_rack_for_QRRead failed: {get_robot_cmd}")
+                return LogicEvent.VIOLATION_DETECT
+            # 작업 대기
+            else :
+                return LogicEvent.NONE
+        if self._seq == 1 :
+            get_device_cmd : dict = bb.get(device_cmd_key)
+            if get_device_cmd :
+                # 완료 확인
+                if (get_device_cmd.get("process") == Device_command.QR_READ and
+                    get_device_cmd.get("is_done") == True) :
+                    qr_result = get_device_cmd.get("result")
+                    
+                    # blackboard.json에 정의된 dict 구조를 유지하며 업데이트
+                    qr_data = bb.get("process/auto/qr_data") or {}
+                    qr_data[str(Sequence)] = qr_result
+                    bb.set("process/auto/qr_data", qr_data)
+                    Logger.info(f"[Logic] QR Data saved to blackboard: process/auto/qr_data/{Sequence} = {qr_result}")
+
+                    Logger.info(f"[Logic] bb.set({device_cmd_key}, None)")
+                    bb.set(device_cmd_key, None)
+                    self._seq = 0
+                    return LogicEvent.DONE
+                # 에러 확인
+                elif (get_device_cmd.get("process") == Device_command.QR_READ and
+                      get_device_cmd.get("is_done") == False and
+                      get_device_cmd.get("state") == "error") :
+                    Logger.error(f"[Logic] move_to_rack_for_QRRead failed:{get_device_cmd}")
+                    return LogicEvent.VIOLATION_DETECT
+                # 작업 대기
+                else :
+                    return LogicEvent.NONE
 
     def pick_specimen(self, floor : int = 0, specimen_num : int = 0): # A
         '''
@@ -210,8 +334,13 @@ class LogicContext(ContextBase):
             # 완료 확인
             if (get_device_cmd.get("command") == Device_command.MEASURE_THICKNESS and
                 get_device_cmd.get("is_done") == True) :
+                
+                # blackboard.json에 정의된 dict 구조를 유지하며 업데이트
+                thickness_data = bb.get("process/auto/thickness") or {}
+                thickness_data[str(Sequence)] = get_device_cmd.get("result")
+                bb.set("process/auto/thickness", thickness_data)
+                
                 Logger.info(f"[Logic] bb.set(process/auto/thickness/{Sequence}, {get_device_cmd.get('result')})")
-                bb.set(f"process/auto/thickness/{Sequence}",get_device_cmd.get("result"))
                 Logger.info(f"[Logic] bb.set({device_cmd_key}, None)")
                 bb.set(device_cmd_key, None)
                 self._seq = 0
@@ -334,15 +463,9 @@ class LogicContext(ContextBase):
                     get_device_cmd.get("is_done") == True) :
                     Logger.info(f"[Logic] bb.set({device_cmd_key}, None)")
                     bb.set(device_cmd_key, None)
-                    self._seq = 2      
-                    # 로봇 모션 명령 세팅 : 정렬된 시편 잡고나오기
-                    robot_cmd = {
-                        "process" : Motion_command.M06_PICK_OUT_FROM_ALIGN,
-                        "target_floor" : 0,
-                        "target_num" : 0,
-                        "position" : 0,
-                        "state" : ""
-                    }                                  
+                    self._seq = 0
+                    Logger.info("[Logic] align_specimen: LogicEvent.DONE")
+                    return LogicEvent.DONE
                 # 에러 확인
                 elif (get_device_cmd.get("command") == Device_command.ALIGN_SPECIMEN and
                     get_device_cmd.get("is_done") == False and
@@ -352,27 +475,42 @@ class LogicContext(ContextBase):
                 # 작업 대기
                 else :
                     return LogicEvent.NONE
-                
-        # 3. 정렬된 시편 잡고 나오는 모션 실행
-        if self._seq == 2 :
-            get_robot_cmd : dict = bb.get(robot_cmd_key)
-            if get_robot_cmd :
-                # 완료 확인
-                if (get_robot_cmd.get("process") == Motion_command.M06_PICK_OUT_FROM_ALIGN and
-                    get_robot_cmd.get("state") == "done") :
-                    Logger.info(f"[Logic] bb.set({robot_cmd_key}, None)")
-                    bb.set(robot_cmd_key, None)
-                    self._seq = 0
-                    Logger.info("[Logic] align_specimen: LogicEvent.DONE")
-                    return LogicEvent.DONE
-                # 에러 확인
-                elif (get_robot_cmd.get("process") == Motion_command.M06_PICK_OUT_FROM_ALIGN and
-                      get_device_cmd.get("state") == "error") :
-                    Logger.error(f"[Logic] align_specimen (robot pick out) failed: {get_robot_cmd}")
-                    return LogicEvent.VIOLATION_DETECT
-                # 작업 대기
-                else :
-                    return LogicEvent.NONE
+
+    def Pick_specimen_out_from_align(self, 
+                                     floor : int = 0, 
+                                     specimen_num : int = 0, 
+                                     Sequence : int = 0):
+        """
+        정렬기에서 정렬된 시편을 잡고 나오는 로봇 모션을 수행합니다.
+        """
+        get_robot_cmd : dict = bb.get(robot_cmd_key)
+        if self._seq == 0 and get_robot_cmd == None :
+            robot_cmd = {
+                "process" : Motion_command.M06_PICK_OUT_FROM_ALIGN,
+                "target_floor" : floor,
+                "target_num" : specimen_num,
+                "position" : Sequence,
+                "state" : ""
+            }
+            Logger.info(f"[Logic] bb.set({robot_cmd_key}, {robot_cmd})")
+            bb.set(robot_cmd_key, robot_cmd)
+        elif self._seq == 0 and get_robot_cmd :
+            # 완료 확인
+            if (get_robot_cmd.get("process") == Motion_command.M06_PICK_OUT_FROM_ALIGN and
+                get_robot_cmd.get("state") == "done") :
+                Logger.info(f"[Logic] bb.set({robot_cmd_key}, None)")
+                bb.set(robot_cmd_key, None)
+                self._seq = 0
+                Logger.info("[Logic] Pick_specimen_out_from_align: LogicEvent.DONE")
+                return LogicEvent.DONE
+            # 에러 확인
+            elif (get_robot_cmd.get("process") == Motion_command.M06_PICK_OUT_FROM_ALIGN and
+                  get_robot_cmd.get("state") == "error") :
+                Logger.error(f"[Logic] Pick_specimen_out_from_align failed: {get_robot_cmd}")
+                return LogicEvent.VIOLATION_DETECT
+            # 작업 대기
+            else :
+                return LogicEvent.NONE
                 
     def load_tensile_machine(self, 
                             floor : int = 0, 
@@ -572,12 +710,8 @@ class LogicContext(ContextBase):
             # 작업 대기
             else :
                 return LogicEvent.NONE
-    
-        
+          
     def start_tensile_test(self):
-        pass
-
-    def collect_and_discard(self):
         pass
 
     def process_complete(self):
