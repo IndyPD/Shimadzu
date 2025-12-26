@@ -3,8 +3,9 @@ import threading
 import time
 import os
 import json
+import traceback
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # 설정 파일 경로
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'QR_comm.json')
@@ -18,7 +19,7 @@ def load_config(filepath: str) -> dict:
         with open(filepath, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        if DEBUG_MODE: print(f"❌ Failed to load config: {e}")
+        if DEBUG_MODE: print(f"❌ Failed to load config: {e}\n{traceback.format_exc()}")
         return {}
 
 class QRReader:
@@ -66,7 +67,7 @@ class QRReader:
             if DEBUG_MODE: print(f"✅ QR Reader: Connected to {self.host}:{self.port}")
             return True
         except Exception as e:
-            if DEBUG_MODE: print(f"❌ QR Reader: Connection failed - {e}")
+            if DEBUG_MODE: print(f"❌ QR Reader: Connection failed - {e}\n{traceback.format_exc()}")
             return False
 
     def disconnect(self):
@@ -103,7 +104,7 @@ class QRReader:
                 continue
             except Exception as e:
                 if self.running:
-                    if DEBUG_MODE: print(f"❌ QR Reader: Receive error - {e}")
+                    if DEBUG_MODE: print(f"❌ QR Reader: Receive error - {e}\n{traceback.format_exc()}")
                 break
         self.is_connected = False
 
@@ -113,18 +114,24 @@ class QRReader:
         예: "002,TEST_002:01:100%:98" -> {'index': '002', 'name': 'TEST_002', 'score': '98'}
         """
         try:
+            # 수신 데이터 형식 검증 (쉼표와 콜론이 모두 포함되어야 함)
+            if ',' not in line or ':' not in line:
+                # HeartBeat, OK, ER 외의 비정상 포맷은 에러로 처리
+                raise ValueError(f"알 수 없는 응답 형식: {line}")
+
             # 1. 쉼표(,) 기준으로 인덱스와 나머지 분리
-            parts_comma = line.split(',')
-            index = parts_comma[0]
-            
+            parts_comma = line.split(',', 1)
+            index = parts_comma[0].strip()
+
             # 2. 콜론(:) 기준으로 이름과 점수(마지막 항목) 분리
             parts_colon = parts_comma[1].split(':')
-            name = parts_colon[0]
-            score = parts_colon[-1]
-            
+            name = parts_colon[0].strip()
+            score = parts_colon[-1].strip()
+
             return {"index": index, "name": name, "score": score}
         except Exception as e:
-            if DEBUG_MODE: print(f"❌ QR Parsing Error: {e}")
+            # 에러 로그를 요청하신 형식과 유사하게 변경하여 디버깅을 돕습니다.
+            if DEBUG_MODE: print(f"❌ 실패: {e}\n{traceback.format_exc()}")
             return {"raw": line, "error": "Parsing failed"}
 
     def _process_message(self, line: str):
@@ -183,7 +190,7 @@ class QRReader:
             self.client_socket.sendall(msg.encode('ascii'))
             return True
         except Exception as e:
-            if DEBUG_MODE: print(f"❌ QR Reader: Send error - {e}")
+            if DEBUG_MODE: print(f"❌ QR Reader: Send error - {e}\n{traceback.format_exc()}")
             return False
 
     # --- 인터페이스 메서드 ---

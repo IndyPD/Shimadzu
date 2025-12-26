@@ -118,7 +118,7 @@ class RobotReadyStrategy(Strategy):
             return RobotEvent.VIOLATION_DETECT
         
         # 자동 모드 시작 명령 대기
-        if bb.get("ui/cmd/auto/tensile", 0):
+        if bb.get("ui/cmd/auto/tensile"):
             bb.set("ui/cmd/auto/tensile", 0)
             return RobotEvent.DO_AUTO_MOTION_PROGRAM_AUTO_ON
         
@@ -224,7 +224,7 @@ class RobotToolChangeStrategy(Strategy):
         
     def operate(self, context: RobotContext) -> RobotEvent:
         # 툴 타입에 따라 다른 모션 (101: binpicking용, 102: 일반용)
-        tool_type = bb.get("robot/tool_type", 102)
+        tool_type = bb.get("robot/tool_type")
         context.send_motion_command(tool_type)
         
         if context.wait_motion_complete(tool_type, ack_timeout=5.0, done_timeout=30.0):
@@ -240,9 +240,9 @@ class RobotToolChangeStrategy(Strategy):
     def _verify_tool_attached(self, context: RobotContext, tool_type: int) -> bool:
         """툴 장착 확인 (센서로 검증)"""
         if tool_type == 101:
-            return bb.get("device/remote/input/ATC_1_1_SENSOR", 0)
+            return bb.get("device/remote/input/ATC_1_1_SENSOR")
         elif tool_type == 102:
-            return bb.get("device/remote/input/ATC_2_1_SENSOR", 0)
+            return bb.get("device/remote/input/ATC_2_1_SENSOR")
         return False
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
@@ -322,7 +322,7 @@ class RobotMoveToQRStrategy(Strategy):
         
     def operate(self, context: RobotContext) -> RobotEvent:
         # 목표 층수 가져오기
-        floor = bb.get("robot/target_floor", 1)
+        floor = bb.get("robot/target_floor")
         motion_cmd = 1000 + floor * 10
         
         context.send_motion_command(motion_cmd)
@@ -334,7 +334,7 @@ class RobotMoveToQRStrategy(Strategy):
             time.sleep(1.0)
             
             # QR 읽기 성공 확인
-            if bb.get("device/remote/input/BCR_OK", 0):
+            if bb.get("device/remote/input/BCR_OK"):
                 Logger.info("QR code read successfully")
                 return RobotEvent.AUTO_MOTION_MOVE_TO_QR_DONE
             else:
@@ -355,7 +355,7 @@ class RobotApproachPickStrategy(Strategy):
         Logger.info("Robot: Approaching Pick Position.")
         
     def operate(self, context: RobotContext) -> RobotEvent:
-        floor = bb.get("robot/target_floor", 1)
+        floor = bb.get("robot/target_floor")
         motion_cmd = 1000 + floor * 10
         
         context.send_motion_command(motion_cmd)
@@ -378,8 +378,8 @@ class RobotPickSpecimenStrategy(Strategy):
         Logger.info("Robot: Picking Specimen.")
         
     def operate(self, context: RobotContext) -> RobotEvent:
-        floor = bb.get("robot/target_floor", 1)
-        position = bb.get("robot/target_position", 1)
+        floor = bb.get("robot/target_floor")
+        position = bb.get("robot/target_position")
         
         motion_cmd = 1000 + floor * 10 + position
         context.send_motion_command(motion_cmd)
@@ -391,7 +391,7 @@ class RobotPickSpecimenStrategy(Strategy):
             time.sleep(1.0)
             
             # 그리핑 확인 (그리퍼 센서)
-            if bb.get("device/remote/input/GRIPPER_1_CLAMP", 0):
+            if bb.get("device/remote/input/GRIPPER_1_CLAMP"):
                 Logger.info("Specimen gripped successfully")
                 return RobotEvent.AUTO_MOTION_PICK_SPECIMEN_DONE
             else:
@@ -412,7 +412,7 @@ class RobotRetractFromTrayStrategy(Strategy):
         Logger.info("Robot: Retracting from Tray.")
         
     def operate(self, context: RobotContext) -> RobotEvent:
-        floor = bb.get("robot/target_floor", 1)
+        floor = bb.get("robot/target_floor")
         motion_cmd = 2000 + floor * 10
         
         context.send_motion_command(motion_cmd)
@@ -484,7 +484,7 @@ class RobotEnterThicknessPos1Strategy(Strategy):
             time.sleep(1.5)  # 측정 대기
             
             # 측정값 읽기
-            thickness = bb.get("device/gauge/thickness", 0.0)
+            thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement 1: {thickness}")
             bb.set("specimen/thickness_1", thickness)
             
@@ -518,7 +518,7 @@ class RobotEnterThicknessPos2Strategy(Strategy):
             context.gripper_control(open=True)
             time.sleep(1.5)
             
-            thickness = bb.get("device/gauge/thickness", 0.0)
+            thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement 2: {thickness}")
             bb.set("specimen/thickness_2", thickness)
             
@@ -552,13 +552,13 @@ class RobotEnterThicknessPos3Strategy(Strategy):
             context.gripper_control(open=True)
             time.sleep(1.5)
             
-            thickness = bb.get("device/gauge/thickness", 0.0)
+            thickness = bb.get("device/gauge/thickness")
             Logger.info(f"Thickness measurement 3: {thickness}")
             bb.set("specimen/thickness_3", thickness)
             
             # 평균 두께 계산
-            t1 = bb.get("specimen/thickness_1", 0.0)
-            t2 = bb.get("specimen/thickness_2", 0.0)
+            t1 = bb.get("specimen/thickness_1")
+            t2 = bb.get("specimen/thickness_2")
             t3 = thickness
             avg_thickness = (t1 + t2 + t3) / 3.0
             bb.set("specimen/thickness_avg", avg_thickness)
@@ -646,9 +646,9 @@ class RobotEnterAlignerStrategy(Strategy):
             
             # 정렬 완료 확인 (모든 축이 PUSH 상태)
             align_ok = all([
-                bb.get("device/remote/input/ALIGN_1_PUSH", 0),
-                bb.get("device/remote/input/ALIGN_2_PUSH", 0),
-                bb.get("device/remote/input/ALIGN_3_PUSH", 0)
+                bb.get("device/remote/input/ALIGN_1_PUSH"),
+                bb.get("device/remote/input/ALIGN_2_PUSH"),
+                bb.get("device/remote/input/ALIGN_3_PUSH")
             ])
             
             if align_ok:

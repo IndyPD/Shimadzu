@@ -710,7 +710,85 @@ class LogicContext(ContextBase):
             # 작업 대기
             else :
                 return LogicEvent.NONE
-          
+            
+    def regist_tensil_data(self):
+        """
+        현재 시편의 시험 조건을 DB에서 조회하여 Device FSM에 등록 명령을 전달하고 완료를 대기합니다.
+        이 함수는 Strategy에 의해 반복적으로 호출되는 것을 가정합니다.
+        """
+        try:
+            get_device_cmd = bb.get(device_cmd_key)
+
+            # Step 1: 명령 전송 (아직 전송되지 않았을 경우)
+            if self._seq == 0 and get_device_cmd is None:
+                # 1.1. 현재 공정 정보 가져오기
+                batch_data = bb.get("process/auto/batch_data")
+                current_specimen_in_tray = next((s for s in batch_data['processData'] if s.get('seq_status') == 2), None)
+                
+                if not current_specimen_in_tray:
+                    Logger.error("[Logic] regist_tensil_data: Cannot find running tray.")
+                    self._seq = 0
+                    return LogicEvent.VIOLATION_DETECT
+
+                specimen_no = bb.get("process/auto/current_specimen_no")
+                test_method_name = current_specimen_in_tray.get("test_method")
+                lot_name = current_specimen_in_tray.get("lot")
+                batch_id = batch_data.get("batch_id")
+                
+                # TPNAME은 '배치ID_트레이번호_시편번호' 형식으로 생성
+                tpname = f"{batch_id}_{current_specimen_in_tray.get('tray_no')}_{specimen_no}"
+
+                # 1.2. DB에서 시험 방법 상세 정보 조회
+                method_details = self.db.get_test_method_details(test_method_name)
+                if not method_details:
+                    Logger.error(f"[Logic] Failed to get test method details for '{test_method_name}' from DB.")
+                    self._seq = 0
+                    return LogicEvent.VIOLATION_DETECT
+
+                # 1.3. 시편 치수 정보 가져오기 (두께 측정 결과)
+                thickness_map = bb.get("process/auto/thickness") or {}
+                # size1: 두께, size2: 폭 (폭은 시험 방법에 고정되어 있다고 가정)
+                size1 = thickness_map.get(str(specimen_no), method_details.get("default_thickness", "1.0")) 
+                size2 = method_details.get("specimen_width", "10.0")
+
+                # 1.4. Shimadzu 등록을 위한 파라미터 dict 구성
+                regist_data = {
+                    "tpname": tpname, "type_p": method_details.get("type_p", "P"),
+                    "size1": str(size1), "size2": str(size2),
+                    "test_rate_type": method_details.get("test_rate_type", "S"), "test_rate": method_details.get("test_rate", "50.00"),
+                    "detect_yp": method_details.get("detect_yp", "T"), "detect_ys": method_details.get("detect_ys", "T"),
+                    "detect_elastic": method_details.get("detect_elastic", "T"), "detect_lyp": method_details.get("detect_lyp", "F"),
+                    "detect_ypel": method_details.get("detect_ypel", "F"), "detect_uel": method_details.get("detect_uel", "F"),
+                    "detect_ts": method_details.get("detect_ts", "T"), "detect_el": method_details.get("detect_el", "T"),
+                    "detect_nv": method_details.get("detect_nv", "F"), "ys_para": method_details.get("ys_para", "0.20"),
+                    "nv_type": method_details.get("nv_type", "I"), "nv_para1": method_details.get("nv_para1", "10.00"),
+                    "nv_para2": method_details.get("nv_para2", "20.00"), "lotname": lot_name
+                }
+
+                # 1.5. Device FSM에 등록 명령 전달
+                device_cmd = { "command": "REGISTER_METHOD", "params": regist_data, "state": "", "is_done": False }
+                bb.set(device_cmd_key, device_cmd)
+                Logger.info(f"[Logic] Sent REGISTER_METHOD command to DeviceFSM for specimen {tpname}")
+                self._seq = 1
+                return LogicEvent.NONE
+
+            # Step 2: 명령 완료 대기
+            elif self._seq == 1 and get_device_cmd is not None:
+                if (get_device_cmd.get("command") == "REGISTER_METHOD" and get_device_cmd.get("is_done")):
+                    self._seq = 0
+                    bb.set(device_cmd_key, None)
+                    if get_device_cmd.get("state") == "done":
+                        Logger.info(f"[Logic] DeviceFSM completed method registration.")
+                        return LogicEvent.DONE
+                    else:
+                        Logger.error(f"[Logic] DeviceFSM failed to register method: {get_device_cmd.get('result')}")
+                        return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+        except Exception as e:
+            Logger.error(f"[Logic] Exception in regist_tensil_data: {e}")
+            self._seq = 0
+            return LogicEvent.VIOLATION_DETECT
+
     def start_tensile_test(self):
         pass
 

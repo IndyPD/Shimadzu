@@ -18,6 +18,7 @@ bb = GlobalBlackboard()
 
 import time
 import threading
+import traceback
 from .DB_handler import DBHandler
 
 class DeviceContext(ContextBase):
@@ -93,6 +94,10 @@ class DeviceContext(ContextBase):
         self.th_UI_DO_handler = Thread(target=self._thread_UI_DO_handler, daemon=True)
         self.th_UI_DO_handler.start()
 
+        # 주기적으로 통신 상태를 블랙보드에 업데이트하는 스레드 추가
+        self.th_comm_status_updater = Thread(target=self._thread_comm_status_updater, daemon=True)
+        self.th_comm_status_updater.start()
+
         Logger.info(f"[device] All device Init Complete")
 
         # 초기 장비 설정
@@ -164,8 +169,46 @@ class DeviceContext(ContextBase):
                     # 처리 완료 후 트리거 리셋
                     bb.set("ui/cmd/do_control/trigger", 0)
             except Exception as e:
-                Logger.error(f"[device] Error in _thread_UI_DO_handler: {e}")
+                Logger.error(f"[device] Error in _thread_UI_DO_handler: {e}\n{traceback.format_exc()}")
             time.sleep(0.1)
+
+    def _thread_comm_status_updater(self):
+        """
+        주기적으로 각 장치의 통신 상태를 확인하고 블랙보드에 업데이트합니다.
+        """
+        Logger.info(f"[device] _thread_comm_status_updater started")
+        while True:
+            try:
+                # Remote I/O
+                if self.dev_remoteio_enable:
+                    # read_IO_status()가 self.remote_comm_state를 업데이트합니다.
+                    bb.set("device/remote/comm_status", 1 if self.remote_comm_state else 0)
+
+                # Gauge
+                if self.dev_gauge_enable:
+                    gauge_status = self.get_dial_gauge_status()
+                    # Logger.info(f"[device] gauge_status : {gauge_status}")
+                    bb.set("device/gauge/comm_status", 1 if gauge_status else 0)
+
+                # QR Reader
+                if self.dev_qr_enable:
+                    qr_status = self.qr_reader.is_connected
+                    bb.set("device/qr/comm_status", 1 if qr_status else 0)
+
+                # Shimadzu
+                if self.dev_smz_enable:
+                    # are_you_there는 dict를 반환하므로, 응답이 있는지 여부로 판단
+                    smz_status = self.smz_are_you_there() is not None
+                    bb.set("device/shimadzu/comm_status", 1 if smz_status else 0)
+                
+                # Robot과 Vision은 각자의 Context에서 처리될 것으로 예상됩니다.
+
+            except Exception as e:
+                Logger.error(f"[device] Error in _thread_comm_status_updater: {e}\n{traceback.format_exc()}")
+            
+            time.sleep(1.0) # 1초 간격으로 업데이트
+        Logger.info(f"[device] _thread_comm_status_updater stopped")
+
 
     def check_violation(self) -> int:
         self.violation_code = 0
@@ -187,10 +230,13 @@ class DeviceContext(ContextBase):
             smz_violation = [False,0]
             remoteio_violation = [False,0]
 
-            if self.dev_gauge_enable :
-                gauge_state = self.get_dial_gauge_status()
-                if not gauge_state :
-                    gauge_violation =[True, GAUGE_COMM_ERR]    # 통신 연결 에러
+            # if self.dev_gauge_enable :
+            #     gauge_state = self.get_dial_gauge_status()
+            #     if not gauge_state :
+            #         gauge_violation =[True, GAUGE_COMM_ERR]    # 통신 연결 에러
+            #         bb.set("device/gauge/comm_status",0)
+            #     else :
+            #         bb.set("device/gauge/comm_status",1)
 
             if self.dev_smz_enable :
                 # Initial Check & Communication Status
@@ -222,7 +268,7 @@ class DeviceContext(ContextBase):
             self.violation_code = 0
             return self.violation_code
         except Exception as e:
-            Logger.error(f"[device] Error in check_violation: {e}")
+            Logger.error(f"[device] Error in check_violation: {e}\n{traceback.format_exc()}")
             reraise(e)
 
     def read_IO_status(self):
@@ -237,11 +283,18 @@ class DeviceContext(ContextBase):
                 self.remote_input_data = self.iocontroller.read_input_data()
                 self.remote_output_data = self.iocontroller.read_output_data()
             
-            if self.remote_input_data is None or self.remote_output_data is None:
-                raise ValueError("Failed to read data from Remote I/O (received None)")
+            # 데이터 읽기 실패 또는 데이터 길이 미달 시 예외 처리
+            # DI는 48개, DO는 32개의 배열 길이를 기대합니다.
+            if not self.remote_input_data or len(self.remote_input_data) < 48:
+                raise IndexError(f"DI 데이터가 비정상입니다. 예상 길이: 48, 실제 길이: {len(self.remote_input_data) if self.remote_input_data is not None else 0}")
+            
+            if not self.remote_output_data or len(self.remote_output_data) < 32:
+                raise IndexError(f"DO 데이터가 비정상입니다. 예상 길이: 32, 실제 길이: {len(self.remote_output_data) if self.remote_output_data is not None else 0}")
 
             bb.set("device/remote/input/entire", self.remote_input_data)
             bb.set("device/remote/output/entire", self.remote_output_data)
+            # Logger.info(f"[Device] DI : {self.remote_input_data}")
+            # Logger.info(f"[Device] DO : {self.remote_output_data}")
             
             # Input 데이터 bb set DigitalInput 기반
             bb.set("device/remote/input/SELECT_SW", self.remote_input_data[DigitalInput.AUTO_MANUAL_SELECT_SW])
@@ -301,7 +354,7 @@ class DeviceContext(ContextBase):
             bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
             self.remote_comm_state = True
         except Exception as e:
-            Logger.error(f"[device] Error in read_IO_status: {e}")
+            Logger.error(f"[device] Error in read_IO_status: {e}\n{traceback.format_exc()}")
             self.remote_comm_state = False
 
     def UI_DO_Control(self, address: int, value: int) -> bool:
@@ -322,7 +375,7 @@ class DeviceContext(ContextBase):
             Logger.info(f"[device] UI_DO_Control: DO {address} set to {value}")
             return True
         except Exception as e:
-            Logger.error(f"[device] Error in UI_DO_Control: {e}")
+            Logger.error(f"[device] Error in UI_DO_Control: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     # TODO Lamp C, L, R 제어 함수 만들기
@@ -348,7 +401,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Lamp On Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in lamp_on: {e}")
+            Logger.error(f"[device] Error in lamp_on: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -374,7 +427,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Lamp Off Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in lamp_off: {e}")
+            Logger.error(f"[device] Error in lamp_off: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -399,7 +452,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Chuck Open Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in chuck_open: {e}")
+            Logger.error(f"[device] Error in chuck_open: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -423,7 +476,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Chuck Close Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in chuck_close: {e}")
+            Logger.error(f"[device] Error in chuck_close: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
         
@@ -442,7 +495,7 @@ class DeviceContext(ContextBase):
                 return False
         
         except Exception as e:
-            Logger.error(f"[device] Error in chuck_check: {e}")
+            Logger.error(f"[device] Error in chuck_check: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -467,7 +520,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] EXT Move Forward Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in EXT_move_forword: {e}")
+            Logger.error(f"[device] Error in EXT_move_forword: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
         
@@ -491,7 +544,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] EXT Move Backward Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in EXT_move_backward: {e}")
+            Logger.error(f"[device] Error in EXT_move_backward: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -519,7 +572,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] EXT_move_check: Invalid direction {direction}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in EXT_move_check: {e}")
+            Logger.error(f"[device] Error in EXT_move_check: {e}\n{traceback.format_exc()}")
             # 혹시나해서 넣어두는 정지
             self.EXT_stop()
             reraise(e)
@@ -545,7 +598,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] EXT Stop Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in EXT_stop: {e}")
+            Logger.error(f"[device] Error in EXT_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -595,7 +648,7 @@ class DeviceContext(ContextBase):
             return True
         
         except Exception as e:
-            Logger.error(f"[device] Error in align_push: {e}")
+            Logger.error(f"[device] Error in align_push: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
         
@@ -643,7 +696,7 @@ class DeviceContext(ContextBase):
             
             return True
         except Exception as e:
-            Logger.error(f"[device] Error in align_pull: {e}")
+            Logger.error(f"[device] Error in align_pull: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -676,7 +729,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Align Stop Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in align_stop: {e}")
+            Logger.error(f"[device] Error in align_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -712,7 +765,7 @@ class DeviceContext(ContextBase):
             else :
                 Logger.info(f"[device] align_check: Invalid direction {direction}")
         except Exception as e:
-            Logger.error(f"[device] Error in align_check: {e}")
+            Logger.error(f"[device] Error in align_check: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -736,7 +789,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Indicator Up Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_up: {e}")
+            Logger.error(f"[device] Error in indicator_up: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -760,7 +813,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Indicator Down Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_down: {e}")
+            Logger.error(f"[device] Error in indicator_down: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -784,7 +837,7 @@ class DeviceContext(ContextBase):
                 Logger.error(f"[device] Indicator Stop Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_stop: {e}")
+            Logger.error(f"[device] Error in indicator_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -806,7 +859,7 @@ class DeviceContext(ContextBase):
             self.gauge_measurement_done = False
             return value
         except Exception as e:
-            Logger.error(f"[device] Error in get_dial_gauge_value: {e}")
+            Logger.error(f"[device] Error in get_dial_gauge_value: {e}\n{traceback.format_exc()}")
             reraise(e)
             return -999.0  # 오류 시 반환 값
     
@@ -822,12 +875,13 @@ class DeviceContext(ContextBase):
                 return
             
             value = self.gauge.request_data()
+            bb.set("device/gauge/comm_state/value",value)
             if value is not None :
                 return True 
             else :
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in get_dial_gauge_status: {e}")
+            Logger.error(f"[device] Error in get_dial_gauge_status: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -857,7 +911,7 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] QR Read Failed: {result.get('message')}")
             return False
         except Exception as e:
-            Logger.error(f"[device] Error in qr_read: {e}")
+            Logger.error(f"[device] Error in qr_read: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -917,6 +971,7 @@ class DeviceContext(ContextBase):
             return result
         
         except Exception as e:
+            Logger.error(f"[device] Error in smz_ask_register: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -931,6 +986,7 @@ class DeviceContext(ContextBase):
             result = self.shimadzu_client.send_start_run(lotname=lotname)
             return result
         except Exception as e:
+            Logger.error(f"[device] Error in smz_start_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -943,6 +999,7 @@ class DeviceContext(ContextBase):
             result = self.shimadzu_client.send_stop_ana()
             return result
         except Exception as e:
+            Logger.error(f"[device] Error in smz_stop_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     
@@ -955,6 +1012,7 @@ class DeviceContext(ContextBase):
             result = self.shimadzu_client.send_are_you_there()
             return result
         except Exception as e:
+            Logger.error(f"[device] Error in smz_are_you_there: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -967,5 +1025,6 @@ class DeviceContext(ContextBase):
             result = self.shimadzu_client.send_ask_sys_status()
             return result
         except Exception as e:
+            Logger.error(f"[device] Error in smz_ask_sys_status: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False

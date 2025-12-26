@@ -34,6 +34,8 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
                 LogicEvent.STOP_EMG: LogicState.STOP_AND_OFF,
                 LogicEvent.START_AUTO_COMMAND: LogicState.WAIT_COMMAND, # 자동화 모드 진입
+                LogicEvent.DO_REGISTER_INFO: LogicState.REGISTER_PROCESS_INFO, # 데이터 저장
+                LogicEvent.DO_DATA_RESET: LogicState.RESET_DATA, # 데이터 리셋
                 LogicEvent.RECOVER: LogicState.RECOVERING,
             },
             
@@ -141,6 +143,10 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.DONE: LogicState.WAIT_COMMAND, # 완료 처리 후 -> 명령 대기 (다음 배치)
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
+            LogicState.RESET_DATA: {
+                LogicEvent.DONE: LogicState.IDLE, # 데이터 리셋 완료 -> IDLE
+                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
+            },
         }
 
     def _setup_strategies(self):
@@ -156,18 +162,28 @@ class LogicFSM(FiniteStateMachine):
             LogicState.CHECK_DEVICE_STATUS: LogicCheckDeviceStatusStrategy(),
             LogicState.WAIT_PROCESS: LogicWaitProcessStrategy(),
             LogicState.RUN_PROCESS: LogicRunProcessStrategy(),
+
             LogicState.DETERMINE_TASK: LogicDetermineTaskStrategy(),
+
             LogicState.MOVE_TO_RACK_FOR_QR: LogicMoveToRackForQRReadStrategy(),
             LogicState.PICK_SPECIMEN: LogicPickSpecimenStrategy(),
+
             LogicState.MOVE_TO_INDIGATOR: LogicMoveToIndigatorStrategy(),
-            LogicState.PLACE_SPECIMEN_AND_MEASURE: LogicPlaceSpecimenAndMeasureStrategy(),
+            LogicState.PLACE_SPECIMEN_AND_MEASURE: LogicPlaceSpecimenAndMeasureStrategy(),            
             LogicState.PICK_SPECIMEN_OUT_FROM_INDIGATOR: LogicPickSpecimenOutFromIndigatorStrategy(),
+
             LogicState.ALIGN_SPECIMEN: LogicAlignSpecimenStrategy(),
             LogicState.PICK_SPECIMEN_OUT_FROM_ALIGN: LogicPickSpecimenOutFromAlignStrategy(),
+
             LogicState.LOAD_TENSILE_MACHINE: LogicLoadTensileMachineStrategy(),
             LogicState.RETREAT_TENSILE_MACHINE: LogicRetreatTensileMachineStrategy(),
+
             LogicState.START_TENSILE_TEST: LogicStartTensileTestStrategy(),
+
             LogicState.PICK_TENSILE_MACHINE: LogicPickTensileMachineStrategy(),
             LogicState.RETREAT_AND_HANDLE_SCRAP: LogicRetreatAndHandleScrapStrategy(),
+
             LogicState.PROCESS_COMPLETE: LogicProcessCompleteStrategy(),
+            
+            LogicState.RESET_DATA: LogicResetDataStrategy(),
         }

@@ -4,8 +4,9 @@ import time
 import sys
 import json
 import os
+import threading
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # 설정 파일 경로
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'MitutoyoGauge.json')
@@ -53,6 +54,7 @@ class MitutoyoGauge:
         self.connection = None
         self.config = {}
         self.debug_mode = debug_mode
+        self.lock = threading.Lock()
         
         # 1. 설정 파일에서 모든 설정 로드
         full_config = load_config(CONFIG_FILE_PATH)
@@ -96,7 +98,8 @@ class MitutoyoGauge:
     def _connect_serial(self):
         """pyserial을 사용하여 시리얼 포트 연결을 시도합니다."""
         port = self.config.get('port')
-        if DEBUG_MODE: print(f"[{port}] 포트에 시리얼 연결 시도 중...")
+        if DEBUG_MODE:
+            print(f"[{port}] 포트에 시리얼 연결 시도 중...")
         try:
             self.connection = serial.Serial(
                 port=port,
@@ -119,7 +122,8 @@ class MitutoyoGauge:
         """socket을 사용하여 TCP/IP 소켓 연결을 시도합니다."""
         host = self.config.get('host')
         port = self.config.get('port')
-        if DEBUG_MODE: print(f"[{host}:{port}] 주소에 소켓 연결 시도 중...")
+        if DEBUG_MODE:
+            print(f"[{host}:{port}] 주소에 소켓 연결 시도 중...")
         try:
             self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.connection.settimeout(self.config.get('timeout', 1))
@@ -151,6 +155,8 @@ class MitutoyoGauge:
         """시리얼 통신으로 데이터를 요청하고 수신합니다."""
         self._log_debug(f"Serial 송신 RAW (Bytes): {repr(self.request_command)}")
         try:
+            # 요청 전 입력 버퍼를 비워 이전 데이터를 지웁니다.
+            self.connection.reset_input_buffer()
             # 요청 명령 전송
             self.connection.write(self.request_command)
             
@@ -170,6 +176,16 @@ class MitutoyoGauge:
         """소켓 통신으로 데이터를 요청하고 수신합니다."""
         self._log_debug(f"Socket 송신 RAW (Bytes): {repr(self.request_command)}")
         try:
+            # --- 소켓 버퍼 비우기 (시리얼의 reset_input_buffer와 유사한 역할) ---
+            self.connection.setblocking(False)
+            try:
+                while self.connection.recv(4096): pass
+            except (BlockingIOError, socket.error):
+                pass # 버퍼가 비었음
+            self.connection.setblocking(True)
+            self.connection.settimeout(self.config.get('timeout', 1))
+            # ----------------------------------------------------------------
+
             # 1. 요청 명령 전송
             self.connection.sendall(self.request_command)
             
@@ -214,11 +230,18 @@ class MitutoyoGauge:
         
         # 1. 바이트를 문자열로 디코딩
         try:
-            # .strip()을 사용하여 CR/LF 및 공백 제거
-            data = raw_data.decode('ascii', errors='ignore').strip()
-            self._log_debug(f"ASCII 디코딩된 데이터: '{data}'")
+            # Null 바이트(\x00)를 제거하고, CR/LF 및 양 끝 공백을 제거합니다.
+            data = raw_data.replace(b'\x00', b'').decode('ascii', errors='ignore').strip()
+            self._log_debug(f"ASCII 디코딩 및 정제된 데이터: '{data}'")
         except Exception:
             return {"status": "ERROR", "message": "데이터 디코딩 오류"}
+
+        # 유효한 메시지 시작점('01A' 또는 '91')을 찾습니다.
+        # 이로써 메시지 앞부분에 쓰레기 값이 있어도 파싱 가능성이 높아집니다.
+        if '01A' in data:
+            data = data[data.find('01A'):]
+        elif '91' in data:
+            data = data[data.find('91'):]
 
         if len(data) < 3:
             return {"status": "ERROR", "message": f"데이터 길이 오류: {data}"}
@@ -240,7 +263,7 @@ class MitutoyoGauge:
                     "status": "OK", 
                     "value": numeric_value, # float 변수에 저장된 값
                     "raw_string": data,
-                    "note": f"정상적으로 매뉴얼 형식(01A...)으로 파싱되었습니다."
+                    "note": "정상적으로 매뉴얼 형식(01A...)으로 파싱되었습니다."
                 }
             except ValueError:
                 # 데이터 형식이 깨지거나 숫자로 변환 불가 시 오류 처리
@@ -255,32 +278,42 @@ class MitutoyoGauge:
         설정된 통신 타입으로 데이터를 요청하고 분석합니다.
         성공 시 float 값을 반환하고, 실패 시 None을 반환합니다.
         """
-        if not self.connection:
-            if DEBUG_MODE: print("ERROR: 통신이 연결되지 않았습니다. .connect()를 먼저 호출하세요.")
+        # 동시 요청 방지를 위한 잠금
+        if not self.lock.acquire(blocking=False):
+            if DEBUG_MODE: print("INFO: 이전 데이터 요청이 아직 처리 중입니다. 이번 요청은 건너뜁니다.")
             return None
+        
+        try:
+            if not self.connection:
+                if DEBUG_MODE: print("ERROR: 통신이 연결되지 않았습니다. .connect()를 먼저 호출하세요.")
+                return None
 
-        if self.connection_type == 1:
-            raw_response = self._request_serial_data()
-        elif self.connection_type == 2:
-            raw_response = self._request_socket_data()
-        else:
-            return None
+            if self.connection_type == 1:
+                raw_response = self._request_serial_data()
+            elif self.connection_type == 2:
+                raw_response = self._request_socket_data()
+            else:
+                return None
+            
+            # 요청 간 최소 간격을 보장합니다.
+            time.sleep(0.2)
 
-        if raw_response:
-            result = self.parse_data(raw_response)
-            
-            # 파싱된 결과 딕셔너리 전체를 디버그 모드에서 출력
-            self._log_debug(f"파싱 결과 딕셔너리: {result}")
-            
-            if result["status"] == "OK":
-                # 최종 출력은 파싱된 float 값입니다.
-                value = result['value']
-                # print(f"✅ 수신 성공: 측정 값 (float) = {value}")
-                return value # 성공 시 float 값 반환
-            elif result["status"] == "ERROR":
-                if DEBUG_MODE: print(f"❌ 실패: {result['message']}")
+            if raw_response:
+                result = self.parse_data(raw_response)
                 
-        return None # raw_response가 없거나 파싱 상태가 ERROR일 경우 None 반환
+                self._log_debug(f"파싱 결과 딕셔너리: {result}")
+                
+                if result["status"] == "OK":
+                    value = result['value']
+                    if DEBUG_MODE: print(f"✅ 성공: {value}")
+                    return value
+                elif result["status"] == "ERROR":
+                    if DEBUG_MODE: print(f"❌ 실패: {result['message']}\nRaw Data : {raw_response}")
+                    
+            return None
+        finally:
+            # 작업 완료 후 잠금 해제
+            self.lock.release()
 
 
 def main():

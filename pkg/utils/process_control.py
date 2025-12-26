@@ -355,9 +355,9 @@ class ExecutionUnit:
                  args=[], kwargs={}, repeat=False, fun_timeout=None):
         self.name = name
         self.function = function
-        self.skip_conditions = skip_conditions if isinstance(skip_conditions, list) else [skip_conditions]
-        self.trigger_conditions = trigger_conditions if isinstance(trigger_conditions, list) else [trigger_conditions]
-        self.end_conditions = end_conditions if isinstance(end_conditions, list) else [end_conditions]
+        self.skip_conditions = skip_conditions
+        self.trigger_conditions = trigger_conditions
+        self.end_conditions = end_conditions
         self.executed = False
         self.args = args
         self.kwargs = kwargs

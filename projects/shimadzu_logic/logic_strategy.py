@@ -72,6 +72,18 @@ class LogicIdleStrategy(Strategy):
         # 자동화 모드 진입 명령 대기
         if bb.get("ui/cmd/auto/tensile") == 1: # ACTION_MAP_TENSIL["start"]
             return LogicEvent.START_AUTO_COMMAND
+
+        # 데이터 저장 명령 (UI -> Logic)
+        if bb.get("ui/cmd/data/save") == 1:
+            bb.set("ui/cmd/data/save", 0)
+            Logger.info("Logic: Received data save command from UI.")
+            return LogicEvent.DO_REGISTER_INFO
+
+        # 데이터 리셋 명령 (UI -> Logic)
+        if bb.get("ui/cmd/data/reset") == 1:
+            bb.set("ui/cmd/data/reset", 0)
+            Logger.info("Logic: Received data reset command from UI.")
+            return LogicEvent.DO_DATA_RESET
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -110,6 +122,19 @@ class LogicRegisterProcessInfoStrategy(Strategy):
         
         Logger.error(f"Logic: Failed to load batch data from DB.")
         return LogicEvent.VIOLATION_DETECT
+    
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicResetDataStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        Logger.info("Logic: Resetting batch data.")
+        
+    def operate(self, context: LogicContext) -> LogicEvent:
+        context.db.clear_batch_test_items()
+        context.db.clear_test_tray_items()
+        Logger.info("Logic: Batch data has been reset.")
+        return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
@@ -196,7 +221,7 @@ class LogicDetermineTaskStrategy(Strategy):
             return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
 
         # 3. 진행 중인 시편의 다음 단계 결정 (Command.md 흐름 준수)
-        step = bb.get("process/auto/current_step") or 1
+        step = bb.get("process/auto/current_step")
         
         if step == 1: # QR 인식 완료 -> 시편 가져오기 (2번)
             bb.set("process/auto/current_step", 2)
@@ -276,7 +301,7 @@ class LogicDetermineTaskStrategy(Strategy):
                 Logger.info(f"Logic: Collection done. Resuming Specimen {next_spec_no} from aligner.")
                 return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN
 
-            spec_no = bb.get("process/auto/current_specimen_no") or 1
+            spec_no = bb.get("process/auto/current_specimen_no")
             
             # 현재 시편 완료 기록 (3.2, 3.3)
             context.db.update_processing_status(batch_data['batch_id'], current_specimen['tray_no'], spec_no, 3)

@@ -63,46 +63,46 @@ class DBHandler:
                     tray_no,
                     seq_order,
                     seq_status,
+                    qr_no,
                     test_method,
                     batch_id,
-                    lot,
-                    status
+                    lot
                 FROM batch_plan_items 
                 ORDER BY seq_order ASC
             """
             cursor.execute(query_process)
             process_data = cursor.fetchall()
 
-            if DEBUG_MODE:
-                print(f"DEBUG: Raw process_data from DB:")
-                for row in process_data:
-                    print(f"  {row}")
-
+            # 데이터 존재 여부 로그 출력
+            if process_data:
+                Logger.info(f"Found {len(process_data)} rows in batch_plan_items.")
+            else:
+                Logger.warn("batch_plan_items table is empty.")
+                
             if not process_data:
                 return None
 
             else :
                 # 읽은 데이터를 batch_test_items 테이블에 기입 (Insert or Update)
                 upsert_query = """
-                    INSERT INTO batch_test_items (id, tray_no, seq_order, seq_status, test_method, batch_id, lot, status)
+                    INSERT INTO batch_test_items (id, tray_no, seq_order, seq_status, qr_no, test_method, batch_id, lot)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE 
                         tray_no = VALUES(tray_no), 
                         seq_order = VALUES(seq_order), 
                         seq_status = VALUES(seq_status), 
+                        qr_no = VALUES(qr_no),
                         test_method = VALUES(test_method), 
                         batch_id = VALUES(batch_id), 
-                        lot = VALUES(lot),
-                        status = VALUES(status)
+                        lot = VALUES(lot)
                 """
                 upsert_values = [
                     (row['id'], row['tray_no'], row['seq_order'], 1 if row['seq_order'] != 0 else 0, 
-                     row['test_method'], row['batch_id'], row['lot'], 'READY' if row['seq_order'] != 0 else '')
+                     row['qr_no'], row['test_method'], row['batch_id'], row['lot'])
                     for row in process_data
                 ]
                 cursor.executemany(upsert_query, upsert_values)
                 self.connection.commit()
-
             # 2. 데이터 가공 함수 호출
             batch_info = self._parse_batch_data(process_data)
 
@@ -134,7 +134,7 @@ class DBHandler:
             
             # 2. 10개의 빈 행(tray_no 1~10)을 기본값으로 삽입합니다.
             init_query = """
-                INSERT INTO batch_test_items (tray_no, seq_order, seq_status, test_method, batch_id, lot, status)
+                INSERT INTO batch_test_items (tray_no, seq_order, seq_status, qr_no, test_method, batch_id, lot)
                 VALUES (%s, 0, 0, '', '', '', '')
             """
             init_values = [(i,) for i in range(1, 11)]
@@ -207,26 +207,26 @@ class DBHandler:
                 "tray_no": item.get("tray_no"),
                 "seq_order": item.get("seq_order"),
                 "seq_status": 1 if item.get("seq_order", 0) != 0 else 0,
+                "qr_no": item.get("qr_no"),
                 "test_method": item.get("test_method") if item.get("test_method") else "DEFAULT_ASTM",
                 "batch_id": item.get("batch_id"),
-                "lot": item.get("lot"),
-                "status": "READY"  # seq_order가 0이 아닌 항목은 READY로 설정
+                "lot": item.get("lot")
             }
             batch_info['processData'].append(processed_item)
         # if DEBUG_MODE:
         for batch_item in batch_info['processData']:
             print(batch_item)
 
-        # tray_no 기준으로 status 값을 'READY'로 업데이트하여 DB에 반영
+        # tray_no 기준으로 seq_status 값을 1로 업데이트하여 DB에 반영
         if batch_info['processData'] and self.connect():
             try:
                 cursor = self.connection.cursor()
-                update_query = "UPDATE batch_test_items SET status = 'READY', seq_status = 1 WHERE tray_no = %s AND batch_id = %s"
+                update_query = "UPDATE batch_test_items SET seq_status = 1 WHERE tray_no = %s AND batch_id = %s"
                 update_values = [(item['tray_no'], item['batch_id']) for item in batch_info['processData']]
                 cursor.executemany(update_query, update_values)
                 self.connection.commit()
                 cursor.close()
-                Logger.info(f"Initialized status to READY for {len(update_values)} items in batch_test_items")
+                Logger.info(f"Initialized seq_status to 1 for {len(update_values)} items in batch_test_items")
             except Error as e:
                 Logger.error(f"DB Error in _parse_batch_data (status update): {e}")
 
@@ -250,10 +250,10 @@ class DBHandler:
             # 1. 배치 시험 항목 상태 업데이트 (Tray 기준 - 3.5)
             # 시편이 진행 중이면 트레이도 진행 중, 시편 5개가 모두 끝나야 트레이가 완료됨
             if status_code == 2: # RUNNING
-                query_test = "UPDATE batch_test_items SET seq_status = 2, status = 'RUNNING' WHERE batch_id = %s AND tray_no = %s"
+                query_test = "UPDATE batch_test_items SET seq_status = 2 WHERE batch_id = %s AND tray_no = %s"
                 cursor.execute(query_test, (batch_id, tray_no))
             elif status_code == 3 and specimen_no == 5: # DONE (마지막 시편)
-                query_test = "UPDATE batch_test_items SET seq_status = 3, status = 'DONE' WHERE batch_id = %s AND tray_no = %s"
+                query_test = "UPDATE batch_test_items SET seq_status = 3 WHERE batch_id = %s AND tray_no = %s"
                 cursor.execute(query_test, (batch_id, tray_no))
             
             # 2. 개별 시편 정보 상태 업데이트 (Specimen 기준 - 3.2)
@@ -326,6 +326,33 @@ class DBHandler:
         finally:
             cursor.close()
 
+    def get_test_method_details(self, method_name: str):
+        """
+        test_methods 테이블에서 주어진 시험 방법 이름에 대한 상세 파라미터를 조회합니다.
+        """
+        if not self.connect():
+            return None
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            # 'test_methods' 테이블이 존재한다고 가정합니다.
+            query = "SELECT * FROM test_methods WHERE method_name = %s"
+            cursor.execute(query, (method_name,))
+            method_details = cursor.fetchone()
+
+            if method_details:
+                Logger.info(f"Successfully fetched details for test method: {method_name}")
+                return method_details
+            else:
+                Logger.warn(f"No details found for test method: {method_name}. Returning default values.")
+                return {} # 빈 dict를 반환하여 get() 메서드에서 기본값을 사용하도록 유도
+        except Error as e:
+            Logger.error(f"DB Query Error (get_test_method_details): {e}")
+            return None
+        finally:
+            if cursor and self.connection.is_connected():
+                cursor.close()
+
     def insert_detail_log(self, batch_id, tray_no, specimen_no, equipment, status_msg):
         """
         detail_data_items 테이블에 상세 공정 로그를 기록합니다.
@@ -358,23 +385,22 @@ if __name__ == "__main__":
         print(f"1. Testing get_batch_data (All items)...")
         batch_data = handler.get_batch_data()
         if batch_data:
-            print(batch_data["batch_id"])
-            print(batch_data["timestamp"])
-            print(batch_data["procedure_num"])   
-            print(batch_data["processData"])             
-            # print(f"✅ Batch Data Loaded: {batch_data['batch_id']}")
-            # print(f"📊 Total Process Items (Excluding Seq 0): {batch_data['procedure_num']}")
+            print(f"✅ Batch ID: {batch_data['batch_id']}")
+            print(f"✅ Timestamp: {batch_data['timestamp']}")
+            print(f"✅ Procedure Count: {batch_data['procedure_num']}")
             for item in batch_data['processData']:
-                print(f"   [{item['seq_order']}] Tray: {item['tray_no']} | Method: {item['test_method']} | Status: {item['status']}")
-        else:
-            print("⚠️ No batch data found. (DB에 해당 ID가 있는지 확인 필요)")
+                print(f"   [{item['seq_order']}] Tray: {item['tray_no']} | QR: {item['qr_no']} | Method: {item['test_method']} | Seq Status: {item['seq_status']}")
 
-        data = bb.get("process/auto/batch_data")
-        print(f"bb data : {data}")
+            # 데이터가 로드된 경우에만 블랙보드 확인
+            data = bb.get("process/auto/batch_data")
+            print(f"✅ Blackboard Data Sync Check: {'Success' if data else 'Fail'}")
+        else:
+            print("⚠️ No batch data found. (batch_plan_items 테이블에 데이터가 있는지 확인하세요.)")
+        
         import time
         time.sleep(10)
-
-        # handler.clear_batch_test_items()
+        
+        handler.clear_batch_test_items()
 
         #
         handler.disconnect()

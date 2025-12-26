@@ -55,8 +55,9 @@ class LogicState(OpState):
     RETREAT_TENSILE_MACHINE             = 19            # 14. 인장기 후퇴 (D)
     START_TENSILE_TEST                  = 20            # 15. 인장 시험 시작 (D)
     PICK_TENSILE_MACHINE                = 21            # 16. 인장기 시편 수거 (D)
-    RETREAT_AND_HANDLE_SCRAP            = 22            # 17. 후퇴 및 스크랩 처리 (D)
-    PROCESS_COMPLETE                    = 23            # 18. 공정 완료
+    RETREAT_AND_HANDLE_SCRAP            = 22            # 17. 후퇴 및 스크랩 처리 (D)    
+    PROCESS_COMPLETE                    = 23            # 18. 공정 완료    
+    RESET_DATA                          = 25            # 19. 데이터 리셋
     
 
     
@@ -104,6 +105,7 @@ class LogicEvent(OpEvent):
     DO_PICK_TENSILE_MACHINE             = 37            # 인장기 시편 수거 실행
     DO_RETREAT_AND_HANDLE_SCRAP         = 38            # 후퇴 및 스크랩 처리 실행
     DO_PROCESS_COMPLETE                 = 39            # 공정 완료 실행
+    DO_DATA_RESET                       = 40            # 데이터 리셋 실행
     
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
