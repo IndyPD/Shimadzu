@@ -59,6 +59,11 @@ class DeviceContext(ContextBase):
         self.remote_input_data = self.iocontroller.current_di_value
         self.remote_output_data = self.iocontroller.current_do_value
         self.remote_comm_state = False
+        # 통신 오류 카운터 및 임계값
+        self.remote_io_error_count = 0
+        self.gauge_error_count = 0
+        self.qr_error_count = 0
+        self.COMM_ERROR_THRESHOLD = 10  # 10회 연속 통신 오류 발생 시 위반으로 판단
 
         # QRReader 장치 인스턴스 생성
         if self.dev_qr_enable:
@@ -149,7 +154,7 @@ class DeviceContext(ContextBase):
 
     def _thread_IO_reader(self):
         while self.th_IO_reader :
-            time.sleep(0.1)
+            time.sleep(0.5)
             self.read_IO_status()
 
     def _thread_UI_DO_handler(self):
@@ -182,18 +187,27 @@ class DeviceContext(ContextBase):
                 # Remote I/O
                 if self.dev_remoteio_enable:
                     # read_IO_status()가 self.remote_comm_state를 업데이트합니다.
-                    bb.set("device/remote/comm_status", 1 if self.remote_comm_state else 0)
+                    pass
 
                 # Gauge
                 if self.dev_gauge_enable:
                     gauge_status = self.get_dial_gauge_status()
-                    # Logger.info(f"[device] gauge_status : {gauge_status}")
-                    bb.set("device/gauge/comm_status", 1 if gauge_status else 0)
+                    if gauge_status:
+                        bb.set("device/gauge/comm_status", 1)
+                        self.gauge_error_count = 0
+                    else:
+                        bb.set("device/gauge/comm_status", 0)
+                        self.gauge_error_count += 1
 
                 # QR Reader
                 if self.dev_qr_enable:
                     qr_status = self.qr_reader.is_connected
-                    bb.set("device/qr/comm_status", 1 if qr_status else 0)
+                    if qr_status:
+                        bb.set("device/qr/comm_status", 1)
+                        self.qr_error_count = 0
+                    else:
+                        bb.set("device/qr/comm_status", 0)
+                        self.qr_error_count += 1
 
                 # Shimadzu
                 if self.dev_smz_enable:
@@ -206,71 +220,59 @@ class DeviceContext(ContextBase):
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_comm_status_updater: {e}\n{traceback.format_exc()}")
             
-            time.sleep(1.0) # 1초 간격으로 업데이트
+            time.sleep(10.0) # 10초 간격으로 업데이트
         Logger.info(f"[device] _thread_comm_status_updater stopped")
 
 
     def check_violation(self) -> int:
         self.violation_code = 0
-        # 비트 위치가 명확하고 코드가 짧아집니다.
-        # N번째 비트 = 1 << N
-
-        # Local violation bitmask constants
-        GAUGE_COMM_ERR     = 1 << 0  # 0b00000001 (1)
-        GAUGE_DEVICE_ERROR = 1 << 1 # 0b00000010 (2)
-        SMZ_COMM_ERR       = 1 << 2  # 0b00000100 (4)
-        SMZ_DEVICE_ERR     = 1 << 3  # 0b00001000 (8)  <-- 위치 재조정 (Remote IO와 충돌 방지)
-        REMOTE_IO_COMM_ERR = 1 << 4  # 0b00010000 (16)  <-- 위치 재조정
-        REMOTE_IO_DEVICE_ERR = 1 << 5  # 0b00100000 (32)  <--
-        #Error Code 관련 추가
-        
         try:
-            # Device Violation을 사용하도록 업데이트
-            gauge_violation = [False,0]
-            smz_violation = [False,0]
-            remoteio_violation = [False,0]
+            # 1. 통신 오류 확인 (오류 카운터 기반)
+            if self.dev_remoteio_enable and self.remote_io_error_count >= self.COMM_ERROR_THRESHOLD:
+                Logger.info(f"[device] Check violation : Remote IO Communication Error Detected")
+                self.violation_code |= DeviceViolation.REMOTE_IO_COMM_ERR
+            
+            if self.dev_gauge_enable and self.gauge_error_count >= self.COMM_ERROR_THRESHOLD:
+                Logger.info(f"[device] Check violation : Gauge Communication Error Detected")
+                self.violation_code |= DeviceViolation.GAUGE_COMM_ERR
+                
+            if self.dev_qr_enable and self.qr_error_count >= self.COMM_ERROR_THRESHOLD:
+                Logger.info(f"[device] Check violation : QR Communication Error Detected")
+                self.violation_code |= DeviceViolation.QR_COMM_ERR
 
-            # if self.dev_gauge_enable :
-            #     gauge_state = self.get_dial_gauge_status()
-            #     if not gauge_state :
-            #         gauge_violation =[True, GAUGE_COMM_ERR]    # 통신 연결 에러
-            #         bb.set("device/gauge/comm_status",0)
-            #     else :
-            #         bb.set("device/gauge/comm_status",1)
-
-            if self.dev_smz_enable :
-                # Initial Check & Communication Status
+            # 2. Shimadzu 통신 및 장치 상태 확인
+            if self.dev_smz_enable:
                 if not self.smz_are_you_there():
-                    smz_violation = [True, SMZ_COMM_ERR]
+                    Logger.info(f"[device] Check violation : Shimadzu Communication Error Detected")
+                    self.violation_code |= DeviceViolation.SMZ_COMM_ERR
                 else:
                     smz_state = self.smz_ask_sys_status()
                     if smz_state is False:
-                        smz_violation = [True, SMZ_COMM_ERR]
+                        Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                        self.violation_code |= DeviceViolation.SMZ_COMM_ERR
                     elif smz_state.get("RUN") == "E":
-                        smz_violation = [True, SMZ_DEVICE_ERR]
-                
-            if self.dev_remoteio_enable :
-                if not self.remote_comm_state :
-                    remoteio_violation = [True, REMOTE_IO_COMM_ERR]    # 통신 연결 에러
-                else:
-                    # Device Error Check (e.g. EMO buttons)
-                    # EMO signals are typically NC (Normally Closed), so 0 means triggered.
-                    emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SI] == 0 or 
-                                     self.remote_input_data[DigitalInput.EMO_03_SI] == 0 or 
-                                     self.remote_input_data[DigitalInput.EMO_04_SI] == 0)
-                    if emo_triggered:
-                        remoteio_violation = [True, REMOTE_IO_DEVICE_ERR]
-
+                        Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                        self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
             
-            # 장비 모든 상태 확인 후  error code 생성
-            if gauge_violation[0] or smz_violation[0] or remoteio_violation[0] :
-                self.violation_code = gauge_violation[1] | smz_violation[1] | remoteio_violation[1]
-            self.violation_code = 0
+            # 3. Remote I/O 장치 오류 확인 (EMO 등)
+            if self.dev_remoteio_enable and self.remote_comm_state:
+                # EMO 신호는 NC(Normally Closed)이므로 0일 때 트리거된 것으로 간주
+                emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SI] == 0 or 
+                                 self.remote_input_data[DigitalInput.EMO_03_SI] == 0 or 
+                                 self.remote_input_data[DigitalInput.EMO_04_SI] == 0)
+                
+                sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
+                if sol_sensor == 0:
+                    Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
+                    self.violation_code |= DeviceViolation.REMOTE_IO_DEVICE_ERR
+                if emo_triggered:
+                    Logger.info(f"[device] Check violation : EMO Error Detected")
+                    self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
+
             return self.violation_code
         except Exception as e:
             Logger.error(f"[device] Error in check_violation: {e}\n{traceback.format_exc()}")
             reraise(e)
-
     def read_IO_status(self):
         '''
         Read Remote I/O value\n
@@ -281,6 +283,7 @@ class DeviceContext(ContextBase):
         try:
             with self._io_lock:
                 self.remote_input_data = self.iocontroller.read_input_data()
+                time.sleep(0.5)
                 self.remote_output_data = self.iocontroller.read_output_data()
             
             # 데이터 읽기 실패 또는 데이터 길이 미달 시 예외 처리
@@ -353,9 +356,15 @@ class DeviceContext(ContextBase):
             bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
             bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
             self.remote_comm_state = True
+            # Logger.info(f"[device] Connect state : {self.remote_comm_state}")
+            bb.set("device/remote/comm_status", 1 if self.remote_comm_state else 0)
+            self.remote_io_error_count = 0  # 성공 시 에러 카운트 리셋
         except Exception as e:
             Logger.error(f"[device] Error in read_IO_status: {e}\n{traceback.format_exc()}")
             self.remote_comm_state = False
+            bb.set("device/remote/comm_status", 0)
+            self.remote_io_error_count += 1
+            Logger.warn(f"[device] Remote IO read error count: {self.remote_io_error_count}")
 
     def UI_DO_Control(self, address: int, value: int) -> bool:
         '''
@@ -1027,4 +1036,48 @@ class DeviceContext(ContextBase):
         except Exception as e:
             Logger.error(f"[device] Error in smz_ask_sys_status: {e}\n{traceback.format_exc()}")
             reraise(e)
+            return False
+
+    def reconnect_remote_io(self) -> bool:
+        """Remote I/O 재연결을 시도합니다."""
+        Logger.info("[device] Attempting to reconnect to Remote IO...")
+        try:
+            self.iocontroller.disconnect()
+            time.sleep(1)
+            self.iocontroller.connect()
+            # 재연결 성공 시, 에러 카운터를 리셋하여 즉시 위반 상태에서 벗어날 수 있도록 함
+            self.remote_io_error_count = 0
+            Logger.info("[device] Remote IO reconnected successfully.")
+            return True
+        except Exception as e:
+            Logger.error(f"[device] Failed to reconnect Remote IO: {e}")
+            return False
+
+    def reconnect_gauge(self) -> bool:
+        """두께 측정기 재연결을 시도합니다."""
+        Logger.info("[device] Attempting to reconnect to Gauge...")
+        try:
+            # MitutoyoGauge는 별도의 connect/disconnect가 없으므로 재초기화
+            self.gauge = MitutoyoGauge(connection_type=1)
+            # 재연결 성공 시, 에러 카운터 리셋
+            self.gauge_error_count = 0
+            Logger.info("[device] Gauge re-initialized successfully.")
+            return True
+        except Exception as e:
+            Logger.error(f"[device] Failed to re-initialize Gauge: {e}")
+            return False
+
+    def reconnect_qr(self) -> bool:
+        """QR 리더기 재연결을 시도합니다."""
+        Logger.info("[device] Attempting to reconnect to QR Reader...")
+        try:
+            self.qr_reader.disconnect()
+            time.sleep(1)
+            self.qr_reader.connect()
+            # 재연결 성공 시, 에러 카운터 리셋
+            self.qr_error_count = 0
+            Logger.info("[device] QR Reader reconnected successfully.")
+            return True
+        except Exception as e:
+            Logger.error(f"[device] Failed to reconnect QR Reader: {e}")
             return False

@@ -199,17 +199,30 @@ class DeviceEvent(OpEvent):
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
     NONE                                = 0
-    CONNECTION_TIMEOUT                  = 1 << 0        # 장치 연결 시도 시간 초과
-    INITIAL_CHECK_FAIL                  = 1 << 1        # 상태 재확인(ARE_YOU_THERE) 실패
-    REGISTER_FAIL                       = 1 << 2        # 시험 조건 등록 실패
-    GRIP_CLOSE_FAIL                     = 1 << 3        # 시험기 그립 닫기 실패
-    PRELOAD_FAIL                        = 1 << 4        # 초기 하중 제거 실패/오류
-    TEST_START_FAIL                     = 1 << 5        # 인장 시험 시작 요청 실패
-    EXT_MOVEMENT_FAIL                   = 1 << 6        # 신율계 전진/후진 명령 실패
-    TEST_RUNTIME_ERROR                  = 1 << 7        # ANA_RESULT에 시험 중 오류 코드가 포함됨
-    ISO_EMERGENCY_BUTTON                = 1 << 8
-    HW_VIOLATION                        = 1 << 9
-    HW_NOT_READY                        = 1 << 10
+    # Communication Errors
+    REMOTE_IO_COMM_ERR                  = 1 << 0
+    GAUGE_COMM_ERR                      = 1 << 1
+    QR_COMM_ERR                         = 1 << 2
+    SMZ_COMM_ERR                        = 1 << 3
+
+    # Device Specific Errors
+    REMOTE_IO_DEVICE_ERR                = 1 << 4  # e.g., EMO button
+    GAUGE_DEVICE_ERROR                  = 1 << 5
+    SMZ_DEVICE_ERR                      = 1 << 6  # e.g., Shimadzu reports an internal error
+
+    # Process/Sequence Errors
+    INITIAL_CHECK_FAIL                  = 1 << 7
+    REGISTER_FAIL                       = 1 << 8
+    GRIP_CLOSE_FAIL                     = 1 << 9
+    PRELOAD_FAIL                        = 1 << 10
+    TEST_START_FAIL                     = 1 << 11
+    EXT_MOVEMENT_FAIL                   = 1 << 12
+    TEST_RUNTIME_ERROR                  = 1 << 13
+    
+    # General Hardware Errors
+    ISO_EMERGENCY_BUTTON                = 1 << 14
+    HW_VIOLATION                        = 1 << 15  # Generic HW violation
+    HW_NOT_READY                        = 1 << 16
 
 # =======================================================
 # 7. RobotState (로봇 제어 상태) 정의 - Robot은 Logic의 서브 모듈로 간주
@@ -223,42 +236,17 @@ class RobotState(OpState):
     STOP_AND_OFF                        = 5             # 비상 정지 및 전원 차단 상태
     
     MANUAL_GRIPPER_OPEN                 = 6             # 수동 그리퍼 열기
-    MANUAL_GRIPPER_CLOSE                = 7             # 수동 그리퍼 닫기
-
+    MANUAL_GRIPPER_CLOSE                = 7             # 수동 그리퍼 닫기    
     PROGRAM_AUTO_ON                     = 8             # 로봇 프로그램 켜기(자동모드)
-    PROGRAM_MANUAL_OFF                  = 9             # 로봇 프로그램 끄기(수동모드)
-    
-    AUTO_MOTION_TOOL_CHANGE             = 10            # 툴 교체
-    AUTO_MOTION_MOVE_HOME               = 11            # 홈 위치 이동
-    AUTO_MOTION_APPROACH_RACK           = 12            # 렉 앞 접근
-    AUTO_GRIPPER_OPEN                   = 13            # 로봇 그리퍼 열기
-    AUTO_GRIPPER_CLOSE                  = 14            # 로봇 그리퍼 닫기
-    AUTO_MOTION_MOVE_TO_QR              = 15            # 렉 작업 대상 층 Tray QR 인식 위치 이동
-    AUTO_MOTION_APPROACH_PICK           = 16            # 렉 작업 대상 층 Tray 시편 잡는 위치 앞 이동
-    AUTO_MOTION_PICK_SPECIMEN           = 17            # 렉 작업 대상 층 Tray 내 시편 잡기
-    AUTO_MOTION_RETRACT_FROM_TRAY       = 18            # 렉 작업 대상 층 Tray 앞 후퇴
-    AUTO_MOTION_RETRACT_FROM_RACK       = 19            # 렉 앞 후퇴
-    AUTO_MOTION_APPROACH_THICKNESS      = 20            # 두께측정기 앞 이동
-    AUTO_MOTION_ENTER_THICKNESS_POS_1   = 21            # 두께측정기 1번 위치 진입
-    AUTO_MOTION_ENTER_THICKNESS_POS_2   = 22            # 두께측정기 2번 위치 진입
-    AUTO_MOTION_ENTER_THICKNESS_POS_3   = 23            # 두께측정기 3번 위치 진입
-    AUTO_MOTION_RETRACT_FROM_THICKNESS  = 24            # 두께측정기 앞 후퇴
-    AUTO_MOTION_APPROACH_ALIGNER        = 25            # 정렬기 앞 이동
-    AUTO_MOTION_ENTER_ALIGNER           = 26            # 정렬기 진입
-    AUTO_MOTION_RETRACT_FROM_ALIGNER    = 27            # 정렬기 앞 후퇴
-    AUTO_MOTION_APPROACH_TENSILE        = 28            # 인장시험기 앞 이동
-    AUTO_MOTION_ENTER_TENSILE           = 29            # 인장시험기 진입
-    AUTO_MOTION_RETRACT_FROM_TENSILE    = 30            # 인장시험기 앞 후퇴
-    AUTO_MOTION_APPROACH_SCRAP          = 31            # 스크랩 통 위치 앞 이동
-    AUTO_MOTION_ENTER_SCRAP             = 32            # 스크랩 통 진입
-    AUTO_MOTION_RETRACT_FROM_SCRAP      = 33            # 스크랩 통 위치 앞 후퇴
+    PROGRAM_MANUAL_OFF                  = 9             # 로봇 프로그램 끄기(수동모드)    
     WAIT_AUTO_COMMAND                   = 34            # 자동 공정 명령 대기
+    AUTO_MOTION_EXECUTE                 = 35            # 자동 공정 모션 실행
     
 
 # 8. RobotEvent (로봇 제어 이벤트) 정의 - Logic FSM의 서브 이벤트로 활용
 class RobotEvent(OpEvent):
     NONE                                = 0
-    VIOLATION_DETECT                    = 1             # 위반 감지 이벤트
+    VIOLATION_DETECT                    = 1             # 위반 감지 이벤트    
     STOP_EMG                            = 2             # 비상 정지 이벤트
     DONE                                = 3             # 현재 전략/작업 완료
     RECOVER                             = 4             # 복구 요청 이벤트
@@ -270,58 +258,15 @@ class RobotEvent(OpEvent):
 
     PROGRAM_AUTO_ON_DONE                = 9             # 로봇 프로그램 켜기 완료
     PROGRAM_MANUAL_OFF_DONE             = 10            # 로봇 프로그램 끄기 완료
-    AUTO_MOTION_TOOL_CHANGE_DONE        = 11            # 툴 교체 완료
-    AUTO_MOTION_MOVE_HOME_DONE          = 12            # 홈 위치 이동 완료
-    AUTO_MOTION_APPROACH_RACK_DONE      = 13            # 렉 앞 접근 완료
-    AUTO_GRIPPER_OPEN_DONE              = 14            # 로봇 그리퍼 열기 완료
-    AUTO_GRIPPER_CLOSE_DONE             = 15            # 로봇 그리퍼 닫기 완료
-    AUTO_MOTION_MOVE_TO_QR_DONE         = 16            # QR 인식 위치 이동 완료
-    AUTO_MOTION_APPROACH_PICK_DONE      = 17            # 시편 잡는 위치 앞 이동 완료
-    AUTO_MOTION_PICK_SPECIMEN_DONE      = 18            # 시편 잡기 완료
-    AUTO_MOTION_RETRACT_FROM_TRAY_DONE  = 19            # Tray 앞 후퇴 완료
-    AUTO_MOTION_RETRACT_FROM_RACK_DONE  = 20            # 렉 앞 후퇴 완료
-    AUTO_MOTION_APPROACH_THICKNESS_DONE = 21            # 두께측정기 앞 이동 완료
-    AUTO_MOTION_ENTER_THICKNESS_POS_1_DONE = 22         # 두께측정기 1번 위치 진입 완료
-    AUTO_MOTION_ENTER_THICKNESS_POS_2_DONE = 23         # 두께측정기 2번 위치 진입 완료
-    AUTO_MOTION_ENTER_THICKNESS_POS_3_DONE = 24         # 두께측정기 3번 위치 진입 완료
-    AUTO_MOTION_RETRACT_FROM_THICKNESS_DONE = 25        # 두께측정기 앞 후퇴 완료
-    AUTO_MOTION_APPROACH_ALIGNER_DONE   = 26            # 정렬기 앞 이동 완료
-    AUTO_MOTION_ENTER_ALIGNER_DONE      = 27            # 정렬기 진입 완료
-    AUTO_MOTION_RETRACT_FROM_ALIGNER_DONE = 28          # 정렬기 앞 후퇴 완료
-    AUTO_MOTION_APPROACH_TENSILE_DONE   = 29            # 인장시험기 앞 이동 완료
-    AUTO_MOTION_ENTER_TENSILE_DONE      = 30            # 인장시험기 진입 완료
-    AUTO_MOTION_RETRACT_FROM_TENSILE_DONE = 31          # 인장시험기 앞 후퇴 완료
-    AUTO_MOTION_APPROACH_SCRAP_DONE     = 32            # 스크랩 통 위치 앞 이동 완료
-    AUTO_MOTION_ENTER_SCRAP_DONE        = 33            # 스크랩 통 진입 완료
-    AUTO_MOTION_RETRACT_FROM_SCRAP_DONE = 34            # 스크랩 통 위치 앞 후퇴 완료
     
     # 명령 실행 이벤트 (DO_Command)
     DO_AUTO_MOTION_PROGRAM_AUTO_ON      = 40            # 로봇 프로그램 켜기 실행
     DO_AUTO_MOTION_PROGRAM_MANUAL_OFF   = 41            # 로봇 프로그램 끄기 실행
-    DO_AUTO_MOTION_TOOL_CHANGE          = 42            # 툴 교체 실행
-    DO_AUTO_MOTION_MOVE_HOME            = 43            # 홈 위치 이동 실행
-    DO_AUTO_MOTION_APPROACH_RACK        = 44            # 렉 앞 접근 실행
-    DO_AUTO_GRIPPER_OPEN                = 45            # 그리퍼 열기 실행
-    DO_AUTO_GRIPPER_CLOSE               = 46            # 그리퍼 닫기 실행
-    DO_AUTO_MOTION_MOVE_TO_QR           = 47            # QR 위치 이동 실행
-    DO_AUTO_MOTION_APPROACH_PICK        = 48            # 픽업 위치 접근 실행
-    DO_AUTO_MOTION_PICK_SPECIMEN        = 49            # 시편 픽업 실행
-    DO_AUTO_MOTION_RETRACT_FROM_TRAY    = 50            # 트레이 후퇴 실행
-    DO_AUTO_MOTION_RETRACT_FROM_RACK    = 51            # 렉 후퇴 실행
-    DO_AUTO_MOTION_APPROACH_THICKNESS   = 52            # 두께측정기 접근 실행
-    DO_AUTO_MOTION_ENTER_THICKNESS_POS_1 = 53           # 두께측정 1번 위치 진입 실행
-    DO_AUTO_MOTION_ENTER_THICKNESS_POS_2 = 54           # 두께측정 2번 위치 진입 실행
-    DO_AUTO_MOTION_ENTER_THICKNESS_POS_3 = 55           # 두께측정 3번 위치 진입 실행
-    DO_AUTO_MOTION_RETRACT_FROM_THICKNESS = 56          # 두께측정기 후퇴 실행
-    DO_AUTO_MOTION_APPROACH_ALIGNER     = 57            # 정렬기 접근 실행
-    DO_AUTO_MOTION_ENTER_ALIGNER        = 58            # 정렬기 진입 실행
-    DO_AUTO_MOTION_RETRACT_FROM_ALIGNER = 59            # 정렬기 후퇴 실행
-    DO_AUTO_MOTION_APPROACH_TENSILE     = 60            # 인장시험기 접근 실행
-    DO_AUTO_MOTION_ENTER_TENSILE        = 61            # 인장시험기 진입 실행
-    DO_AUTO_MOTION_RETRACT_FROM_TENSILE = 62            # 인장시험기 후퇴 실행
-    DO_AUTO_MOTION_APPROACH_SCRAP       = 63            # 스크랩 통 접근 실행
-    DO_AUTO_MOTION_ENTER_SCRAP          = 64            # 스크랩 통 진입 실행
-    DO_AUTO_MOTION_RETRACT_FROM_SCRAP   = 65            # 스크랩 통 후퇴 실행
+
+    # 범용 모션 이벤트
+    DO_MOTION                           = 70
+    MOTION_DONE                         = 71
+    MOTION_FAIL                         = 72
 
 
 # 9. RobotViolation (로봇 제어 위반) 정의 - Logic FSM으로 보고됨
@@ -336,14 +281,64 @@ class RobotViolation(ViolationType):
     HW_VIOLATION                        = 1 << 9
     HW_NOT_READY                        = 1 << 10
 
-# 10. Indy Conty 프로그램 상태 정의
+# 10. 로봇 모션 명령 (Command.md 기반)
+class RobotMotionCommand(IntEnum):
+    # 기본 동작
+    HOME_RACK_FRONT = 1
+    HOME_TOOL_FRONT = 2
+    HOME_THICK_GAUGE_FRONT = 3
+    HOME_ALIGNER_FRONT = 4
+    HOME_TENSILE_TESTER_FRONT = 5
+    HOME_SCRAP_DISPOSER_FRONT = 6
+    RACK_FRONT_HOME = 21
+    TOOL_FRONT_HOME = 22
+    THICK_GAUGE_FRONT_HOME = 23
+    ALIGNER_FRONT_HOME = 24
+    TENSILE_TESTER_FRONT_HOME = 25
+    SCRAP_DISPOSER_FRONT_HOME = 26
+    GRIPPER_OPEN = 90
+    GRIPPER_CLOSE = 91
+    # 복구
+    RECOVERY_HOME = 100
+    # 공정 중 모션 (Process)
+    PRO_TOOL_MOVE_POS = 105
+    PRO_TOOL_ENTER_SENSOR_3 = 106
+    PRO_TOOL_ENTER_SENSOR_4 = 107
+    PRO_TOOL_INSERT_MOVE_UP = 108
+    RACK_FRONT_MOVE = 1000
+    RACK_FRONT_RETURN = 2000
+    THICK_GAUGE_FRONT_MOVE = 3000
+    THICK_GAUGE_SAMPLE_1_PLACE = 3001
+    THICK_GAUGE_SAMPLE_2_PLACE = 3002
+    THICK_GAUGE_SAMPLE_3_PLACE = 3003
+    THICK_GAUGE_SAMPLE_1_PICK = 3011
+    THICK_GAUGE_SAMPLE_2_PICK = 3012
+    THICK_GAUGE_SAMPLE_3_PICK = 3013
+    THICK_GAUGE_FRONT_RETURN_1 = 4000
+    THICK_GAUGE_FRONT_RETURN_2 = 4001
+    THICK_GAUGE_FRONT_RETURN_3 = 4002
+    ALIGNER_FRONT_MOVE = 5000
+    ALIGNER_SAMPLE_PLACE = 5001
+    ALIGNER_SAMPLE_PICK = 5011
+    ALIGNER_FRONT_RETURN = 6000
+    TENSILE_FRONT_MOVE = 7000
+    TENSILE_SAMPLE_PLACE_POS_DOWN = 7001
+    TENSILE_SAMPLE_PLACE_POS_UP = 7002
+    TENSILE_SAMPLE_PICK_POS_DOWN = 7011
+    TENSILE_SAMPLE_PICK_POS_UP = 7012
+    SCRAP_FRONT_MOVE = 7020
+    SCRAP_DROP_POS = 7021
+    SCRAP_FRONT_RETURN = 7022
+    TENSILE_FRONT_RETURN = 8000
+
+# 11. Indy Conty 프로그램 상태 정의
 class ProgramState(IntEnum):
     PROG_IDLE                           = 0
     PROG_RUNNING                        = 1
     PROG_PAUSING                        = 2
     PROG_STOPPING                       = 3
 
-# 11. Indy opstate 정의 
+# 12. Indy opstate 정의
 class DigitalState(IntEnum):
     OFF_STATE                           = 0
     ON_STATE                            = 1
@@ -356,6 +351,19 @@ class ProgramControl(IntEnum):
     PROG_RESUME                         = 2
     PROG_PAUSE                          = 3
     PROG_STOP                           = 4
+
+# 동적 명령 생성을 위한 헬퍼 함수
+def get_rack_nF_front_pos_cmd(nF: int) -> int:
+    return 1000 + nF * 10
+
+def get_rack_nF_QR_scan_pos_cmd(nF: int) -> int:
+    return 1300 + nF * 10
+
+def get_rack_nF_sample_N_pos_cmd(nF: int, N: int) -> int:
+    return 1000 + nF * 10 + N
+
+def get_rack_nF_front_return_cmd(nF: int) -> int:
+    return 2000 + nF * 10
 
 class Robot_OP_State(IntEnum):
     # Indy's FSM state

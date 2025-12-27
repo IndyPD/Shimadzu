@@ -4,25 +4,23 @@
   "conty_warming_program_index": 3,
 
 
-  "home_pos"       : [168.50,-35.84,-37.39,-168.65,88.45,-0.29],
+  "home_pos" : [
+     -50.0,
+      30.0,
+    -160.0,
+     180.0,
+     -40.0,
+      90.0
+  ],
   "packaging_pos"  : [-90, 0, 150, 0, -150, 0],
 
+  "int_var/grip_state/addr" : 100,
   "int_var/robot/position/addr" : 400,
   "int_var/cmd/addr" : 600,
-  "int_var/motion_done/addr" : 610,
-  "int_var/init/addr" : 700,
-  "int_var/grip_state/addr" : 100,
-  "int_var/left_pull_done/addr" : 101,
-  "int_var/right_pull_done/addr" : 102,
-  "int_var/putin_done/addr" : 103,
-  "int_var/recover_done/addr" : 104,
-  "int_var/pull_done/addr" : 105,
-  "int_var/inputunit_position/addr" : 200,
-  "int_var/inputunit_process/addr" : 201,
-  "recover_pose/addr" : 202,
-  "left_basket_stack_num/addr" : 203,
-  "right_basket_stack_num/addr" : 204,
-  "indy_command/place/go_home/addr" : 205
-
-
+  "int_var/cmd_backup/addr" : 650,
+  "int_var/motion_ack/addr" : 610,
+  "int_var/motion_ack_backup/addr" : 660,
+  "int_var/motion_done/addr" : 700,
+  "int_var/motion_done_backup/addr" : 750,
+  "int_var/init/addr" : 770
 }

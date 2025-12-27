@@ -60,10 +60,6 @@ class LogicContext(ContextBase):
             if self.status.is_error_state():
                 self.violation_code |= LogicViolation.HW_VIOLATION
 
-            if not self.status.is_batch_planned():
-                 self.violation_code |= LogicViolation.BATCH_PLAN_MISSING
-
-
             return self.violation_code
         except Exception as e:
             Logger.error(f"[Logic] Exception in check_violation: {e}")
@@ -790,7 +786,47 @@ class LogicContext(ContextBase):
             return LogicEvent.VIOLATION_DETECT
 
     def start_tensile_test(self):
-        pass
+        """
+        Device FSM에 인장 시험 시작 명령을 전달하고 완료를 대기합니다.
+        이 함수는 Strategy에 의해 반복적으로 호출되는 것을 가정합니다.
+        """
+        try:
+            get_device_cmd = bb.get(device_cmd_key)
+
+            # Step 1: 명령 전송
+            if self._seq == 0 and get_device_cmd is None:
+                device_cmd = {
+                    "command": Device_command.START_TENSILE_TEST,
+                    "state": "",
+                    "is_done": False
+                }
+                bb.set(device_cmd_key, device_cmd)
+                Logger.info(f"[Logic] Sent START_TENSILE_TEST command to DeviceFSM.")
+                self._seq = 1
+                return LogicEvent.NONE
+
+            # Step 2: 명령 완료 대기
+            elif self._seq == 1 and get_device_cmd is not None:
+                if (get_device_cmd.get("command") == Device_command.START_TENSILE_TEST and get_device_cmd.get("is_done")):
+                    self._seq = 0
+                    bb.set(device_cmd_key, None)
+                    if get_device_cmd.get("state") == "done":
+                        Logger.info("[Logic] DeviceFSM confirmed tensile test started.")
+                        # 인장 시험은 시작 명령만 보내고, 시험 완료는 다른 메커니즘으로 감지하므로 바로 다음 단계로 진행합니다.
+                        return LogicEvent.DONE
+                    else:
+                        Logger.error(f"[Logic] DeviceFSM failed to start tensile test: {get_device_cmd.get('result')}")
+                        return LogicEvent.VIOLATION_DETECT
+            
+            return LogicEvent.NONE
+
+        except Exception as e:
+            Logger.error(f"[Logic] Exception in start_tensile_test: {e}")
+            self._seq = 0
+            return LogicEvent.VIOLATION_DETECT
 
     def process_complete(self):
-        pass
+        """ 모든 배치 공정이 완료되었음을 처리하고 FSM을 대기 상태로 전환합니다. """
+        Logger.info("[Logic] All batch processes are complete. Returning to command wait state.")
+        bb.set("ui/cmd/auto/tensile", 2)  # UI에 공정 완료 상태 전송 (2: 완료)
+        return LogicEvent.DONE

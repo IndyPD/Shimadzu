@@ -57,9 +57,9 @@ def main(blocking=False):
     try:        
         
         # Indy 로봇 통신 시작
-        # robot = indy_control.RobotCommunication()
-        # robot.start()
-        # time.sleep(0.1)
+        robot = indy_control.RobotCommunication()
+        robot.start()
+        time.sleep(0.1)
 
         #MQTT 통신 시작
         mqtt_communicator = mqtt_comm.MqttComm(role='logic', is_dummy=False, 

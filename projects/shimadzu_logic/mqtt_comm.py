@@ -25,8 +25,10 @@ class MqttComm:
         if self.role == 'logic':
             from pkg.utils.logging import Logger
             from pkg.utils.blackboard import GlobalBlackboard
+            from .constants import ProgramControl
             self.Logger = Logger
             self.bb = GlobalBlackboard()
+            self.ProgramControl = ProgramControl
 
         # 1. 규칙 로드
         self.rules = self._load_rules(rule_path)
@@ -198,7 +200,7 @@ class MqttComm:
     # Logic 역할 함수 (ACK 및 상태 보고)
     # ==========================================================================
 
-    def _handle_ui_command(self, header, payload):
+    def _handle_ui_command(self, header:dict, payload:dict):
         if self.role == 'logic':
             cmd = payload.get("cmd")
             action = payload.get("action")
@@ -206,8 +208,13 @@ class MqttComm:
             self.last_command_payload = payload
 
             if cmd == "tensile_control":
-                # 가상 제어 상태 업데이트 (logic_processing_loop에서 처리)
-                self.tensile_command = 1 # 예시: START
+                if hasattr(self, 'ProgramControl') and self.bb:
+                    if action == "pause":
+                        if self.Logger: self.Logger.info("[LOGIC] Pause command received via MQTT.")
+                        self.bb.set("ui/command/program_control", self.ProgramControl.PROG_PAUSE.value)
+                    elif action == "resume":
+                        if self.Logger: self.Logger.info("[LOGIC] Resume command received via MQTT.")
+                        self.bb.set("ui/command/program_control", self.ProgramControl.PROG_RESUME.value)
             elif cmd == "binpick_control":
                 self.binpick_command = 1
             elif cmd == "system_control":
@@ -232,6 +239,16 @@ class MqttComm:
                     if self.Logger: self.Logger.info(f"[LOGIC] 로봇 제어 명령 수신: {payload.get('target')} -> {payload.get('action')}")
                     self.bb.set("ui/cmd/robot_control/data", payload)
                     self.bb.set("ui/cmd/robot_control/trigger", 1)
+            elif cmd == "conty_program":
+                if self.role == 'logic' and self.bb:
+                    program_index = payload.get("program_index")
+                    if action == "start":
+                        if self.Logger: self.Logger.info(f"[LOGIC] Conty Program START command received for index: {program_index}")
+                        self.bb.set("indy_command/play_program_index", program_index)
+                        self.bb.set("indy_command/play_program_trigger", True)
+                    elif action == "stop":
+                        if self.Logger: self.Logger.info(f"[LOGIC] Conty Program STOP command received.")
+                        self.bb.set("indy_command/stop_program", True)
             elif cmd == "data":
                 if self.role == 'logic' and self.bb:
                     if action == "save":

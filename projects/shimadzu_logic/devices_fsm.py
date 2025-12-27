@@ -47,7 +47,7 @@ class DeviceFsm(FiniteStateMachine):
             
             # 6. 시험 공정 시퀀스
             DeviceState.WAIT_COMMAND: {
-                DeviceEvent.START_COMMAND: DeviceState.READ_QR,         # 시작 명령 -> QR 읽기
+                DeviceEvent.DO_READ_QR: DeviceState.READ_QR,            # QR 읽기 실행
                 DeviceEvent.DO_MEASURE_THICKNESS: DeviceState.MEASURE_THICKNESS,
                 DeviceEvent.DO_ALIGNER_ACTION: DeviceState.ALIGNER_ACTION,
                 DeviceEvent.DO_GRIPPER_GRIP: DeviceState.GRIPPER_GRIP,

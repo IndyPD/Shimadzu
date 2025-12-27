@@ -110,7 +110,7 @@ class RobotContext(ContextBase):
                         self.violation_code |= RobotViolation.HW_VIOLATION
 
                     if self.violation_code != 0:
-                        Logger.error(f"{get_time()}: [Robot FSM] Violation detected "
+                        Logger.info(f"{get_time()}: [Robot FSM] Violation detected "
                                      f"[indy_state={current_indy_state.name}, "
                                      f"violation_code={self.violation_code}]")
 
@@ -218,5 +218,132 @@ class RobotContext(ContextBase):
         ''' Motion Reset: Priority schedule → Robot '''
         self.motion_command_reset()
     def robot_motion_control(self,cmd : int) :
-        bb.set("int_var/cmd/val")
-        
+        bb.set("int_var/cmd/val", cmd)
+
+    def get_motion_cmd(self, motion_name: str, floor: int = 0, num: int = 0, pos: int = 0) -> int:
+        """
+        Logic FSM에서 사용하는 문자열 모션 명령을 Command.md에 정의된 정수 CMD ID로 변환합니다.
+        """
+        # 1. 정적 명령 매핑
+        static_mapping = {
+            Motion_command.M02_MOVE_TO_INDICATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
+            Motion_command.M05_ALIGN_SPECIMEN: RobotMotionCommand.ALIGNER_FRONT_MOVE, # 정렬기 앞으로 이동
+            Motion_command.M08_RETREAT_TENSILE_MACHINE: RobotMotionCommand.TENSILE_FRONT_RETURN,
+            "go_home": RobotMotionCommand.RECOVERY_HOME,
+            "gripper_open": RobotMotionCommand.GRIPPER_OPEN,
+            "gripper_close": RobotMotionCommand.GRIPPER_CLOSE,
+        }
+        if motion_name in static_mapping:
+            return static_mapping[motion_name]
+
+        # 2. 동적 명령 매핑 (파라미터 필요)
+        if motion_name == Motion_command.M00_MOVE_TO_RACK:
+            return get_rack_nF_QR_scan_pos_cmd(floor)
+        elif motion_name == Motion_command.M01_PICK_SPECIMEN:
+            return get_rack_nF_sample_N_pos_cmd(floor, num)
+        elif motion_name == Motion_command.M03_PLACE_AND_MEASURE:
+            if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PLACE
+            if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PLACE
+            if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PLACE
+        elif motion_name == Motion_command.M04_PICK_OUT_FROM_INDICATOR:
+            if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PICK
+            if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PICK
+            if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PICK
+        elif motion_name == Motion_command.M06_PICK_OUT_FROM_ALIGN:
+            return RobotMotionCommand.ALIGNER_SAMPLE_PICK
+        elif motion_name == Motion_command.M07_LOAD_TENSILE_MACHINE:
+            return RobotMotionCommand.TENSILE_FRONT_MOVE # 실제 로드는 다른 명령일 수 있음, 문서 확인 필요
+        elif motion_name == Motion_command.M09_PICK_TENSILE_MACHINE:
+            if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_UP
+            if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_DOWN
+        elif motion_name == Motion_command.M10_RETREAT_AND_HANDLE_SCRAP:
+            return RobotMotionCommand.SCRAP_DROP_POS
+
+        Logger.error(f"[RobotContext] get_motion_cmd: 알 수 없는 모션 이름 '{motion_name}'")
+        return None
+
+    def is_safe_to_move(self, next_cmd_id: int) -> bool:
+        """
+        로봇 충돌 방지를 위해 현재 위치에서 다음 동작으로의 이동이 안전한지 확인합니다.
+        규칙:
+        1. 주요 거점(Waypoint) 간 이동은 항상 허용됩니다.
+        2. 특정 시퀀스(랙, 측정기 등) 내에서는 정해진 순서로만 이동할 수 있습니다.
+        3. 홈(100)으로의 복귀는 언제나 허용됩니다.
+        """
+        current_pos_id = int(bb.get("robot/current/position") or 100) # 기본 위치는 HOME
+
+        # 규칙 0: 홈 복귀는 항상 허용
+        if next_cmd_id == RobotMotionCommand.RECOVERY_HOME:
+            return True
+
+        # 주요 거점(Waypoint) 정의
+        WAYPOINTS = {
+            RobotMotionCommand.RECOVERY_HOME,
+            RobotMotionCommand.RACK_FRONT_MOVE,
+            RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
+            RobotMotionCommand.ALIGNER_FRONT_MOVE,
+            RobotMotionCommand.TENSILE_FRONT_MOVE,
+            RobotMotionCommand.SCRAP_FRONT_MOVE,
+            # 복귀 동작들도 거점에 도착한 것으로 간주
+            RobotMotionCommand.RACK_FRONT_RETURN,
+            RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_1,
+            RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_2,
+            RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_3,
+            RobotMotionCommand.ALIGNER_FRONT_RETURN,
+            RobotMotionCommand.TENSILE_FRONT_RETURN,
+            RobotMotionCommand.SCRAP_FRONT_RETURN,
+        }
+
+        # 규칙 1: 거점 -> 거점 이동 허용
+        if current_pos_id in WAYPOINTS and next_cmd_id in WAYPOINTS:
+            return True
+
+        # 규칙 2: 랙(Rack) 내부 시퀀스
+        # 랙 앞(1000) -> QR 스캔 위치(13xx)
+        if current_pos_id == RobotMotionCommand.RACK_FRONT_MOVE and (1300 <= next_cmd_id < 1400):
+            return True
+        # QR 스캔 위치(13xx) -> 랙 n층 앞(10x0)
+        if 1300 <= current_pos_id < 1400:
+            floor = (current_pos_id - 1300) // 10
+            if next_cmd_id == get_rack_nF_front_pos_cmd(floor):
+                return True
+        # 랙 n층 앞(10x0) -> 랙 n층 N번 시편 위치(10xN)
+        if 1000 <= current_pos_id < 1100 and current_pos_id % 10 == 0:
+            floor = (current_pos_id - 1000) // 10
+            if get_rack_nF_front_pos_cmd(floor) < next_cmd_id < get_rack_nF_front_pos_cmd(floor) + 10:
+                return True
+        # 랙 n층 N번 시편 위치(10xN) -> 랙 n층 앞(10x0)
+        if 1000 < current_pos_id < 1100 and current_pos_id % 10 != 0:
+            floor = (current_pos_id - 1000) // 10
+            if next_cmd_id == get_rack_nF_front_pos_cmd(floor):
+                return True
+        # 랙 n층 앞(10x0) -> 랙 앞(1000)
+        if 1000 < current_pos_id < 1100 and current_pos_id % 10 == 0:
+            if next_cmd_id == RobotMotionCommand.RACK_FRONT_MOVE:
+                return True
+
+        # 규칙 3: 두께 측정기(Gauge) 내부 시퀀스
+        if current_pos_id == RobotMotionCommand.THICK_GAUGE_FRONT_MOVE and (3001 <= next_cmd_id <= 3003): return True
+        if 3001 <= current_pos_id <= 3003 and next_cmd_id == RobotMotionCommand.THICK_GAUGE_FRONT_MOVE: return True
+        if current_pos_id == RobotMotionCommand.THICK_GAUGE_FRONT_MOVE and (3011 <= next_cmd_id <= 3013): return True
+        if 3011 <= current_pos_id <= 3013 and (4000 <= next_cmd_id <= 4002): return True
+
+        # 규칙 4: 정렬기(Aligner) 내부 시퀀스
+        if current_pos_id == RobotMotionCommand.ALIGNER_FRONT_MOVE and next_cmd_id == RobotMotionCommand.ALIGNER_SAMPLE_PLACE: return True
+        if current_pos_id == RobotMotionCommand.ALIGNER_SAMPLE_PLACE and next_cmd_id == RobotMotionCommand.ALIGNER_FRONT_MOVE: return True
+        if current_pos_id == RobotMotionCommand.ALIGNER_FRONT_MOVE and next_cmd_id == RobotMotionCommand.ALIGNER_SAMPLE_PICK: return True
+        if current_pos_id == RobotMotionCommand.ALIGNER_SAMPLE_PICK and next_cmd_id == RobotMotionCommand.ALIGNER_FRONT_RETURN: return True
+
+        # 규칙 5: 인장시험기(Tensile) 내부 시퀀스
+        if current_pos_id == RobotMotionCommand.TENSILE_FRONT_MOVE and (7001 <= next_cmd_id <= 7002): return True
+        if 7001 <= current_pos_id <= 7002 and next_cmd_id == RobotMotionCommand.TENSILE_FRONT_RETURN: return True
+        if current_pos_id == RobotMotionCommand.TENSILE_FRONT_MOVE and (7011 <= next_cmd_id <= 7012): return True
+        if 7011 <= current_pos_id <= 7012 and next_cmd_id == RobotMotionCommand.SCRAP_FRONT_MOVE: return True
+
+        # 규칙 6: 스크랩(Scrap) 내부 시퀀스
+        if current_pos_id == RobotMotionCommand.SCRAP_FRONT_MOVE and next_cmd_id == RobotMotionCommand.SCRAP_DROP_POS: return True
+        if current_pos_id == RobotMotionCommand.SCRAP_DROP_POS and next_cmd_id == RobotMotionCommand.SCRAP_FRONT_RETURN: return True
+
+        # 허용된 규칙에 해당하지 않으면 이동 불가
+        Logger.warn(f"[Safety] Invalid move blocked: from {current_pos_id} to {next_cmd_id}")
+        return False

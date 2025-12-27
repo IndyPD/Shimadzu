@@ -53,11 +53,77 @@ Markdown
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `tensile_control` | `start` | `{"batch_id": "..."}` | `ui-tensile-cmd-001` | `ok` / `error` | Starting batch... / Batch is already running |
 | `tensile_control` | `stop` | `{"batch_id": "..."}` | `ui-tensile-cmd-002` | `ok` / `error` | Emergency stop complete / Stop rejected: no active batch |
+| `conty_program` | `start` / `stop` | `{"program_index": int}` | `ui-program-cmd-001` | `ok` / `error` | Program control accepted / Program control rejected |
 | `system_control` | `do_control` | `{"params": {"addr": int, "value": bool}}` | `ui-manual-cmd-001` | `ok` / `error` | DO control executed / Invalid DO address |
 | `comm_test` | `test` | `{"device": "..."}` | `ui-commtest-cmd-001` | `ok` / `error` | comm_test accepted / Unsupported device |
 | `recover` | `error`, `auto`, `manual` | `{"action": "..."}` | `ui-recover-cmd-001` | `ok` / `error` | Recover sequence accepted / Recovery not available |
 | `robot_control` | `enable`/`disable`, `open`/`close` | `{"target": "...", "action": "..."}` | `ui-robot-cmd-001` | `ok` / `error` | Robot control accepted / Robot control rejected |
 | `data` | `save`, `reset` | `{}` | `ui-data-cmd-001` | `ok` / `error` | Batch plan saved / Batch data reset |
+### 2.0. Conty Program Control
+**Command (UI → Logic)**
+```json
+{
+  "header": {
+    "msg_type": "ui.command",
+    "source": "ui",
+    "target": "logic",
+    "msg_id": "ui-program-cmd-001",
+    "ack_required": true,
+    "timestamp": "2025-11-18T12:00:00.000"
+  },
+  "payload": {
+    "kind": "command",
+    "cmd": "conty_program",
+    "action": "start",
+    "program_index": 1
+  }
+}
+```
+**ACK (Logic → UI)** /OK
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.050"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-program-cmd-001",
+    "status": "ok",
+    "reason": "Program control accepted",
+    "data": {
+      "program_index": 1
+    }
+  }
+}
+```
+**ACK (Logic → UI)** /ERROR
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-002",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.050"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-program-cmd-001",
+    "status": "error",
+    "reason": "Program control rejected",
+    "error_code": "PROGRAM_CONTROL_REJECTED",
+    "data": {
+      "program_index": 1
+    }
+  }
+}
+```
 
 ### 2.1. tensile_control/start
 **Command (UI → Logic)**

@@ -6,11 +6,14 @@ from typing import Dict, Optional, Callable, List, Any, Union, Tuple
 from enum import Enum, IntEnum
 from threading import Lock, Event, Thread
 from ..utils.logging import Logger
-from ..utils.process_control import Flagger, ExecutionSequence, ExecutionUnit, ConditionUnit, PeriodicThread
+from ..utils.process_control import Flagger, PeriodicThread
+from ..utils.blackboard import GlobalBlackboard
 
 INACTIVE_STATE = 0x00
 NONE_EVENT = 0x00
 
+
+bb = GlobalBlackboard()
 
 
 class OpState(Enum):
@@ -34,7 +37,7 @@ class StateCall:
         self.state, self.event, self.args, self.kwargs = state, event, args, kwargs
 
 
-class ViolationType(Enum):
+class ViolationType(IntEnum):
     pass
 
 
@@ -327,5 +330,3 @@ class NotImplementedStrategy(Strategy):
 
     def operate(self, context: ContextBase) -> OpEvent:
         raise NotImplementedError
-
-

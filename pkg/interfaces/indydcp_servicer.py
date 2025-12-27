@@ -737,7 +737,7 @@ class IndyDcpServicer(metaclass=Common.SingletonMeta):
             result = self._control_client.StopMotion(stop_category=ControlClient.STOP_IMMEDIATE_BRAKE)
             return self._response_data(cmd_id, invoke_id)
 
-        elif cmd_id == CMD_RESET_ROBOT:
+        elif cmd_id == CMD_RESET_[Robot]
             # result = self._robot_client.recover()  # reboot()
             result = self._control_client.Recover()
             return self._response_data(cmd_id, invoke_id)

@@ -15,7 +15,7 @@ from .devices_context import DeviceContext
 from .DB_handler import DBHandler
 
 # Robot FSM 및 Context 임포트
-from .robot_fsm_v1 import RobotFSM
+from .robot_fsm import RobotFSM
 from .robot_context import RobotContext
 
 # Logic FSM 및 Context 임포트
@@ -55,16 +55,16 @@ class ProcessManager:
         Logger.info("Device FSM initialized.")
 
         # # Robot FSM
-        # Logger.info("Initializing Robot FSM...")
-        # self.robot_fsm = RobotFSM(RobotContext()) # 로봇은 현재 DB 직접 사용 안함
-        # self.robot_fsm.start_service_background()
-        # Logger.info("Robot FSM initialized.")
+        Logger.info("Initializing Robot FSM...")
+        self.robot_fsm = RobotFSM(RobotContext()) # 로봇은 현재 DB 직접 사용 안함
+        self.robot_fsm.start_service_background()
+        Logger.info("Robot FSM initialized.")
 
         # Logic FSM
         # Logger.info("Initializing Logic FSM...")
-        # self.logic_fsm = LogicFSM(LogicContext(self.db))
-        # self.logic_fsm.start_service_background()
-        # Logger.info("Logic FSM initialized.")
+        self.logic_fsm = LogicFSM(LogicContext(self.db))
+        self.logic_fsm.start_service_background()
+        Logger.info("Logic FSM initialized.")
 
 
         time.sleep(5)
@@ -85,16 +85,6 @@ class ProcessManager:
             self.db.disconnect()
             
         Logger.info("[ProcessManager] All FSMs stopped.")
-
-    def check_device_state(self) :
-        if bb.get("ui/state/robot_state") in [2,8]:
-            bb.set("ui/state/error",1)
-        if bb.get("ui/state/input_unit/state") > 1000 :
-            bb.set("ui/state/error",1)
-        if bb.get("ui/state/pot1/state") > 1000 :
-            bb.set("ui/state/error",1)
-        if bb.get("ui/state/pot2/state") > 1000 :
-            bb.set("ui/state/error",1)
 
     def run(self):
         while self.running:
