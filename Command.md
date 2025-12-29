@@ -21,16 +21,18 @@
 ### 주요 모션 명령 (Motion_command)
 | 상수명 | 값 (String) | 설명 |
 | :--- | :--- | :--- |
-| `M01_PICK_SPECIMEN` | "pick_specimen" | 랙에서 시편 취출 |
-| `M02_MOVE_TO_INDICATOR` | "move_to_indigator" | 두께 측정기 앞으로 이동 |
-| `M03_PLACE_AND_MEASURE` | "place_specimen_and_measure" | 측정기에 시편 거치 후 후퇴 |
-| `M04_PICK_OUT_FROM_INDICATOR` | "Pick_specimen_out_from_indigator" | 측정기에서 시편 회수 |
-| `M05_ALIGN_SPECIMEN` | "align_specimen" | 정렬기에 시편 거치 |
-| `M06_PICK_OUT_FROM_ALIGN` | "Pick_specimen_out_from_align" | 정렬기에서 시편 회수 |
-| `M07_LOAD_TENSILE_MACHINE` | "load_tensile_machine" | 인장기에 시편 진입/거치 |
-| `M08_RETREAT_TENSILE_MACHINE` | "retreat_tensile_machine" | 인장기 거치 후 후퇴 |
-| `M09_PICK_TENSILE_MACHINE` | "pick_tensile_machine" | 인장기에서 시편 파지 |
-| `M10_RETREAT_AND_HANDLE_SCRAP` | "retreat_and_handle_scrap" | 시편 수거 후 스크랩 처리 |
+| `M00_MOVE_TO_RACK` | "move_to_rack" | 랙 전면으로 이동 |
+| `M01_MOVE_TO_QR_SCAN_POS` | "move_to_qr_scan_pos" | QR 스캔 위치로 이동 |
+| `M02_PICK_SPECIMEN` | "pick_specimen" | 랙에서 시편 취출 |
+| `M03_MOVE_TO_INDICATOR` | "move_to_indigator" | 두께 측정기 앞으로 이동 |
+| `M04_PLACE_AND_MEASURE` | "place_specimen_and_measure" | 측정기에 시편 거치 후 후퇴 |
+| `M05_PICK_OUT_FROM_INDICATOR` | "Pick_specimen_out_from_indigator" | 측정기에서 시편 회수 |
+| `M06_ALIGN_SPECIMEN` | "align_specimen" | 정렬기에 시편 거치 |
+| `M07_PICK_OUT_FROM_ALIGN` | "Pick_specimen_out_from_align" | 정렬기에서 시편 회수 |
+| `M08_LOAD_TENSILE_MACHINE` | "load_tensile_machine" | 인장기에 시편 진입/거치 |
+| `M09_RETREAT_TENSILE_MACHINE` | "retreat_tensile_machine" | 인장기 거치 후 후퇴 |
+| `M10_PICK_TENSILE_MACHINE` | "pick_tensile_machine" | 인장기에서 시편 파지 |
+| `M11_RETREAT_AND_HANDLE_SCRAP` | "retreat_and_handle_scrap" | 시편 수거 후 스크랩 처리 |
 
 ---
 
@@ -63,46 +65,47 @@
 ## 3. 공정별 명령 흐름 예시
 
 1.  **목표 Tray QR 인식 (`move_to_rack_for_QRRead`)**
-    *   [Robot] `M00_MOVE_TO_RACK` (QR 리딩 위치로 이동)
+    *   [Robot] `M00_MOVE_TO_RACK` (랙 전면으로 이동)
+    *   [Robot] `M01_MOVE_TO_QR_SCAN_POS` (QR 리딩 위치로 이동)
     *   Device: `QR_READ` (QR 코드 인식 실행) -> 결과값 `process/auto/qr_data/{Seq}` 저장
 
 2.  **시편 가져오기 (`pick_specimen`)**
-    *   [Robot] `M01_PICK_SPECIMEN` (랙에서 시편 잡기)
+    *   [Robot] `M02_PICK_SPECIMEN` (랙에서 시편 잡기)
 
 3.  **측정기 이동 (`move_to_indigator`)**
-    *   [Robot] `M02_MOVE_TO_INDICATOR` (두께 측정기 앞으로 이동)
+    *   [Robot] `M03_MOVE_TO_INDICATOR` (두께 측정기 앞으로 이동)
 
 4.  **시편 거치 및 측정 (`place_specimen_and_measure`)**
-    *   [Robot] `M03_PLACE_AND_MEASURE` (측정기 거치 후 후퇴)
+    *   [Robot] `M04_PLACE_AND_MEASURE` (측정기 거치 후 후퇴)
     *   Device: `MEASURE_THICKNESS` (두께 측정 실행) -> 결과값 `process/auto/thickness/{Seq}` 저장
 
 5.  **측정기 시편 반출 (`Pick_specimen_out_from_indigator`)**
-    *   [Robot] `M04_PICK_OUT_FROM_INDICATOR` (측정기에서 시편 다시 잡기)
+    *   [Robot] `M05_PICK_OUT_FROM_INDICATOR` (측정기에서 시편 다시 잡기)
 
 6.  **시편 정렬 (`align_specimen`)**
-    *   [Robot] `M05_ALIGN_SPECIMEN` (정렬기 진입 및 거치)
+    *   [Robot] `M06_ALIGN_SPECIMEN` (정렬기 진입 및 거치)
     *   Device: `ALIGN_SPECIMEN` (정렬기 동작 실행)
 
 7.  **정렬기 시편 반출 (`Pick_specimen_out_from_align`)**
-    *   [Robot] `M06_PICK_OUT_FROM_ALIGN` (정렬된 시편 잡고 나오기)
+    *   [Robot] `M07_PICK_OUT_FROM_ALIGN` (정렬된 시편 잡고 나오기)
 
 8.  **인장기 장착 (`load_tensile_machine`)**
-    *   [Robot] `M07_LOAD_TENSILE_MACHINE` (인장기 진입 및 거치)
+    *   [Robot] `M08_LOAD_TENSILE_MACHINE` (인장기 진입 및 거치)
     *   Device: `TENSILE_GRIPPER_ON` (인장기 그리퍼 체결)
 
 9.  **인장기 후퇴 (`retreat_tensile_machine`)**
-    *   [Robot] `M08_RETREAT_TENSILE_MACHINE` (시편 거치 후 로봇 팔 후퇴)
+    *   [Robot] `M09_RETREAT_TENSILE_MACHINE` (시편 거치 후 로봇 팔 후퇴)
 
 10. **인장 시험 시작 (`start_tensile_test`)**
     *   Device: `START_TENSILE_TEST` (인장 시험기 시험 시작 명령)
     *   *참고: 시험 중 실시간 데이터는 시험기 소프트웨어(Trapezium)에서 관리*
 
 11. **인장기 시편 수거 (`pick_tensile_machine`)**
-    *   [Robot] `M09_PICK_TENSILE_MACHINE` (파단된 시편 파지)
+    *   [Robot] `M10_PICK_TENSILE_MACHINE` (파단된 시편 파지)
     *   Device: `TENSILE_GRIPPER_OFF` (인장기 그리퍼 해제)
 
 12. **후퇴 및 스크랩 처리 (`retreat_and_handle_scrap`)**
-    *   [Robot] `M10_RETREAT_AND_HANDLE_SCRAP` (인장기 후퇴 및 스크랩 박스 배출)
+    *   [Robot] `M11_RETREAT_AND_HANDLE_SCRAP` (인장기 후퇴 및 스크랩 박스 배출)
 
 ---
 

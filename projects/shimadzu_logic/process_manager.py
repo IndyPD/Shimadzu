@@ -32,10 +32,19 @@ class ProcessManager:
         self.thread = None
         self.robot_error = None
         self.prog_stopped = None
-        self.db = DBHandler()
 
         config_path = 'projects/shimadzu_logic/configs/configs.json'
         config : dict = load_json(config_path)
+        
+        # DB 핸들러를 설정 파일의 정보로 초기화합니다.
+        self.db = DBHandler(
+            host=config.get("db_host", "localhost"),
+            user=config.get("db_user", "root"),
+            password=config.get("db_password", ""),
+            db_name=config.get("db_name", "shimadzu_db")
+        )
+        # DB 연결을 시도합니다.
+        self.db.connect()
         
         test_mode = config.get("test_mode")
         Logger.info(f"configs robot : {config.get('robot_ip')}")

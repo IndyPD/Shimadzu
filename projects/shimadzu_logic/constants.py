@@ -1,5 +1,6 @@
 from pkg.fsm.base import *
 from datetime import datetime
+from enum import Enum
 import inspect
 import threading
 
@@ -144,6 +145,7 @@ class DeviceState(OpState):
     EXTENSOMETER_FORWARD                = 21            # 신율계 전진
     EXTENSOMETER_BACKWARD               = 22            # 신율계 후진
     START_TENSILE_TEST                  = 23            # 인장시험 시작
+    REGISTER_METHOD                     = 24            # 시험법 등록
 
 
 
@@ -195,6 +197,10 @@ class DeviceEvent(OpEvent):
     DO_EXTENSOMETER_FORWARD             = 38            # 신율계 전진 실행
     DO_EXTENSOMETER_BACKWARD            = 39            # 신율계 후진 실행
     DO_TENSILE_TEST                     = 40            # 인장시험 실행
+
+    DO_REGISTER_METHOD                  = 41            # 시험법 등록 실행
+    REGISTER_METHOD_DONE                = 42            # 시험법 등록 완료
+    REGISTER_METHOD_FAIL                = 43            # 시험법 등록 실패
 
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
@@ -460,24 +466,61 @@ class DigitalOutput(IntEnum):
     EXT_FW                              = 26
     EXT_BW                              = 27
 
-class Motion_command:
-    M00_MOVE_TO_RACK                    = "move_to_rack"
-    M01_PICK_SPECIMEN                   = "pick_specimen"
-    M02_MOVE_TO_INDICATOR               = "move_to_indigator"
-    M03_PLACE_AND_MEASURE               = "place_specimen_and_measure"
-    M04_PICK_OUT_FROM_INDICATOR         = "Pick_specimen_out_from_indigator"
-    M05_ALIGN_SPECIMEN                  = "align_specimen"
-    M06_PICK_OUT_FROM_ALIGN             = "Pick_specimen_out_from_align"
-    M07_LOAD_TENSILE_MACHINE            = "load_tensile_machine"
-    M08_RETREAT_TENSILE_MACHINE         = "retreat_tensile_machine"
-    M09_PICK_TENSILE_MACHINE            = "pick_tensile_machine"
-    M10_RETREAT_AND_HANDLE_SCRAP        = "retreat_and_handle_scrap"
+class MotionCommand(str, Enum):
+    """로봇의 개별 동작을 정의하는 Enum 클래스입니다."""
+    # ACT01: 시편 랙 (Specimen Rack)
+    MOVE_TO_RACK                        = "move_to_rack"
+    MOVE_TO_QR_SCAN_POS                 = "move_to_qr_scan_pos"
+    PICK_SPECIMEN_FROM_RACK             = "pick_specimen_from_rack"
+    GRIPPER_CLOSE_FOR_RACK              = "gripper_close_for_rack"
+    RETREAT_FROM_RACK                   = "retreat_from_rack"
 
-class Device_command:
+    # ACT02: 치수 측정기 (Indigator)
+    MOVE_TO_INDIGATOR                   = "move_to_indigator"
+    PLACE_SPECIMEN_AND_MEASURE          = "place_specimen_and_measure"
+    GRIPPER_OPEN_AT_INDIGATOR           = "gripper_open_at_indigator"
+    RETREAT_FROM_INDIGATOR_AFTER_PLACE  = "retreat_from_indigator_after_place"
+    PICK_SPECIMEN_FROM_INDIGATOR        = "pick_specimen_from_indigator"
+    GRIPPER_CLOSE_FOR_INDIGATOR         = "gripper_close_for_indigator"
+    RETREAT_FROM_INDIGATOR_AFTER_PICK   = "retreat_from_indigator_after_pick"
+
+    # ACT03: 시편 정렬기 (Aligner)
+    MOVE_TO_ALIGN                       = "move_to_align"
+    PLACE_SPECIMEN_ON_ALIGN             = "place_specimen_on_align"
+    GRIPPER_OPEN_AT_ALIGN               = "gripper_open_at_align"
+    RETREAT_FROM_ALIGN_AFTER_PLACE      = "retreat_from_align_after_place"
+    PICK_SPECIMEN_FROM_ALIGN            = "pick_specimen_from_align"
+    GRIPPER_CLOSE_FOR_ALIGN             = "gripper_close_for_align"
+    RETREAT_FROM_ALIGN_AFTER_PICK       = "retreat_from_align_after_pick"
+
+    # ACT04: 인장 시험기 (Tensile Machine) - 장착
+    MOVE_TO_TENSILE_MACHINE_FOR_LOAD    = "move_to_tensile_machine_for_load"
+    LOAD_TENSILE_MACHINE                = "load_tensile_machine"
+    GRIPPER_OPEN_AT_TENSILE_MACHINE     = "gripper_open_at_tensile_machine"
+    RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD = "retreat_from_tensile_machine_after_load"
+
+    # ACT05: 인장 시험기 (Tensile Machine) - 수거
+    MOVE_TO_TENSILE_MACHINE_FOR_PICK    = "move_to_tensile_machine_for_pick"
+    PICK_FROM_TENSILE_MACHINE           = "pick_from_tensile_machine"
+    GRIPPER_CLOSE_FOR_TENSILE_MACHINE   = "gripper_close_for_tensile_machine"
+    RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK = "retreat_from_tensile_machine_after_pick"
+
+    # ACT06: 스크랩 처리기 (Scrap Disposer)
+    MOVE_TO_SCRAP_DISPOSER              = "move_to_scrap_disposer"
+    PLACE_IN_SCRAP_DISPOSER             = "place_in_scrap_disposer"
+    GRIPPER_OPEN_AT_SCRAP_DISPOSER      = "gripper_open_at_scrap_disposer"
+    RETREAT_FROM_SCRAP_DISPOSER         = "retreat_from_scrap_disposer"
+
+    # ACT07: 홈 (Home)
+    MOVE_TO_HOME                        = "move_to_home"
+
+
+class DeviceCommand(str, Enum):
+    """장치(Device)의 개별 동작을 정의하는 Enum 클래스입니다."""
     MEASURE_THICKNESS                   = "measure_thickness"
     ALIGN_SPECIMEN                      = "align_specimen"
-    TENSILE_GRIPPER_ON                  = "tessile_gripper_on"
-    TENSILE_GRIPPER_OFF                 = "tessile_gripper_off"
+    TENSILE_GRIPPER_ON                  = "tensile_gripper_on"
+    TENSILE_GRIPPER_OFF                 = "tensile_gripper_off"
     EXT_FORWARD                         = "ext_forward"
     EXT_BACKWARD                        = "ext_backward"
     START_TENSILE_TEST                  = "start_tensile_test"
@@ -485,3 +528,4 @@ class Device_command:
     PAUSE_TENSILE_TEST                  = "pause_tensile_test"
     RESUME_TENSILE_TEST                 = "resume_tensile_test"
     QR_READ                             = "qr_read"
+    REGISTER_METHOD                     = "register_method"

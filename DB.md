@@ -14,48 +14,31 @@
 ## 2. 테이블 목록 요약
 
 | 순번 | 테이블명 | 설명 | 비고 | 
-| ----- | ----- | ----- | ----- | 
-| 1 | `io_items` | I/O 입출력 상태 관리 | VTEST / tray_info | 
-| 2 | `test_tray_items` | 트레이별 시편 시험 정보 | VLogic 관리 | 
-| 3 | `summary_data_items` | 전체 공정/작업 요약 이력 | - | 
-| 4 | `detail_data_items` | 상세 작업/공정 이력 데이터 | - | 
-| 5 | `batch_test_items` | 배치 시험 진행 순서 및 상태 | - | 
-| 6 | `batch_plan_items` | UI 설정 배치 계획 | VUI 설정 | 
-| 7 | `qr_recipe_items` | QR 레시피별 규격/치수 정보 | BATCH_QR | 
-| 8 | `test_status_items` | 시스템/설비 실시간 상태 정보 | 실시간 모니터링 | 
-| 9 | `batch_method_items` | 배치별 시험 방법 상세 설정 | BATCH_METHOD | 
+| ----- | ----- | ----- | ----- |
+| 1 | `test_tray_items` | 트레이별 시편 시험 정보 | 실시간 모니터링 |
+| 2 | `summary_data_items` | 전체 공정/작업 요약 이력 | - |
+| 3 | `detail_data_items` | 상세 작업/공정 이력 데이터 | - |
+| 4 | `batch_test_items` | 배치 시험 진행 순서 및 상태 | - |
+| 5 | `batch_plan_items` | UI 설정 배치 계획 | VUI 설정 |
+| 6 | `qr_recipe_items` | QR 레시피별 규격/치수 정보 | BATCH_QR |
+| 7 | `batch_method_items` | 배치별 시험 방법 상세 설정 | BATCH_METHOD |
 
 ## 3. 테이블별 상세 명세
 
-### 3.1 io_items (I/O 리스트)
+### 3.1 test_tray_items (트레이별 시편 정보)
 
-시스템의 Digital Input/Output 상태를 관리합니다.
-
-| No | 컬럼명 | 타입 | 기본값 | 정의/설명 | 비고 | 
-| ----- | ----- | ----- | ----- | ----- | ----- | 
-| 1 | `id` | INT | AI | 자동 증분 ID | PK | 
-| 2 | `io_type` | INT | - | 0: Input, 1: Output | 더미데이터 | 
-| 3 | `channel_no` | INT | - | 채널 번호 (In:0~47 / Out:0~35) | 더미데이터 | 
-| 4 | `value` | INT | 0 | 현재 상태 값 (0: OFF / 1: ON) | - | 
-| 5 | `description` | VARCHAR(50) | - | I/O 항목 설명 | - | 
-
-### 3.2 test_tray_items (트레이 정보)
-
-각 트레이 내의 시편 상태와 배치를 관리합니다.
+각 트레이(10개)에 담긴 시편(5개)의 개별 상태를 실시간으로 관리합니다. 총 50개의 시편 정보를 가집니다.
 
 | No | 컬럼명 | 타입 | 기본값 | 정의/설명 | 비고 | 
 | ----- | ----- | ----- | ----- | ----- | ----- | 
 | 1 | `id` | INT | AI | 자동 증분 ID | PK | 
 | 2 | `tray_no` | INT | - | 트레이 번호 (1-10) | - | 
 | 3 | `specimen_no` | INT | - | 시편 번호 (1-5) | - | 
-| 4 | `status` | INT | - | 상태 (0:없음, 1:대기, 2:진행중, 3:완료) | - | 
-| 5 | `test_spec` | VARCHAR(50) | - | 시험 규격 | - | 
-| 6 | `dimension` | DECIMAL(10,3) | - | 치수 ($mm$) | - | 
-| 7 | `batch_id` | VARCHAR(50) | - | 배치 ID | - | 
-| 8 | `lot` | VARCHAR(50) | - | Lot 번호 | - | 
-| 9 | `status_str` | VARCHAR(20) | - | 상태 문자열 | - | 
+| 4 | `status` | INT | - | 상태 (0: 없음, 1: 대기, 2: 진행중, 3: 완료) | - | 
+| 5 | `test_spec` | VARCHAR(50) | - | 시험규격 | - | 
+| 6 | `dimension` | DECIMAL(10,3) | - | 치수 (XXmm) | - | 
 
-### 3.3 summary_data_items (요약 데이터)
+### 3.2 summary_data_items (요약 데이터)
 
 공정별 전체 작업 이력을 기록합니다.
 
@@ -69,7 +52,7 @@
 | 6 | `specimen_no` | INT | - | 시편 번호 (1-5) | - | 
 | 7 | `work_history` | VARCHAR(50) | - | 작업 이력 (시작, 완료) | - | 
 
-### 3.4 detail_data_items (상세 데이터)
+### 3.3 detail_data_items (상세 데이터)
 
 각 단계별 상세 공정 기록을 저장합니다.
 
@@ -83,7 +66,7 @@
 | 6 | `equipment` | VARCHAR(20) | - | 설비 (Robot, Device, EXT, User) | - | 
 | 7 | `work_status` | VARCHAR(50) | - | 작업 상태 | - | 
 
-### 3.5 batch_test_items (배치 시험 항목)
+### 3.4 batch_test_items (배치 시험 항목)
 
 배치 단위의 시험 순서 및 현재 진행 상태를 관리합니다.
 
@@ -94,11 +77,11 @@
 | 3 | `seq_order` | INT | - | 시험 순서 (1-10) | 0:없음 | 
 | 4 | `seq_status` | INT | - | 시험 상태 (0:없음, 1:진행예정, 2:진행중, 3:완료) | - | 
 | 5 | `test_method` | VARCHAR(50) | - | 시험 방법 | - | 
-| 6 | `batch_id` | VARCHAR(50) | - | 배치 ID | - | 
-| 7 | `lot` | VARCHAR(50) | - | Lot 번호 | - | 
-| 8 | `status` | VARCHAR(20) | - | 현재 상태 | - | 
+| 6 | `batch_id` | VARCHAR(50) | - | 배치 ID | - |
+| 7 | `lot` | VARCHAR(50) | - | Lot 번호 | - |
+| 8 | `qr_no` | VARCHAR(50) | '' | QR 레시피 번호 | NOT NULL |
 
-### 3.6 batch_plan_items (배치 계획)
+### 3.5 batch_plan_items (배치 계획)
 
 사용자가 UI에서 설정한 배치 시험 계획입니다.
 
@@ -109,11 +92,11 @@
 | 3 | `seq_order` | INT | - | 시험 순서 (1-10) | - | 
 | 4 | `seq_status` | INT | - | 시험 상태 (0:없음, 1:진행예정, 2:진행중, 3:완료) | - | 
 | 5 | `test_method` | VARCHAR(50) | - | 시험 방법 (0:없음, 1:QR, n:방법n) | - | 
-| 6 | `batch_id` | VARCHAR(50) | - | 배치 ID | - | 
-| 7 | `lot` | VARCHAR(50) | - | Lot 번호 | - | 
-| 8 | `status` | VARCHAR(20) | - | 현재 상태 | - | 
+| 6 | `batch_id` | VARCHAR(50) | - | 배치 ID | - |
+| 7 | `lot` | VARCHAR(50) | - | Lot 번호 | - |
+| 8 | `qr_no` | VARCHAR(50) | '' | QR 레시피 번호 | NOT NULL |
 
-### 3.7 qr_recipe_items (QR 레시피)
+### 3.6 qr_recipe_items (QR 레시피)
 
 QR 코드를 통해 인식되는 시편의 치수 및 레시피 정보입니다.
 
@@ -128,22 +111,7 @@ QR 코드를 통해 인식되는 시편의 치수 및 레시피 정보입니다.
 | 7 | `chuckl` | DECIMAL(6,2) | - | 척(Chuck) 길이 | - | 
 | 8 | `thickness` | DECIMAL(6,2) | - | 두께 | - | 
 
-### 3.8 test_status_items (시험기 상태)
-
-시스템 및 하드웨어의 실시간 상태와 측정 값을 관리합니다.
-
-| No | 컬럼명 | 타입 | 기본값 | 정의/설명 | 비고 | 
-| ----- | ----- | ----- | ----- | ----- | ----- | 
-| 1 | `id` | INT | AI | 자동 증분 ID | PK | 
-| 2 | `system_status` | INT | - | 시스템 상태 (0:OFF, 1:정상, 2:에러) | - | 
-| 3 | `machine_status` | INT | - | 시험기 상태 (0:OFF, 1:정상, 2:에러) | - | 
-| 4 | `robot_status` | INT | - | 로봇 상태 (0:OFF, 1:정상, 2:에러) | - | 
-| 5 | `thickness_current` | DECIMAL(10,3) | - | 현재 두께 측정값 | - | 
-| 6 | `thickness_previous` | DECIMAL(10,3) | - | 이전 두께 측정값 | - | 
-| 7 | `thickness_registered` | DECIMAL(10,3) | - | 등록된 두께 기준값 | - | 
-| 8 | `sorter_status` | INT | - | 정렬 장치 상태 (0:대기, 1:진행중, 2:완료) | - | 
-
-### 3.9 batch_method_items (배치 방법 상세)
+### 3.7 batch_method_items (배치 방법 상세)
 
 배치별로 수정 가능한 시험 방법 및 규격 데이터입니다.
 

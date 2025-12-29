@@ -40,6 +40,7 @@ class RobotContext(ContextBase):
         self.is_emg_pushed = Flagger()
         self.is_error_state = Flagger()
         self.is_moving = Flagger()
+        self.current_motion_command = None
 
         self.violation_code = 0x00
 
@@ -198,68 +199,85 @@ class RobotContext(ContextBase):
     def recover_robot(self):
         bb.set("indy_command/recover", True)
 
-    ''' 
-    Recipe FSM related 
-    '''
-    def motion_done_logic(self, motion):
-        ''' Motion done logic
-        1. Conty CMD reset: to prevent Conty tree loop execute same motion twice
-        2. Trigger Recipe FSM event, and wait Recipe FSM transition done
-        3. Motion reset to trigger priority start next task computation
-        '''
-        ''' Conty CMD reset '''
-        bb.set("int_var/cmd/val", 0)
 
-        '''  Recipe FSM 모션 완료 트리거 → Recipe FSM 상태 천이 대기 (basket_idx = Recipe FSM index) '''
-        prev_state = bb.get(f"recipe/basket{self.basket_index}/state")
-        bb.set(f"recipe/command/{motion}_done", self.basket_index)
-        self.wait_for_recipe_fsm_trainsition_done(prev_state)
-
-        ''' Motion Reset: Priority schedule → Robot '''
-        self.motion_command_reset()
     def robot_motion_control(self,cmd : int) :
         bb.set("int_var/cmd/val", cmd)
 
-    def get_motion_cmd(self, motion_name: str, floor: int = 0, num: int = 0, pos: int = 0) -> int:
+    def get_motion_cmd(self, motion_name: MotionCommand, floor: int = 0, num: int = 0, pos: int = 0) -> int:
         """
-        Logic FSM에서 사용하는 문자열 모션 명령을 Command.md에 정의된 정수 CMD ID로 변환합니다.
+        Logic FSM에서 사용하는 MotionCommand Enum을 Command.md에 정의된 정수 CMD ID로 변환합니다.
         """
-        # 1. 정적 명령 매핑
+        # 1. 정적 명령 매핑 (주로 상태 변경 또는 파라미터 없는 이동)
         static_mapping = {
-            Motion_command.M02_MOVE_TO_INDICATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
-            Motion_command.M05_ALIGN_SPECIMEN: RobotMotionCommand.ALIGNER_FRONT_MOVE, # 정렬기 앞으로 이동
-            Motion_command.M08_RETREAT_TENSILE_MACHINE: RobotMotionCommand.TENSILE_FRONT_RETURN,
-            "go_home": RobotMotionCommand.RECOVERY_HOME,
-            "gripper_open": RobotMotionCommand.GRIPPER_OPEN,
-            "gripper_close": RobotMotionCommand.GRIPPER_CLOSE,
+            MotionCommand.MOVE_TO_INDIGATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
+            MotionCommand.MOVE_TO_ALIGN: RobotMotionCommand.ALIGNER_FRONT_MOVE,
+            MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD: RobotMotionCommand.TENSILE_FRONT_MOVE,
+            MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK: RobotMotionCommand.TENSILE_FRONT_MOVE,
+            MotionCommand.MOVE_TO_SCRAP_DISPOSER: RobotMotionCommand.SCRAP_FRONT_MOVE,
+            MotionCommand.MOVE_TO_HOME: RobotMotionCommand.RECOVERY_HOME,
+
+            MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE: RobotMotionCommand.ALIGNER_FRONT_RETURN,
+            MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK: RobotMotionCommand.ALIGNER_FRONT_RETURN,
+            MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD: RobotMotionCommand.TENSILE_FRONT_RETURN,
+            MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK: RobotMotionCommand.TENSILE_FRONT_RETURN,
+            MotionCommand.RETREAT_FROM_SCRAP_DISPOSER: RobotMotionCommand.SCRAP_FRONT_RETURN,
+
+            MotionCommand.GRIPPER_OPEN_AT_INDIGATOR: RobotMotionCommand.GRIPPER_OPEN,
+            MotionCommand.GRIPPER_OPEN_AT_ALIGN: RobotMotionCommand.GRIPPER_OPEN,
+            MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE: RobotMotionCommand.GRIPPER_OPEN,
+            MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER: RobotMotionCommand.GRIPPER_OPEN,
+
+            MotionCommand.GRIPPER_CLOSE_FOR_RACK: RobotMotionCommand.GRIPPER_CLOSE,
+            MotionCommand.GRIPPER_CLOSE_FOR_INDIGATOR: RobotMotionCommand.GRIPPER_CLOSE,
+            MotionCommand.GRIPPER_CLOSE_FOR_ALIGN: RobotMotionCommand.GRIPPER_CLOSE,
+            MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE: RobotMotionCommand.GRIPPER_CLOSE,
         }
         if motion_name in static_mapping:
             return static_mapping[motion_name]
 
         # 2. 동적 명령 매핑 (파라미터 필요)
-        if motion_name == Motion_command.M00_MOVE_TO_RACK:
+        # ACT01: Rack
+        if motion_name == MotionCommand.MOVE_TO_RACK:
+            return RobotMotionCommand.RACK_FRONT_MOVE
+        elif motion_name == MotionCommand.MOVE_TO_QR_SCAN_POS:
             return get_rack_nF_QR_scan_pos_cmd(floor)
-        elif motion_name == Motion_command.M01_PICK_SPECIMEN:
+        elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_RACK:
             return get_rack_nF_sample_N_pos_cmd(floor, num)
-        elif motion_name == Motion_command.M03_PLACE_AND_MEASURE:
+        elif motion_name == MotionCommand.RETREAT_FROM_RACK:
+            return get_rack_nF_front_return_cmd(floor)
+
+        # ACT02: Indicator
+        elif motion_name == MotionCommand.PLACE_SPECIMEN_AND_MEASURE:
             if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PLACE
             if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PLACE
             if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PLACE
-        elif motion_name == Motion_command.M04_PICK_OUT_FROM_INDICATOR:
+        elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_INDIGATOR:
             if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PICK
             if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PICK
             if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PICK
-        elif motion_name == Motion_command.M06_PICK_OUT_FROM_ALIGN:
+        elif motion_name == MotionCommand.RETREAT_FROM_INDIGATOR_AFTER_PLACE or motion_name == MotionCommand.RETREAT_FROM_INDIGATOR_AFTER_PICK:
+            if pos == 1: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_1
+            if pos == 2: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_2
+            if pos == 3: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_3
+
+        # ACT03: Aligner
+        elif motion_name == MotionCommand.PLACE_SPECIMEN_ON_ALIGN:
+            return RobotMotionCommand.ALIGNER_SAMPLE_PLACE
+        elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_ALIGN:
             return RobotMotionCommand.ALIGNER_SAMPLE_PICK
-        elif motion_name == Motion_command.M07_LOAD_TENSILE_MACHINE:
-            return RobotMotionCommand.TENSILE_FRONT_MOVE # 실제 로드는 다른 명령일 수 있음, 문서 확인 필요
-        elif motion_name == Motion_command.M09_PICK_TENSILE_MACHINE:
+
+        # ACT04 & ACT05: Tensile Machine
+        elif motion_name == MotionCommand.LOAD_TENSILE_MACHINE:
+            return RobotMotionCommand.TENSILE_SAMPLE_PLACE_POS_DOWN
+        elif motion_name == MotionCommand.PICK_FROM_TENSILE_MACHINE:
             if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_UP
             if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_DOWN
-        elif motion_name == Motion_command.M10_RETREAT_AND_HANDLE_SCRAP:
+
+        # ACT06: Scrap Disposer
+        elif motion_name == MotionCommand.PLACE_IN_SCRAP_DISPOSER:
             return RobotMotionCommand.SCRAP_DROP_POS
 
-        Logger.error(f"[RobotContext] get_motion_cmd: 알 수 없는 모션 이름 '{motion_name}'")
+        Logger.error(f"[RobotContext] get_motion_cmd: 알 수 없거나 매핑되지 않은 모션 이름 '{motion_name}'")
         return None
 
     def is_safe_to_move(self, next_cmd_id: int) -> bool:
@@ -300,26 +318,26 @@ class RobotContext(ContextBase):
 
         # 규칙 2: 랙(Rack) 내부 시퀀스
         # 랙 앞(1000) -> QR 스캔 위치(13xx)
-        if current_pos_id == RobotMotionCommand.RACK_FRONT_MOVE and (1300 <= next_cmd_id < 1400):
+        if current_pos_id == RobotMotionCommand.RACK_FRONT_MOVE and (1300 <= next_cmd_id <= 1400):
             return True
         # QR 스캔 위치(13xx) -> 랙 n층 앞(10x0)
-        if 1300 <= current_pos_id < 1400:
+        if 1300 <= current_pos_id <= 1400:
             floor = (current_pos_id - 1300) // 10
             if next_cmd_id == get_rack_nF_front_pos_cmd(floor):
                 return True
         # 랙 n층 앞(10x0) -> 랙 n층 N번 시편 위치(10xN)
-        if 1000 <= current_pos_id < 1100 and current_pos_id % 10 == 0:
+        if 1000 <= current_pos_id <= 1100 and current_pos_id % 10 == 0:
             floor = (current_pos_id - 1000) // 10
             if get_rack_nF_front_pos_cmd(floor) < next_cmd_id < get_rack_nF_front_pos_cmd(floor) + 10:
                 return True
         # 랙 n층 N번 시편 위치(10xN) -> 랙 n층 앞(10x0)
-        if 1000 < current_pos_id < 1100 and current_pos_id % 10 != 0:
+        if 1000 < current_pos_id <= 1100 and current_pos_id % 10 != 0:
             floor = (current_pos_id - 1000) // 10
             if next_cmd_id == get_rack_nF_front_pos_cmd(floor):
                 return True
         # 랙 n층 앞(10x0) -> 랙 앞(1000)
-        if 1000 < current_pos_id < 1100 and current_pos_id % 10 == 0:
-            if next_cmd_id == RobotMotionCommand.RACK_FRONT_MOVE:
+        if 1000+1000 < current_pos_id <= 1100+1000 and current_pos_id % 10 == 0:
+            if next_cmd_id == RobotMotionCommand.RACK_FRONT_RETURN:
                 return True
 
         # 규칙 3: 두께 측정기(Gauge) 내부 시퀀스

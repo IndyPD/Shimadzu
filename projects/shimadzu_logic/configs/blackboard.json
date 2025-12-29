@@ -3,6 +3,8 @@
   "device/fsm/strategy" : "",
   "logic/fsm/strategy" : "",
 
+  "robot/gripper/actual_state" : 0,
+
   "indy_command/direct_teaching_on": 0,
   "indy_command/direct_teaching_off": 0,
   "indy_command/gripper_open": 0,
@@ -267,5 +269,6 @@
   },
   "system/setting/contxt" :{
 
-  }
+  },
+  "logic/events/one_shot" : {}
 }

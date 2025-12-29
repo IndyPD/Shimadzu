@@ -37,7 +37,7 @@ class RobotCommunication:
         ''' Indy command '''
         Logger.info(f'[Indy7] Attempting to connect to robot at {robot_ip}')
         self.indy = IndyDCP3(robot_ip, *args, **kwargs)
-        self.indy.set_speed_ratio(100) 
+        self.indy.set_speed_ratio(30) 
         # self.indy.set_auto_mode(True)
         is_auto_mode : dict = self.indy.check_auto_mode()
         if not is_auto_mode.get('on') :
@@ -105,7 +105,7 @@ class RobotCommunication:
                     Logger.info("Stop program!!")
                     self.indy.stop_program()
                     bb.set("ui/reset/robot/recover_motion",True)
-                    self.indy.set_speed_ratio(100) 
+                    self.indy.set_speed_ratio(30) 
                 except:
                     Logger.error("Stop program fail")
 
@@ -142,41 +142,57 @@ class RobotCommunication:
         """
 
         ''' MQTT Protocol compliant robot control '''
+        # TODO 146-172번째 줄 코드 프로그램 정지 상태일때만 가능하도록 코드작성
         if bb.get("ui/cmd/robot_control/trigger"):
             bb.set("ui/cmd/robot_control/trigger", 0) # Consume trigger
-            payload = bb.get("ui/cmd/robot_control/data")
-            if payload and isinstance(payload, dict):
-                target = payload.get("target")
-                action = payload.get("action")
-                Logger.info(f"Received robot_control command via MQTT->BB: target={target}, action={action}")
 
-                # Gripper Control (target: gripper, action: open/close)
-                if target == "gripper":
-                    if action == "open":
-                        Logger.info("Sending Gripper Open command (90) to Conty.")
-                        bb.set("int_var/cmd/val", 90)
-                    elif action == "close":
-                        Logger.info("Sending Gripper Close command (91) to Conty.")
-                        bb.set("int_var/cmd/val", 91)
+            # 프로그램이 실행 중이 아닐 때(IDLE 상태)만 수동 제어 명령을 처리합니다.
+            if self.program_state == ProgramState.PROG_IDLE:
+                payload = bb.get("ui/cmd/robot_control/data")
+                if payload and isinstance(payload, dict):
+                    target = payload.get("target")
+                    action = payload.get("action")
+                    Logger.info(f"Received robot_control command via MQTT->BB: target={target}, action={action}")
 
-                # Direct Teaching Control (target: robot_direct_teaching_mode, action: enable/disable)
-                elif target == "robot_direct_teaching_mode":
-                    if action == "enable":
-                        if self.program_state != ProgramState.PROG_RUNNING:
+                    # Gripper Control (target: gripper, action: open/close)
+                    if target == "gripper":
+                        try:
+                            if action == "open":
+                                Logger.info("Sending Gripper Open command (Endtool DO8=0, DO9=1).")
+                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
+                                time.sleep(0.5)
+                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                self.indy.set_do([{'address': 9, 'state': DigitalState.ON_STATE}])
+                            elif action == "close":
+                                Logger.info("Sending Gripper Close command (Endtool DO8=1, DO9=0).")
+                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
+                                time.sleep(0.5)
+                                self.indy.set_do([{'address': 8, 'state': DigitalState.ON_STATE}])
+                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
+
+                        except Exception as e:
+                            Logger.error(f"Failed to control gripper via Endtool DO: {e}")
+
+                    # Direct Teaching Control (target: robot_direct_teaching_mode, action: enable/disable)
+                    elif target == "robot_direct_teaching_mode":
+                        if action == "enable":
                             try:
-                                is_auto_mode : dict = self.indy.check_auto_mode()
                                 self.indy.set_direct_teaching(True)
                                 bb.set("ui/state/direct_state", 1)
                             except Exception as e:
                                 Logger.error(f"Start direct teaching program fail: {e}")
 
-                    elif action == "disable":
-                        try:
-                            Logger.info("Stop direct teaching program (MQTT)")
-                            self.indy.set_direct_teaching(False)
-                            bb.set("ui/state/direct_state", 2)
-                        except Exception as e:
-                            Logger.error(f"Stop direct teaching program fail: {e}")
+                        elif action == "disable":
+                            try:
+                                Logger.info("Stop direct teaching program (MQTT)")
+                                self.indy.set_direct_teaching(False)
+                                bb.set("ui/state/direct_state", 2)
+                            except Exception as e:
+                                Logger.error(f"Stop direct teaching program fail: {e}")
+            else:
+                Logger.warn(f"Robot control command ignored. Program is not in IDLE state (current: {ProgramState(self.program_state).name}).")
 
         ''' Start program (Main program, index=1) '''
         if bb.get("indy_command/play_program"):
@@ -190,6 +206,7 @@ class RobotCommunication:
                     Logger.info(f"indy 310 robot pos 1 set")    
                     bb.set("process/robot/position",1)                    
                     self.indy.play_program(prog_idx=int(self.config["conty_main_program_index"]))
+                    bb.set("ui/state/direct_state", 2)
                 except:
                     Logger.error("Start main program fail")
 
@@ -220,7 +237,7 @@ class RobotCommunication:
                     # if is_auto_mode.get('on') :
                     #     self.indy.set_auto_mode(False)
                     bb.set("robot/recover/motion/cmd",0)
-                    self.indy.set_speed_ratio(100)
+                    self.indy.set_speed_ratio(30)
                 except:
                     Logger.error("Stop program fail")
 
@@ -264,7 +281,7 @@ class RobotCommunication:
                 if motion_ack > 500: # 유효한 ack 값일 경우 (e.g. CMD 100 -> ACK 600)
                     current_pos_id = motion_ack - 500
                     bb.set("robot/current/position", current_pos_id)
-                    Logger.info(f"[Safety] Robot position updated to: {current_pos_id}")
+                    # Logger.info(f"[Safety] Robot position updated to: {current_pos_id}")
             
             motion_done = self.get_intvar_address(int_var, int(self.config["int_var/motion_done/addr"]))
             if motion_done is not None:
@@ -328,6 +345,21 @@ class RobotCommunication:
             q = self.indy.get_control_data()["q"]
             self.is_home_pos = all(self.check_home_min <= a - b <= self.check_home_max for a, b in zip(q, self.home_pos))
             self.is_packaging_pos = all(self.check_home_min <= a - b <= self.check_home_max for a, b in zip(q, self.packaging_pos))
+
+            # Gripper state feedback from Analog Input
+            get_robot_ai : dict = self.indy.get_ai()
+            ai_00 : dict = get_robot_ai.get("signals")[0]
+            ai_00_voltage = int(ai_00.get("voltage"))
+            
+            if ai_00_voltage :
+                if ai_00_voltage >= 300 and ai_00_voltage < 11000:
+                    bb.set("robot/gripper/actual_state", 2)
+                else:
+                    bb.set("robot/gripper/actual_state", 1)
+
+            else:
+                bb.set("robot/gripper/actual_state", 0)
+
             bb.set("device/robot/comm_status", 1)
         except Exception as e:
             # 통신 실패 시 상태를 0으로 설정하고, 로봇 상태를 안전한 기본값으로 초기화합니다.
@@ -425,7 +457,7 @@ class RobotCommunication:
             elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
                 bb.set("ui/reset/program_control", True) # 명령 소비
                 if self.indy.get_motion_data().get("speed_ratio") != 100:
-                    self.indy.set_speed_ratio(100)
+                    self.indy.set_speed_ratio(30)
                     Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.

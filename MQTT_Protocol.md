@@ -713,6 +713,7 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
         "current_motion" : 100,
         "recover_motion" : 1103,
         "direct_teaching_mode" : 1,
+        "program_run" : 1,
         "gripper_state" : 1,
         "msg" : ""
       },
@@ -783,6 +784,74 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
     },
     "aligner_status": "정렬중"
     
+  }
+}
+```
+
+### 4.4. LOGIC → UI 공정 완료 상태 전달
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-proc-completed-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:20:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "process_completed",
+    "reason": "All processes for the batch have been successfully completed.",
+    "data": {
+      "batch_id": "B-20251208-001",
+      "total_completed": 10
+    }
+  }
+}
+```
+
+### 4.5. LOGIC → UI 공정 중 정지(UI-STOP명령) 완료 상태 전달
+UI의 `stop` 명령에 따라 공정이 즉시 중단된 후, Logic이 UI에게 정지가 완료되었음을 알리는 이벤트입니다.
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-proc-stopped-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:10:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "process_stopped",
+    "reason": "The process was successfully stopped by user command.",
+    "data": {
+      "batch_id": "B-20251208-001"
+    }
+  }
+}
+```
+
+### 4.6. LOGIC → UI 공정 중 단계정지(UI-STEP STOP명령) 완료 상태 전달
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-proc-stopped-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:10:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "process_step_stopped",
+    "reason": "The process was successfully stopped by user command.",
+    "data": {
+      "batch_id": "B-20251208-001"
+    }
   }
 }
 ```

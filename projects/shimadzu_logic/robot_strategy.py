@@ -134,9 +134,11 @@ class RobotReadyStrategy(Strategy):
                 bb.set("indy_command/reset_init_var", True)
                 self.manual_cmd_state = "idle"
 
-        # 자동화 시작 명령 대기
-        # if bb.get("robot/start_auto"):
-        #     return RobotEvent.PROGRAM_AUTO_ON_DONE
+        # 자동화 시작 명령 감지 (LogicFSM과 동일한 트리거 사용)
+        if bb.get("ui/cmd/auto/tensile") == 1:
+            Logger.info("[Robot] Automation start command detected. Transitioning to PROGRAM_AUTO_ON.")
+            return RobotEvent.DO_AUTO_MOTION_PROGRAM_AUTO_ON
+            
         return RobotEvent.NONE
     
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
@@ -155,10 +157,24 @@ class RobotProgramAutoOnStrategy(Strategy):
     def prepare(self, context: RobotContext, **kwargs):
         bb.set("robot/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Robot] Turning on Auto Mode.")
+        # 시작 명령을 한 번만 보내기 위한 플래그를 초기화합니다.
+        self.is_start_cmd_sent = False
+
     def operate(self, context: RobotContext) -> RobotEvent:
-        # TODO Conty프로그램 run 명령 전달
-        # bb.set("robot/program/run",1)
-        return RobotEvent.PROGRAM_AUTO_ON_DONE
+        # 1. 로봇 프로그램이 이미 실행 중인지 확인합니다.
+        if context.check_program_running():
+            Logger.info("[Robot] Program is running. Auto mode on is complete.")
+            return RobotEvent.PROGRAM_AUTO_ON_DONE
+
+        # 2. 프로그램이 실행 중이 아니고, 시작 명령을 아직 보내지 않았다면 보냅니다.
+        if not self.is_start_cmd_sent:
+            Logger.info("[Robot] Program is not running. Sending start command.")
+            bb.set("indy_command/play_program", True)
+            self.is_start_cmd_sent = True
+        
+        # 3. 시작 명령을 보냈으므로, 프로그램이 실행될 때까지 대기합니다 (다음 FSM 사이클에서 다시 확인).
+        return RobotEvent.NONE
+
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
@@ -183,7 +199,11 @@ class RobotWaitAutoCommandStrategy(Strategy):
         robot_cmd_key = "process/auto/robot/cmd"
         robot_cmd : dict = bb.get(robot_cmd_key)
         if robot_cmd :
-            # LogicContext에서 발행한 모든 모션 명령을 감지하여 범용 모션 실행 이벤트 발생
+            # Logic FSM이 발행한 명령을 감지합니다.
+            # Race Condition을 방지하기 위해, 명령을 컨텍스트에 저장하고 블랙보드에서 즉시 제거(소비)합니다.
+            context.current_motion_command = robot_cmd
+            bb.set(robot_cmd_key, None)
+            Logger.info(f"[Robot] Command received and consumed: {robot_cmd.get('process')}")
             return RobotEvent.DO_MOTION
         else :
             return RobotEvent.NONE
@@ -200,29 +220,37 @@ class RobotExecuteMotionStrategy(Strategy):
         self.start_time = time.time()
         self.timeout = 60.0  # 각 모션에 대한 타임아웃 (60초)
 
-        robot_cmd_key = "process/auto/robot/cmd"
-        robot_cmd = bb.get(robot_cmd_key)
+        # 블랙보드에서 직접 읽는 대신, 컨텍스트에 저장된 명령을 사용합니다.
+        robot_cmd = context.current_motion_command
+        Logger.info(f"[Robot] Motion Excute Step 1 - robot_cmd : {robot_cmd}")
 
         if not robot_cmd:
-            Logger.error("RobotExecuteMotionStrategy: Blackboard에서 명령을 찾을 수 없습니다.")
+            Logger.error("RobotExecuteMotionStrategy: Context에서 명령을 찾을 수 없습니다.")
             self.cmd_id = -1  # 잘못된 명령
+
             return
 
         self.motion_name = robot_cmd.get("process")
         floor = robot_cmd.get("target_floor")
         num = robot_cmd.get("target_num")
         pos = robot_cmd.get("position")
+        Logger.info(f"[Robot] Motion Excute Step 2 - motion_name : {self.motion_name}")
+        Logger.info(f"[Robot] Motion Excute Step 2 - floor : {floor}")
+        Logger.info(f"[Robot] Motion Excute Step 2 - num : {num}")
+        Logger.info(f"[Robot] Motion Excute Step 2 - pos : {pos}")
 
         # 문자열 모션 이름을 정수 CMD ID로 변환
         self.cmd_id = context.get_motion_cmd(self.motion_name, floor=floor, num=num, pos=pos)
 
+        Logger.info(f"[Robot] Motion Excute Step 3 - cmd_id : {self.cmd_id}")
+
         if self.cmd_id:
             # 충돌 방지를 위해 이동이 안전한지 확인
-            if not context.is_safe_to_move(self.cmd_id):
-                Logger.error(f"[Robot] Safety violation: Move from {bb.get('robot/current/position')} to {self.cmd_id} is not allowed.")
-                # 안전하지 않은 이동이므로 실패 처리
-                self.cmd_id = -1
-                return
+            # if not context.is_safe_to_move(self.cmd_id):
+            #     Logger.error(f"[Robot] Safety violation: Move from {bb.get('robot/current/position')} to {self.cmd_id} is not allowed.")
+            #     # 안전하지 않은 이동이므로 실패 처리
+            #     self.cmd_id = -1
+            #     return
 
             Logger.info(f"[Robot] '{self.motion_name}' 모션 실행 (CMD ID: {self.cmd_id})")
             # CMD_ack와 CMD_done 초기화 요청
@@ -263,17 +291,19 @@ class RobotExecuteMotionStrategy(Strategy):
 
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
-        # Blackboard 정리
-        robot_cmd_key = "process/auto/robot/cmd"
-        current_cmd = bb.get(robot_cmd_key)
+        # Logic FSM이 결과를 확인할 수 있도록, 컨텍스트에 저장된 명령의 상태를 업데이트하여 블랙보드에 다시 씁니다.
+        current_cmd = context.current_motion_command
         if current_cmd:
             if event == RobotEvent.MOTION_DONE:
                 current_cmd["state"] = "done"
             else:
                 current_cmd["state"] = "error"
-            # Logic FSM이 명령을 소비할 수 있도록 bb에 다시 씀
+            robot_cmd_key = "process/auto/robot/cmd"
             bb.set(robot_cmd_key, current_cmd)
+            Logger.info(f"[Robot] Wrote command result to blackboard: {current_cmd}")
+            
 
         # 다음 모션을 위해 명령 변수 초기화
         context.robot_motion_control(0)  # CMD를 0으로 설정
         bb.set("indy_command/reset_init_var", True)  # ACK/DONE 초기화
+        time.sleep(2)

@@ -78,7 +78,9 @@ class AutonicsEIPClient:
         if self.ip_address:
             try:
                 self.connect()
+                time.sleep(1)
                 self.current_di_value = self.read_input_data()
+                time.sleep(1)
                 self.current_do_value = self.read_output_data()
             except Exception as e:
                 if DEBUG_MODE: print(f"⚠️ 초기화 중 연결 또는 데이터 읽기 실패: {e}")

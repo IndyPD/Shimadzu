@@ -56,8 +56,12 @@ class DeviceContext(ContextBase):
         if self.dev_remoteio_enable :
             self.iocontroller = AutonicsEIPClient()
             # self.th_IO_reader = self.iocontroller.connect()
-        self.remote_input_data = self.iocontroller.current_di_value
-        self.remote_output_data = self.iocontroller.current_do_value
+            time.sleep(0.5)
+            self.remote_input_data = self.iocontroller.current_di_value
+            self.remote_output_data = self.iocontroller.current_do_value
+        else :
+            self.remote_input_data = [0] * 48
+            self.remote_output_data = [0] * 32
         self.remote_comm_state = False
         # 통신 오류 카운터 및 임계값
         self.remote_io_error_count = 0
@@ -72,6 +76,8 @@ class DeviceContext(ContextBase):
             self.qr_reader.on_qr_data = lambda data: bb.set("device/qr/result", data)
             self.qr_reader.connect()
             Logger.info("[device] QR Reader Initialized")
+            time.sleep(1)
+            self.qr_reader.quit()
 
         # ShimadzuClient 장치 인스턴스 생성
         if self.dev_smz_enable :
@@ -99,6 +105,10 @@ class DeviceContext(ContextBase):
         self.th_UI_DO_handler = Thread(target=self._thread_UI_DO_handler, daemon=True)
         self.th_UI_DO_handler.start()
 
+        # 주기적으로 타워 램프 상태를 제어하는 스레드 추가
+        # self.th_tower_lamp_controller = Thread(target=self._thread_tower_lamp_controller, daemon=True)
+        # self.th_tower_lamp_controller.start()
+
         # 주기적으로 통신 상태를 블랙보드에 업데이트하는 스레드 추가
         self.th_comm_status_updater = Thread(target=self._thread_comm_status_updater, daemon=True)
         self.th_comm_status_updater.start()
@@ -107,18 +117,22 @@ class DeviceContext(ContextBase):
 
         # 초기 장비 설정
         # 장비 내 램프 켜기
-        self.lamp_on()
-        
-        # 정렬기 후퇴
-        self.align_stop()
-        time.sleep(1)
+        try :
+            self.lamp_on()
+            
+            # 정렬기 후퇴
+            self.align_stop()
+            time.sleep(1)
 
-        self.align_pull()
-        time.sleep(0.1)
+            self.align_pull()
+            time.sleep(0.1)
 
-        # 측정기 받침 내리기
-        self.indicator_down()
-        time.sleep(0.1)
+            # 측정기 받침 내리기
+            self.indicator_down()
+            time.sleep(0.1)
+        except Exception as e:
+            Logger.error(f"[device] Error in __init__: {e}\n{traceback.format_exc()}")
+            reraise(e)
     
     def shimadzu_test(self) :
         # you are there 명령어 테스트
@@ -154,8 +168,9 @@ class DeviceContext(ContextBase):
 
     def _thread_IO_reader(self):
         while self.th_IO_reader :
-            time.sleep(0.5)
             self.read_IO_status()
+            # self.delay_IO_reader.sleep() # 0.1초 주기로 실행
+            time.sleep(0.1)
 
     def _thread_UI_DO_handler(self):
         """
@@ -176,6 +191,57 @@ class DeviceContext(ContextBase):
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_UI_DO_handler: {e}\n{traceback.format_exc()}")
             time.sleep(0.1)
+
+    def _thread_tower_lamp_controller(self):
+        """
+        주기적으로 시스템 상태를 확인하여 타워 램프를 제어합니다.
+        - 에러: 빨간색 램프 점멸
+        - 공정 중: 녹색 램프 켜짐
+        - 대기: 노란색 램프 점멸
+        """
+        blink_state = False
+        while True:
+            try:
+                # 현재 FSM 상태를 블랙보드에서 가져옵니다.
+                logic_fsm_state = bb.get("logic/fsm/strategy").get("state")
+                device_fsm_state = bb.get("device/fsm/strategy").get("state")
+                robot_fsm_state = bb.get("robot/fsm/strategy").get("state")
+
+                # 상태 결정
+                is_error = "ERROR" in (logic_fsm_state or "") or \
+                           "ERROR" in (device_fsm_state or "") or \
+                           "ERROR" in (robot_fsm_state or "")
+                
+                is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
+
+                # I/O 쓰기 중 충돌을 방지하기 위해 lock을 사용합니다.
+                with self._io_lock:
+                    output_data = self.remote_output_data.copy()
+                    blink_state = not blink_state
+
+                    if is_error:
+                        # 빨간색 점멸, 나머지 꺼짐
+                        output_data[DigitalOutput.TOWER_LAMP_RED] = 1 if blink_state else 0
+                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
+                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+                    elif is_idle:
+                        # 노란색 점멸, 나머지 꺼짐
+                        output_data[DigitalOutput.TOWER_LAMP_RED] = 0
+                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
+                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 1 if blink_state else 0
+                    else: # 공정 중
+                        # 녹색 켜짐, 나머지 꺼짐
+                        output_data[DigitalOutput.TOWER_LAMP_RED] = 0
+                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 1
+                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+
+                    if self.dev_remoteio_enable and hasattr(self, 'iocontroller'):
+                        self.iocontroller.write_output_data(output_data)
+                        self.remote_output_data = output_data
+            except Exception as e:
+                Logger.error(f"[device] Error in _thread_tower_lamp_controller: {e}")
+            
+            time.sleep(0.5) # 0.5초 간격으로 점멸 (1Hz)
 
     def _thread_comm_status_updater(self):
         """
@@ -288,73 +354,77 @@ class DeviceContext(ContextBase):
             
             # 데이터 읽기 실패 또는 데이터 길이 미달 시 예외 처리
             # DI는 48개, DO는 32개의 배열 길이를 기대합니다.
-            if not self.remote_input_data or len(self.remote_input_data) < 48:
-                raise IndexError(f"DI 데이터가 비정상입니다. 예상 길이: 48, 실제 길이: {len(self.remote_input_data) if self.remote_input_data is not None else 0}")
+            # if not self.remote_input_data or len(self.remote_input_data) < 48:
+            #     raise IndexError(f"DI 데이터가 비정상입니다. 예상 길이: 48, 실제 길이: {len(self.remote_input_data) if self.remote_input_data is not None else 0}")
             
-            if not self.remote_output_data or len(self.remote_output_data) < 32:
-                raise IndexError(f"DO 데이터가 비정상입니다. 예상 길이: 32, 실제 길이: {len(self.remote_output_data) if self.remote_output_data is not None else 0}")
+            # if not self.remote_output_data or len(self.remote_output_data) < 32:
+            #     raise IndexError(f"DO 데이터가 비정상입니다. 예상 길이: 32, 실제 길이: {len(self.remote_output_data) if self.remote_output_data is not None else 0}")
 
-            bb.set("device/remote/input/entire", self.remote_input_data)
-            bb.set("device/remote/output/entire", self.remote_output_data)
+            
+            
             # Logger.info(f"[Device] DI : {self.remote_input_data}")
             # Logger.info(f"[Device] DO : {self.remote_output_data}")
-            
-            # Input 데이터 bb set DigitalInput 기반
-            bb.set("device/remote/input/SELECT_SW", self.remote_input_data[DigitalInput.AUTO_MANUAL_SELECT_SW])
-            bb.set("device/remote/input/RESET_SW", self.remote_input_data[DigitalInput.RESET_SW])
-            bb.set("device/remote/input/SOL_SENSOR", self.remote_input_data[DigitalInput.SOL_SENSOR])
-            bb.set("device/remote/input/BCR_OK", self.remote_input_data[DigitalInput.BCR_OK])
-            bb.set("device/remote/input/BCR_ERROR", self.remote_input_data[DigitalInput.BCR_ERROR])
-            bb.set("device/remote/input/BUSY", self.remote_input_data[DigitalInput.BUSY])
-            bb.set("device/remote/input/ENO_01_SW", self.remote_input_data[DigitalInput.ENO_01_SW])
-            bb.set("device/remote/input/EMO_02_SI", self.remote_input_data[DigitalInput.EMO_02_SI])
-            bb.set("device/remote/input/EMO_03_SI", self.remote_input_data[DigitalInput.EMO_03_SI])
-            bb.set("device/remote/input/EMO_04_SI", self.remote_input_data[DigitalInput.EMO_04_SI])
-            bb.set("device/remote/input/DOOR_1_OPEN", self.remote_input_data[DigitalInput.DOOR_1_OPEN])
-            bb.set("device/remote/input/DOOR_2_OPEN", self.remote_input_data[DigitalInput.DOOR_2_OPEN])
-            bb.set("device/remote/input/DOOR_3_OPEN", self.remote_input_data[DigitalInput.DOOR_3_OPEN])
-            bb.set("device/remote/input/DOOR_4_OPEN", self.remote_input_data[DigitalInput.DOOR_4_OPEN])
-            bb.set("device/remote/input/GRIPPER_1_CLAMP", self.remote_input_data[DigitalInput.GRIPPER_1_CLAMP])
-            bb.set("device/remote/input/GRIPPER_2_CLAMP", self.remote_input_data[DigitalInput.GRIPPER_2_CLAMP])
-            bb.set("device/remote/input/EXT_FW_SENSOR", self.remote_input_data[DigitalInput.EXT_FW_SENSOR])
-            bb.set("device/remote/input/EXT_BW_SENSOR", self.remote_input_data[DigitalInput.EXT_BW_SENSOR])
-            bb.set("device/remote/input/INDICATOR_GUIDE_UP", self.remote_input_data[DigitalInput.INDICATOR_GUIDE_UP])
-            bb.set("device/remote/input/INDICATOR_GUIDE_DOWN", self.remote_input_data[DigitalInput.INDICATOR_GUIDE_DOWN])
-            bb.set("device/remote/input/ALIGN_1_PUSH", self.remote_input_data[DigitalInput.ALIGN_1_PUSH])
-            bb.set("device/remote/input/ALIGN_1_PULL", self.remote_input_data[DigitalInput.ALIGN_1_PULL])
-            bb.set("device/remote/input/ALIGN_2_PUSH", self.remote_input_data[DigitalInput.ALIGN_2_PUSH])
-            bb.set("device/remote/input/ALIGN_2_PULL", self.remote_input_data[DigitalInput.ALIGN_2_PULL])
-            bb.set("device/remote/input/ALIGN_3_PUSH", self.remote_input_data[DigitalInput.ALIGN_3_PUSH])
-            bb.set("device/remote/input/ALIGN_3_PULL", self.remote_input_data[DigitalInput.ALIGN_3_PULL])
-            bb.set("device/remote/input/ATC_1_1_SENSOR", self.remote_input_data[DigitalInput.ATC_1_1_SENSOR])
-            bb.set("device/remote/input/ATC_1_2_SENSOR", self.remote_input_data[DigitalInput.ATC_1_2_SENSOR])
-            bb.set("device/remote/input/SCRAPBOX_SENSOR", self.remote_input_data[DigitalInput.SCRAPBOX_SENSOR])
-            bb.set("device/remote/input/ATC_2_1_SENSOR", self.remote_input_data[DigitalInput.ATC_2_1_SENSOR])
-            bb.set("device/remote/input/ATC_2_2_SENSOR", self.remote_input_data[DigitalInput.ATC_2_2_SENSOR])
+            if len(self.remote_input_data) == 48 :
+                bb.set("device/remote/input/entire", self.remote_input_data)
+                # Input 데이터 bb set DigitalInput 기반
+                bb.set("device/remote/input/SELECT_SW", self.remote_input_data[DigitalInput.AUTO_MANUAL_SELECT_SW])
+                bb.set("device/remote/input/RESET_SW", self.remote_input_data[DigitalInput.RESET_SW])
+                bb.set("device/remote/input/SOL_SENSOR", self.remote_input_data[DigitalInput.SOL_SENSOR])
+                bb.set("device/remote/input/BCR_OK", self.remote_input_data[DigitalInput.BCR_OK])
+                bb.set("device/remote/input/BCR_ERROR", self.remote_input_data[DigitalInput.BCR_ERROR])
+                bb.set("device/remote/input/BUSY", self.remote_input_data[DigitalInput.BUSY])
+                bb.set("device/remote/input/ENO_01_SW", self.remote_input_data[DigitalInput.ENO_01_SW])
+                bb.set("device/remote/input/EMO_02_SI", self.remote_input_data[DigitalInput.EMO_02_SI])
+                bb.set("device/remote/input/EMO_03_SI", self.remote_input_data[DigitalInput.EMO_03_SI])
+                bb.set("device/remote/input/EMO_04_SI", self.remote_input_data[DigitalInput.EMO_04_SI])
+                bb.set("device/remote/input/DOOR_1_OPEN", self.remote_input_data[DigitalInput.DOOR_1_OPEN])
+                bb.set("device/remote/input/DOOR_2_OPEN", self.remote_input_data[DigitalInput.DOOR_2_OPEN])
+                bb.set("device/remote/input/DOOR_3_OPEN", self.remote_input_data[DigitalInput.DOOR_3_OPEN])
+                bb.set("device/remote/input/DOOR_4_OPEN", self.remote_input_data[DigitalInput.DOOR_4_OPEN])
+                bb.set("device/remote/input/GRIPPER_1_CLAMP", self.remote_input_data[DigitalInput.GRIPPER_1_CLAMP])
+                bb.set("device/remote/input/GRIPPER_2_CLAMP", self.remote_input_data[DigitalInput.GRIPPER_2_CLAMP])
+                bb.set("device/remote/input/EXT_FW_SENSOR", self.remote_input_data[DigitalInput.EXT_FW_SENSOR])
+                bb.set("device/remote/input/EXT_BW_SENSOR", self.remote_input_data[DigitalInput.EXT_BW_SENSOR])
+                bb.set("device/remote/input/INDICATOR_GUIDE_UP", self.remote_input_data[DigitalInput.INDICATOR_GUIDE_UP])
+                bb.set("device/remote/input/INDICATOR_GUIDE_DOWN", self.remote_input_data[DigitalInput.INDICATOR_GUIDE_DOWN])
+                bb.set("device/remote/input/ALIGN_1_PUSH", self.remote_input_data[DigitalInput.ALIGN_1_PUSH])
+                bb.set("device/remote/input/ALIGN_1_PULL", self.remote_input_data[DigitalInput.ALIGN_1_PULL])
+                bb.set("device/remote/input/ALIGN_2_PUSH", self.remote_input_data[DigitalInput.ALIGN_2_PUSH])
+                bb.set("device/remote/input/ALIGN_2_PULL", self.remote_input_data[DigitalInput.ALIGN_2_PULL])
+                bb.set("device/remote/input/ALIGN_3_PUSH", self.remote_input_data[DigitalInput.ALIGN_3_PUSH])
+                bb.set("device/remote/input/ALIGN_3_PULL", self.remote_input_data[DigitalInput.ALIGN_3_PULL])
+                bb.set("device/remote/input/ATC_1_1_SENSOR", self.remote_input_data[DigitalInput.ATC_1_1_SENSOR])
+                bb.set("device/remote/input/ATC_1_2_SENSOR", self.remote_input_data[DigitalInput.ATC_1_2_SENSOR])
+                bb.set("device/remote/input/SCRAPBOX_SENSOR", self.remote_input_data[DigitalInput.SCRAPBOX_SENSOR])
+                bb.set("device/remote/input/ATC_2_1_SENSOR", self.remote_input_data[DigitalInput.ATC_2_1_SENSOR])
+                bb.set("device/remote/input/ATC_2_2_SENSOR", self.remote_input_data[DigitalInput.ATC_2_2_SENSOR])
 
-            # Output 데이터 bb set DigitalOutput 기반            
-            bb.set("device/remote/output/TOWER_LAMP_RED", self.remote_output_data[DigitalOutput.TOWER_LAMP_RED])
-            bb.set("device/remote/output/TOWER_LAMP_GREEN", self.remote_output_data[DigitalOutput.TOWER_LAMP_GREEN])
-            bb.set("device/remote/output/TOWER_LAMP_YELLOW", self.remote_output_data[DigitalOutput.TOWER_LAMP_YELLOW])
-            bb.set("device/remote/output/TOWER_BUZZER", self.remote_output_data[DigitalOutput.TOWER_BUZZER])
-            bb.set("device/remote/output/BCR_TGR", self.remote_output_data[DigitalOutput.BCR_TGR])
-            bb.set("device/remote/output/LOCAL_LAMP_R", self.remote_output_data[DigitalOutput.LOCAL_LAMP_R])
-            bb.set("device/remote/output/RESET_SW_LAMP", self.remote_output_data[DigitalOutput.RESET_SW_LAMP])
-            bb.set("device/remote/output/DOOR_4_LAMP", self.remote_output_data[DigitalOutput.DOOR_4_LAMP])
-            bb.set("device/remote/output/INDICATOR_UP", self.remote_output_data[DigitalOutput.INDICATOR_UP])
-            bb.set("device/remote/output/INDICATOR_DOWN", self.remote_output_data[DigitalOutput.INDICATOR_DOWN])
-            bb.set("device/remote/output/ALIGN_1_PUSH", self.remote_output_data[DigitalOutput.ALIGN_1_PUSH])
-            bb.set("device/remote/output/ALIGN_1_PULL", self.remote_output_data[DigitalOutput.ALIGN_1_PULL])
-            bb.set("device/remote/output/ALIGN_2_PUSH", self.remote_output_data[DigitalOutput.ALIGN_2_PUSH])
-            bb.set("device/remote/output/ALIGN_2_PULL", self.remote_output_data[DigitalOutput.ALIGN_2_PULL])
-            bb.set("device/remote/output/ALIGN_3_PUSH", self.remote_output_data[DigitalOutput.ALIGN_3_PUSH])
-            bb.set("device/remote/output/ALIGN_3_PULL", self.remote_output_data[DigitalOutput.ALIGN_3_PULL])
-            bb.set("device/remote/output/GRIPPER_1_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_1_UNCLAMP])
-            bb.set("device/remote/output/LOCAL_LAMP_L", self.remote_output_data[DigitalOutput.LOCAL_LAMP_L])
-            bb.set("device/remote/output/GRIPPER_2_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_2_UNCLAMP])
-            bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
-            bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
-            bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
+            if len(self.remote_output_data) == 32 :
+                bb.set("device/remote/output/entire", self.remote_output_data)
+                # Output 데이터 bb set DigitalOutput 기반            
+                bb.set("device/remote/output/TOWER_LAMP_RED", self.remote_output_data[DigitalOutput.TOWER_LAMP_RED])
+                bb.set("device/remote/output/TOWER_LAMP_GREEN", self.remote_output_data[DigitalOutput.TOWER_LAMP_GREEN])
+                bb.set("device/remote/output/TOWER_LAMP_YELLOW", self.remote_output_data[DigitalOutput.TOWER_LAMP_YELLOW])
+                bb.set("device/remote/output/TOWER_BUZZER", self.remote_output_data[DigitalOutput.TOWER_BUZZER])
+                bb.set("device/remote/output/BCR_TGR", self.remote_output_data[DigitalOutput.BCR_TGR])
+                bb.set("device/remote/output/LOCAL_LAMP_R", self.remote_output_data[DigitalOutput.LOCAL_LAMP_R])
+                bb.set("device/remote/output/RESET_SW_LAMP", self.remote_output_data[DigitalOutput.RESET_SW_LAMP])
+                bb.set("device/remote/output/DOOR_4_LAMP", self.remote_output_data[DigitalOutput.DOOR_4_LAMP])
+                bb.set("device/remote/output/INDICATOR_UP", self.remote_output_data[DigitalOutput.INDICATOR_UP])
+                bb.set("device/remote/output/INDICATOR_DOWN", self.remote_output_data[DigitalOutput.INDICATOR_DOWN])
+                bb.set("device/remote/output/ALIGN_1_PUSH", self.remote_output_data[DigitalOutput.ALIGN_1_PUSH])
+                bb.set("device/remote/output/ALIGN_1_PULL", self.remote_output_data[DigitalOutput.ALIGN_1_PULL])
+                bb.set("device/remote/output/ALIGN_2_PUSH", self.remote_output_data[DigitalOutput.ALIGN_2_PUSH])
+                bb.set("device/remote/output/ALIGN_2_PULL", self.remote_output_data[DigitalOutput.ALIGN_2_PULL])
+                bb.set("device/remote/output/ALIGN_3_PUSH", self.remote_output_data[DigitalOutput.ALIGN_3_PUSH])
+                bb.set("device/remote/output/ALIGN_3_PULL", self.remote_output_data[DigitalOutput.ALIGN_3_PULL])
+                bb.set("device/remote/output/GRIPPER_1_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_1_UNCLAMP])
+                bb.set("device/remote/output/LOCAL_LAMP_L", self.remote_output_data[DigitalOutput.LOCAL_LAMP_L])
+                bb.set("device/remote/output/GRIPPER_2_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_2_UNCLAMP])
+                bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
+                bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
+                bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
+
             self.remote_comm_state = True
             # Logger.info(f"[device] Connect state : {self.remote_comm_state}")
             bb.set("device/remote/comm_status", 1 if self.remote_comm_state else 0)
@@ -395,6 +465,7 @@ class DeviceContext(ContextBase):
         '''
         try :
             output_data = self.remote_output_data.copy()
+
             output_data[DigitalOutput.LOCAL_LAMP_C] = 1
             output_data[DigitalOutput.LOCAL_LAMP_L] = 1
             output_data[DigitalOutput.LOCAL_LAMP_R] = 1

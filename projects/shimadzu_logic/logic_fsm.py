@@ -76,66 +76,79 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.DO_PICK_TENSILE_MACHINE: LogicState.PICK_TENSILE_MACHINE,
                 LogicEvent.DO_RETREAT_AND_HANDLE_SCRAP: LogicState.RETREAT_AND_HANDLE_SCRAP,
                 LogicEvent.DO_PROCESS_COMPLETE: LogicState.PROCESS_COMPLETE,                
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.MOVE_TO_RACK_FOR_QR: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_SPECIMEN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.MOVE_TO_INDIGATOR: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PLACE_SPECIMEN_AND_MEASURE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_SPECIMEN_OUT_FROM_INDIGATOR: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.ALIGN_SPECIMEN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_SPECIMEN_OUT_FROM_ALIGN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.LOAD_TENSILE_MACHINE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.RETREAT_TENSILE_MACHINE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.START_TENSILE_TEST: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_TENSILE_MACHINE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.RETREAT_AND_HANDLE_SCRAP: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },

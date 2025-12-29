@@ -208,13 +208,28 @@ class MqttComm:
             self.last_command_payload = payload
 
             if cmd == "tensile_control":
-                if hasattr(self, 'ProgramControl') and self.bb:
+                if self.role == 'logic' and self.bb:
+                    if self.Logger: self.Logger.info(f"[LOGIC] Tensile control command received: {action}")
+                    if action == "start":
+                        self.bb.set("ui/cmd/auto/tensile", 1) # 1: 시작 (Start)
+                    elif action == "stop":
+                        self.bb.set("ui/cmd/auto/tensile", 3) # 3: 즉시 정지 (Stop)
+                    elif action == "step_stop":
+                        self.bb.set("ui/cmd/auto/tensile", 4) # 4: 현재 시편 완료 후 정지 (Step Stop)
+                    elif action == "reset":
+                        # Command.md 4.3. Reset은 Stop 이후 공정 데이터 초기화.
+                        # 사용자가 요청한대로 'data'/'reset'과 동일하게 처리.
+                        self.bb.set("ui/cmd/data/reset", 1)
                     if action == "pause":
-                        if self.Logger: self.Logger.info("[LOGIC] Pause command received via MQTT.")
-                        self.bb.set("ui/command/program_control", self.ProgramControl.PROG_PAUSE.value)
+                        # Command.md 4.3. Pause는 로봇 속도 0으로 설정.
+                        if hasattr(self, 'ProgramControl'):
+                            if self.Logger: self.Logger.info("[LOGIC] Pause command received via MQTT.")
+                            self.bb.set("ui/command/program_control", self.ProgramControl.PROG_PAUSE.value)
                     elif action == "resume":
-                        if self.Logger: self.Logger.info("[LOGIC] Resume command received via MQTT.")
-                        self.bb.set("ui/command/program_control", self.ProgramControl.PROG_RESUME.value)
+                        # Command.md 4.3. Pause 이후 재개.
+                        if hasattr(self, 'ProgramControl'):
+                            if self.Logger: self.Logger.info("[LOGIC] Resume command received via MQTT.")
+                            self.bb.set("ui/command/program_control", self.ProgramControl.PROG_RESUME.value)
             elif cmd == "binpick_control":
                 self.binpick_command = 1
             elif cmd == "system_control":
@@ -236,9 +251,20 @@ class MqttComm:
                     self.bb.set("ui/cmd/recover/trigger", 1)
             elif cmd == "robot_control":
                 if self.role == 'logic' and self.bb:
-                    if self.Logger: self.Logger.info(f"[LOGIC] 로봇 제어 명령 수신: {payload.get('target')} -> {payload.get('action')}")
-                    self.bb.set("ui/cmd/robot_control/data", payload)
-                    self.bb.set("ui/cmd/robot_control/trigger", 1)
+                    target = payload.get("target")
+                    if target == "robot_program":
+                        if action == "start":
+                            program_index = 1 # Conty Program Index 1번 (Main)
+                            if self.Logger: self.Logger.info(f"[LOGIC] Conty Program START command received for index: {program_index}")
+                            self.bb.set("indy_command/play_program_index", program_index)
+                            self.bb.set("indy_command/play_program_trigger", True)
+                        elif action == "stop":
+                            if self.Logger: self.Logger.info(f"[LOGIC] Conty Program STOP command received.")
+                            self.bb.set("indy_command/stop_program", True)
+                    else:
+                        if self.Logger: self.Logger.info(f"[LOGIC] 로봇 제어 명령 수신: {payload.get('target')} -> {payload.get('action')}")
+                        self.bb.set("ui/cmd/robot_control/data", payload)
+                        self.bb.set("ui/cmd/robot_control/trigger", 1)
             elif cmd == "conty_program":
                 if self.role == 'logic' and self.bb:
                     program_index = payload.get("program_index")
@@ -254,11 +280,17 @@ class MqttComm:
                     if action == "save":
                         if self.Logger: self.Logger.info(f"[LOGIC] 데이터 저장 요청 수신")
                         self.bb.set("ui/cmd/data/save", 1)
+                        self.send_response_ack(header, status="ok", reason="Batch plan saved", data={"action": "save"})
+                        return
                     elif action == "reset":
                         if self.Logger: self.Logger.info(f"[LOGIC] 데이터 리셋 요청 수신")
                         self.bb.set("ui/cmd/data/reset", 1)
+                        self.send_response_ack(header, status="ok", reason="Batch data reset", data={"action": "reset"})
+                        return
                     else:
                         if self.Logger: self.Logger.warn(f"[LOGIC] 알 수 없는 'data' action: {action}")
+                        self.send_response_ack(header, status="error", reason=f"Unknown data action: {action}", error_code="INVALID_ACTION")
+                        return
 
             # 프로토콜에 따라, UI 명령 수신 시 Logic이 이를 수락했음을 알리는 ACK를 전송합니다.
             # 실제 성공/실패 여부는 각 로직(Strategy)이 처리한 후 별도 이벤트로 전송하거나
@@ -331,6 +363,17 @@ class MqttComm:
                     all_states = [robot_comm_ok, shimadzu_comm_ok, gauge_comm_ok, rio_comm_ok, qr_comm_ok, vision_comm_ok]
                     system_entire_state = 1 if all(s == 1 for s in all_states) else 0
     
+                    # 로봇 프로그램 구동 상태 (0: 초기값, 1: 구동중, 2: 정지중)
+                    program_state = self.bb.get("indy").get("program_state")
+                    program_run_status = 0 # 초기값 (IDLE)
+                    if program_state == 1: # ProgramState.PROG_RUNNING
+                        program_run_status = 1 # 구동중
+                    elif program_state in [2, 3]: # ProgramState.PROG_PAUSING, ProgramState.PROG_STOPPING
+                        program_run_status = 0
+                    else :
+                        program_run_status = 2 # IDLE
+    
+
                     system_status_payload = {
                         "kind": "event",
                         "evt": "system_status",
@@ -344,7 +387,8 @@ class MqttComm:
                                 "current_motion": self.bb.get("int_var/cmd/val"),
                                 "recover_motion": self.bb.get("robot/recover/motion/cmd"),
                                 "direct_teaching_mode": self.bb.get("robot/dt/mode"),
-                                "gripper_state": self.bb.get("gripper/is_hold"),
+                                "program_run": program_run_status,
+                                "gripper_state": self.bb.get("robot/gripper/actual_state"),
                                 "msg": "OK" if robot_comm_ok else "Connection Failed"
                             },
                             "shimadzu": {

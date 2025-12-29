@@ -6,6 +6,11 @@
   "shimadzu_ip": "127.0.0.1",
   "shimadzu_port": 5000,
   
+  "db_host": "localhost",
+  "db_user": "root",
+  "db_password": "root",
+  "db_name": "shimadzu_db",
+
   "test_mode" : 0,
   "debug_mode": 0
 

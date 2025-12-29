@@ -56,62 +56,68 @@ class DeviceFsm(FiniteStateMachine):
                 DeviceEvent.DO_EXTENSOMETER_BACKWARD: DeviceState.EXTENSOMETER_BACKWARD,
                 DeviceEvent.DO_TENSILE_TEST: DeviceState.START_TENSILE_TEST,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+                DeviceEvent.DO_REGISTER_METHOD: DeviceState.REGISTER_METHOD,
             },
             DeviceState.READ_QR: {
-                DeviceEvent.QR_READ_DONE: DeviceState.MEASURE_THICKNESS, # QR 완료 -> 두께 측정
-                DeviceEvent.QR_READ_FAIL: DeviceState.ERROR,
+                DeviceEvent.QR_READ_DONE: DeviceState.WAIT_COMMAND, # 완료 -> 명령 대기
+                DeviceEvent.QR_READ_FAIL: DeviceState.WAIT_COMMAND, # 실패 -> 명령 대기 (오류는 blackboard에 기록됨)
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.MEASURE_THICKNESS: {
-                DeviceEvent.THICKNESS_MEASURE_DONE: DeviceState.ALIGNER_OPEN, # 측정 완료 -> 정렬기 벌리기
-                DeviceEvent.GAUGE_MEASURE_FAIL: DeviceState.ERROR,
+                DeviceEvent.THICKNESS_MEASURE_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GAUGE_MEASURE_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.ALIGNER_OPEN: {
-                DeviceEvent.ALIGNER_OPEN_DONE: DeviceState.ALIGNER_ACTION, # 벌리기 완료 -> 정렬기 작동(대기/정렬)
-                DeviceEvent.ALIGNER_FAIL: DeviceState.ERROR,
+                DeviceEvent.ALIGNER_OPEN_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.ALIGNER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.ALIGNER_ACTION: {
-                DeviceEvent.ALIGNER_ACTION_DONE: DeviceState.GRIPPER_MOVE_DOWN, # 정렬 완료 -> 그리퍼 하강
-                DeviceEvent.ALIGNER_FAIL: DeviceState.ERROR,
+                DeviceEvent.ALIGNER_ACTION_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.ALIGNER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.GRIPPER_MOVE_DOWN: {
-                DeviceEvent.GRIPPER_MOVE_DOWN_DONE: DeviceState.GRIPPER_GRIP, # 하강 완료 -> 그리퍼 잡기
-                DeviceEvent.GRIPPER_MOVE_FAIL: DeviceState.ERROR,
+                DeviceEvent.GRIPPER_MOVE_DOWN_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_MOVE_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.GRIPPER_GRIP: {
-                DeviceEvent.GRIPPER_GRIP_DONE: DeviceState.REMOVE_PRELOAD, # 잡기 완료 -> 초기 하중 제거
-                DeviceEvent.GRIPPER_FAIL: DeviceState.ERROR,
+                DeviceEvent.GRIPPER_GRIP_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.REMOVE_PRELOAD: {
-                DeviceEvent.REMOVE_PRELOAD_DONE: DeviceState.EXTENSOMETER_FORWARD, # 제거 완료 -> 신율계 전진
-                DeviceEvent.PRELOAD_FAIL: DeviceState.ERROR,
+                DeviceEvent.REMOVE_PRELOAD_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.PRELOAD_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.EXTENSOMETER_FORWARD: {
-                DeviceEvent.EXTENSOMETER_FORWARD_DONE: DeviceState.START_TENSILE_TEST, # 전진 완료 -> 인장시험 시작
-                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.ERROR,
+                DeviceEvent.EXTENSOMETER_FORWARD_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.START_TENSILE_TEST: {
-                DeviceEvent.TENSILE_TEST_DONE: DeviceState.EXTENSOMETER_BACKWARD, # 시험 완료 -> 신율계 후진
-                DeviceEvent.TENSILE_TEST_FAIL: DeviceState.ERROR,
+                DeviceEvent.TENSILE_TEST_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.TENSILE_TEST_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.EXTENSOMETER_BACKWARD: {
-                DeviceEvent.EXTENSOMETER_BACKWARD_DONE: DeviceState.GRIPPER_RELEASE, # 후진 완료 -> 그리퍼 풀기
-                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.ERROR,
+                DeviceEvent.EXTENSOMETER_BACKWARD_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.EXTENSOMETER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
             DeviceState.GRIPPER_RELEASE: {
                 DeviceEvent.GRIPPER_RELEASE_DONE: DeviceState.WAIT_COMMAND, # 풀기 완료 -> 명령 대기 (사이클 종료)
-                DeviceEvent.GRIPPER_FAIL: DeviceState.ERROR,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
+            DeviceState.REGISTER_METHOD: {
+                DeviceEvent.REGISTER_METHOD_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.REGISTER_METHOD_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            }
         }
 
     def _setup_strategies(self):
@@ -135,4 +141,5 @@ class DeviceFsm(FiniteStateMachine):
             DeviceState.START_TENSILE_TEST: StartTensileTestStrategy(),
             DeviceState.EXTENSOMETER_BACKWARD: ExtensometerBackwardStrategy(),
             DeviceState.GRIPPER_RELEASE: GripperReleaseStrategy(),
+            DeviceState.REGISTER_METHOD: RegisterMethodStrategy(),
         }

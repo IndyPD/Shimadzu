@@ -242,7 +242,11 @@ class ReadyStrategy(Strategy):
             # 명령 실행 후 초기화
             bb.set("manual/device/tester", 0)
 
+        if bb.get("ui/cmd/auto/tensile") == 1:
+            return DeviceEvent.START_COMMAND
+        
         return DeviceEvent.NONE
+    
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info(f"[device] exit ReadyStrategy with event: {event}")
@@ -263,26 +267,30 @@ class WaitCommandStrategy(Strategy):
         device_cmd_key = "process/auto/device/cmd"
         device_cmd = bb.get(device_cmd_key)
 
-        if device_cmd and isinstance(device_cmd, dict):
+        if device_cmd :
+            Logger.info(f"[device] Command : {device_cmd}")
             # LogicContext에서 command 또는 process 키를 혼용하여 사용하므로 둘 다 확인합니다.
-            cmd = device_cmd.get("command") or device_cmd.get("process")
-
-            if cmd == Device_command.QR_READ:
-                return DeviceEvent.DO_READ_QR
-            elif cmd == Device_command.MEASURE_THICKNESS:
+            cmd = device_cmd.get("process") or device_cmd.get("command")
+            
+            if cmd == DeviceCommand.QR_READ:
+                if device_cmd.get("state") != 'error':
+                    return DeviceEvent.DO_READ_QR
+            elif cmd == DeviceCommand.MEASURE_THICKNESS:
                 return DeviceEvent.DO_MEASURE_THICKNESS
-            elif cmd == Device_command.ALIGN_SPECIMEN:
+            elif cmd == DeviceCommand.ALIGN_SPECIMEN:
                 return DeviceEvent.DO_ALIGNER_ACTION
-            elif cmd == Device_command.TENSILE_GRIPPER_ON:
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_ON:
                 return DeviceEvent.DO_GRIPPER_GRIP
-            elif cmd == Device_command.TENSILE_GRIPPER_OFF:
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_OFF:
                 return DeviceEvent.DO_GRIPPER_RELEASE
-            elif cmd == Device_command.EXT_FORWARD:
+            elif cmd == DeviceCommand.EXT_FORWARD:
                 return DeviceEvent.DO_EXTENSOMETER_FORWARD
-            elif cmd == Device_command.EXT_BACKWARD:
+            elif cmd == DeviceCommand.EXT_BACKWARD:
                 return DeviceEvent.DO_EXTENSOMETER_BACKWARD
-            elif cmd == Device_command.START_TENSILE_TEST:
+            elif cmd == DeviceCommand.START_TENSILE_TEST:
                 return DeviceEvent.DO_TENSILE_TEST
+            elif cmd == DeviceCommand.REGISTER_METHOD:
+                return DeviceEvent.DO_REGISTER_METHOD
 
         return DeviceEvent.NONE
     
@@ -313,6 +321,7 @@ class ReadQRStrategy(Strategy):
                 cmd_data["state"] = "error"
                 cmd_data["is_done"] = False
                 bb.set("process/auto/device/cmd", cmd_data)
+                context.qr_reader.quit()
             return DeviceEvent.QR_READ_FAIL
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
@@ -522,3 +531,38 @@ class GripperReleaseStrategy(Strategy):
             cmd_data["state"] = "done" if is_success else "error"
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit GripperReleaseStrategy with event: {event}")
+
+class RegisterMethodStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter RegisterMethodStrategy")
+        self.cmd_data = bb.get("process/auto/device/cmd")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        if not self.cmd_data or not isinstance(self.cmd_data, dict):
+            Logger.error("[device] RegisterMethodStrategy: No command data found on blackboard.")
+            return DeviceEvent.REGISTER_METHOD_FAIL
+
+        params = self.cmd_data.get("params")
+        if not params:
+            Logger.error("[device] RegisterMethodStrategy: No 'params' found in command data.")
+            return DeviceEvent.REGISTER_METHOD_FAIL
+        
+        # smz_register_method는 **params를 인자로 받으므로 그대로 전달
+        result = context.smz_register_method(**params)
+
+        if result and result.get('status') == 'OK':
+            Logger.info(f"[device] Shimadzu method registered successfully for: {params.get('tpname')}")
+            return DeviceEvent.REGISTER_METHOD_DONE
+        else:
+            Logger.error(f"[device] Failed to register Shimadzu method: {result}")
+            return DeviceEvent.REGISTER_METHOD_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        if isinstance(self.cmd_data, dict):
+            is_success = event == DeviceEvent.REGISTER_METHOD_DONE
+            self.cmd_data["is_done"] = is_success
+            self.cmd_data["state"] = "done" if is_success else "error"
+            self.cmd_data["result"] = "OK" if is_success else f"Failed: {event.name}"
+            bb.set("process/auto/device/cmd", self.cmd_data)
+        Logger.info(f"[device] exit RegisterMethodStrategy with event: {event}")
