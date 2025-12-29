@@ -46,18 +46,15 @@ class LogicState(OpState):
     RUN_PROCESS                         = 10            # 5. 자동화 공정 실행
     DETERMINE_TASK                      = 11            # 6. 작업 내용 판단
     MOVE_TO_RACK_FOR_QR                 = 12            # 7. QR 리딩을 위한 랙 이동
-    PICK_SPECIMEN                       = 13            # 8. 시편 잡기 (A)
-    MOVE_TO_INDIGATOR                   = 14            # 9. 측정기 이동 (B)
-    PLACE_SPECIMEN_AND_MEASURE          = 15            # 10. 시편 거치 및 측정 (B)
-    PICK_SPECIMEN_OUT_FROM_INDIGATOR    = 16            # 11. 측정기에서 시편 반출 (B)
-    ALIGN_SPECIMEN                      = 17            # 12. 시편 정렬 (C)
-    PICK_SPECIMEN_OUT_FROM_ALIGN        = 24            # 12-1. 정렬기에서 시편 반출 (C)
-    LOAD_TENSILE_MACHINE                = 18            # 13. 인장기 장착 (D)
-    RETREAT_TENSILE_MACHINE             = 19            # 14. 인장기 후퇴 (D)
-    START_TENSILE_TEST                  = 20            # 15. 인장 시험 시작 (D)
-    PICK_TENSILE_MACHINE                = 21            # 16. 인장기 시편 수거 (D)
-    RETREAT_AND_HANDLE_SCRAP            = 22            # 17. 후퇴 및 스크랩 처리 (D)    
-    PROCESS_COMPLETE                    = 23            # 18. 공정 완료    
+    PICK_SPECIMEN                       = 13            # 8. 시편 잡기 (ACT01)
+    MEASURE_SPECIMEN_THICKNESS          = 14            # 9. 두께 측정 (ACT02)
+    ALIGN_SPECIMEN                      = 15            # 10. 시편 정렬 (ACT03)
+    PICK_SPECIMEN_FROM_ALIGN            = 16            # 11. 정렬기에서 시편 반출 (ACT03)
+    LOAD_TENSILE_MACHINE                = 17            # 12. 인장기 장착 (ACT04)
+    START_TENSILE_TEST                  = 18            # 13. 인장 시험 시작
+    PICK_SPECIMEN_FROM_TENSILE_MACHINE  = 19            # 14. 인장기 시편 수거 (ACT05)
+    DISPOSE_SCRAP                       = 20            # 15. 스크랩 처리 (ACT06)
+    PROCESS_COMPLETE                    = 21            # 16. 공정 완료
     RESET_DATA                          = 25            # 19. 데이터 리셋
     
 
@@ -95,16 +92,13 @@ class LogicEvent(OpEvent):
     DO_DETERMINE_TASK                   = 27            # 작업 내용 판단 실행
     DO_MOVE_TO_RACK_FOR_QR              = 28            # QR 리딩을 위한 랙 이동 실행
     DO_PICK_SPECIMEN                    = 29            # 시편 잡고 나오기 실행
-    DO_MOVE_TO_INDIGATOR                = 30            # 측정기 이동 실행
-    DO_PLACE_SPECIMEN_AND_MEASURE       = 31            # 시편 거치 및 측정 실행
-    DO_PICK_SPECIMEN_OUT_FROM_INDIGATOR = 32            # 측정기 시편 반출 실행
-    DO_ALIGN_SPECIMEN                   = 33            # 시편 정렬 실행
-    DO_PICK_SPECIMEN_OUT_FROM_ALIGN     = 41            # 정렬기 시편 반출 실행
-    DO_LOAD_TENSILE_MACHINE             = 34            # 인장기 장착 실행
-    DO_RETREAT_TENSILE_MACHINE          = 35            # 인장기 후퇴 실행
-    DO_START_TENSILE_TEST               = 36            # 인장 시험 시작 실행
-    DO_PICK_TENSILE_MACHINE             = 37            # 인장기 시편 수거 실행
-    DO_RETREAT_AND_HANDLE_SCRAP         = 38            # 후퇴 및 스크랩 처리 실행
+    DO_MEASURE_THICKNESS                = 30            # 두께 측정 실행
+    DO_ALIGN_SPECIMEN                   = 31            # 시편 정렬 실행
+    DO_PICK_SPECIMEN_FROM_ALIGN         = 32            # 정렬기에서 시편 반출 실행
+    DO_LOAD_TENSILE_MACHINE             = 33            # 인장기 장착 실행
+    DO_START_TENSILE_TEST               = 34            # 인장 시험 시작 실행
+    DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE = 35          # 인장기 시편 수거 실행
+    DO_DISPOSE_SCRAP                    = 36            # 스크랩 처리 실행
     DO_PROCESS_COMPLETE                 = 39            # 공정 완료 실행
     DO_DATA_RESET                       = 40            # 데이터 리셋 실행
     

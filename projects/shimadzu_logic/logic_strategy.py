@@ -287,109 +287,69 @@ class LogicDetermineTaskStrategy(Strategy):
         step = bb.get("process/auto/current_step")
         Logger.info(f"[Logic] DetermineTask: Current sequence {current_specimen['seq_order']} is at step {step}.")
         
-        if step == 1: # QR 인식 완료 -> 시편 가져오기 (2번)
-            Logger.info("[Logic] DetermineTask: Step 1 (QR Read) is done. Moving to Step 2 (Pick Specimen).")
+        # Command.md v2.0 (통합 함수 기반) 순서
+        # 1. QR 인식
+        # 2. 시편 잡기
+        # 3. 두께 측정
+        # 4. 시편 정렬
+        # 5. 정렬기에서 시편 잡기
+        # 6. 인장기 장착
+        # 7. 인장 시험 시작
+        # 8. 인장기에서 시편 수거
+        # 9. 스크랩 처리
+
+        if step == 1: # QR 인식 완료 -> 시편 잡기 (2)
+            Logger.info("[Logic] DetermineTask: Step 1 (QR Read) done. -> Step 2 (Pick Specimen).")
             bb.set("process/auto/current_step", 2)
             return LogicEvent.DO_PICK_SPECIMEN
-        elif step == 2: # 시편 가져오기 완료 -> 측정기 이동 (3번)
-            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) is done. Moving to Step 3 (Move to Indicator).")
+
+        elif step == 2: # 시편 잡기 완료 -> 두께 측정 (3)
+            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Measure Thickness).")
             bb.set("process/auto/current_step", 3)
-            return LogicEvent.DO_MOVE_TO_INDIGATOR
-        elif step == 3: # 측정기 이동 완료 -> 시편 거치 및 측정 (4번)
-            Logger.info("[Logic] DetermineTask: Step 3 (Move to Indicator) is done. Moving to Step 4 (Place and Measure).")
-            bb.set("process/auto/current_step", 4)
-            return LogicEvent.DO_PLACE_SPECIMEN_AND_MEASURE
-        elif step == 4: # 측정 완료 -> 측정기 시편 반출 (5번)
-            Logger.info("[Logic] DetermineTask: Step 4 (Place and Measure) is done. Updating dimension and moving to Step 5 (Pick from Indicator).")
+            return LogicEvent.DO_MEASURE_THICKNESS
+
+        elif step == 3: # 두께 측정 완료 -> 시편 정렬 (4)
+            Logger.info("[Logic] DetermineTask: Step 3 (Measure Thickness) done. -> Step 4 (Align Specimen).")
             # 측정된 두께를 test_tray_items에 업데이트
             tray_no = current_specimen['tray_no']
             specimen_no = bb.get("process/auto/current_specimen_no")
             thickness_map = bb.get("process/auto/thickness") or {}
-            
             dimension = thickness_map.get(str(specimen_no))
             if dimension is not None:
                 Logger.info(f"[Logic] DetermineTask: Updating dimension for Tray {tray_no}, Specimen {specimen_no} to {dimension}.")
                 context.db.update_test_tray_item(tray_no, specimen_no, {'dimension': float(dimension)})
             else:
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
-
-            bb.set("process/auto/current_step", 5)
-            return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_INDIGATOR
-        elif step == 5: # 반출 완료 -> 시편 정렬 (6번)
-            Logger.info("[Logic] DetermineTask: Step 5 (Pick from Indicator) is done. Moving to Step 6 (Align Specimen).")
-            bb.set("process/auto/current_step", 6)
+            bb.set("process/auto/current_step", 4)
             return LogicEvent.DO_ALIGN_SPECIMEN
-        elif step == 6: # 정렬 완료
-            Logger.info("[Logic] DetermineTask: Step 6 (Align Specimen) is done.")
-            # 만약 다음 시편을 미리 준비 중이었다면, 여기서 멈추고 이전 시편 수거를 위해 스위칭
-            if bb.get("process/auto/pre_preparing"):
-                prev_spec_no = bb.get("process/auto/current_specimen_no") - 1
-                bb.set("process/auto/waiting_at_aligner", True)
-                
-                # 이전 시편으로 컨텍스트 전환 (수거 단계 11번으로)
-                bb.set("process/auto/current_specimen_no", prev_spec_no)
-                bb.set("process/auto/target_num", prev_spec_no)
-                bb.set("process/auto/current_step", 11)
-                
-                Logger.info(f"[Logic] DetermineTask: Specimen {prev_spec_no+1} pre-prepared. Switching back to collect Specimen {prev_spec_no} at step 11.")
-                return LogicEvent.DO_PICK_TENSILE_MACHINE
-            
-            Logger.info("[Logic] DetermineTask: Moving to Step 7 (Pick from Aligner).")
-            bb.set("process/auto/current_step", 7)
-            return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN
-        elif step == 7: # 반출 완료 -> 인장기 장착 (8번)
-            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) is done. Moving to Step 8 (Load Tensile Machine).")
-            bb.set("process/auto/current_step", 8)
+
+        elif step == 4: # 시편 정렬 완료 -> 정렬기에서 시편 잡기 (5)
+            Logger.info("[Logic] DetermineTask: Step 4 (Align Specimen) done. -> Step 5 (Pick from Aligner).")
+            bb.set("process/auto/current_step", 5)
+            return LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN
+
+        elif step == 5: # 정렬기에서 잡기 완료 -> 인장기 장착 (6)
+            Logger.info("[Logic] DetermineTask: Step 5 (Pick from Aligner) done. -> Step 6 (Load Tensile Machine).")
+            bb.set("process/auto/current_step", 6)
             return LogicEvent.DO_LOAD_TENSILE_MACHINE
-        elif step == 8: # 장착 완료 -> 인장기 후퇴 (9번)
-            Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) is done. Moving to Step 9 (Retreat Tensile Machine).")
-            bb.set("process/auto/current_step", 9)
-            return LogicEvent.DO_RETREAT_TENSILE_MACHINE
-        elif step == 9: # 후퇴 완료 -> 인장 시험 시작 (10번)
-            Logger.info("[Logic] DetermineTask: Step 9 (Retreat Tensile Machine) is done. Moving to Step 10 (Start Tensile Test).")
-            bb.set("process/auto/current_step", 10)
+
+        elif step == 6: # 인장기 장착 완료 -> 인장 시험 시작 (7)
+            Logger.info("[Logic] DetermineTask: Step 6 (Load Tensile Machine) done. -> Step 7 (Start Tensile Test).")
+            bb.set("process/auto/current_step", 7)
             return LogicEvent.DO_START_TENSILE_TEST
-        elif step == 10: # 인장 시험 시작 명령 전송 완료
-            Logger.info("[Logic] DetermineTask: Step 10 (Start Tensile Test) command sent.")
-            # 시험 대기 시간 동안 다음 시편을 미리 준비 (트레이 내 5개 루프)
-            curr_spec_no = bb.get("process/auto/current_specimen_no") or 1
-            
-            if curr_spec_no < 5:
-                # 동일 트레이의 다음 시편 준비 시작 (Pipelining)
-                bb.set("process/auto/pre_preparing", True)
-                
-                next_spec_no = curr_spec_no + 1
-                bb.set("process/auto/current_specimen_no", next_spec_no)
-                bb.set("process/auto/target_num", next_spec_no)
-                bb.set("process/auto/current_step", 1) # 1번(QR)부터 시작
-                
-                # DB 업데이트 (다음 시편 시작 상태)
-                # `batch_test_items`는 트레이(시퀀스) 단위로 상태를 관리하므로, 개별 시편 상태는 DB에 업데이트하지 않음.
-                Logger.info(f"[Logic] DetermineTask: Pipelining - Pre-preparing Specimen {next_spec_no} while {curr_spec_no} is testing. Moving to Step 1 (QR Read).")
-                return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
-            else:
-                # 마지막 시편인 경우 준비할 것이 없으므로 바로 수거 단계로 진행
-                Logger.info(f"[Logic] DetermineTask: Last specimen in tray is testing. No pipelining. Moving to Step 11 (Pick from Tensile Machine).")
-                bb.set("process/auto/current_step", 11)
-                return LogicEvent.DO_PICK_TENSILE_MACHINE
-        elif step == 11: # 수거 완료 -> 후퇴 및 스크랩 처리 (12번)
-            Logger.info("[Logic] DetermineTask: Step 11 (Pick from Tensile Machine) is done. Moving to Step 12 (Retreat and Handle Scrap).")
-            bb.set("process/auto/current_step", 12)
-            return LogicEvent.DO_RETREAT_AND_HANDLE_SCRAP
-        elif step == 12: # 스크랩 처리 완료
-            Logger.info("[Logic] DetermineTask: Step 12 (Retreat and Handle Scrap) is done. Current specimen cycle finished.")
-            # 만약 정렬기에서 대기 중인 다음 시편이 있다면 해당 시편으로 복귀
-            if bb.get("process/auto/waiting_at_aligner"):
-                next_spec_no = bb.get("process/auto/current_specimen_no") + 1
-                bb.set("process/auto/waiting_at_aligner", False)
-                bb.set("process/auto/pre_preparing", False)
-                
-                bb.set("process/auto/current_specimen_no", next_spec_no)
-                bb.set("process/auto/target_num", next_spec_no)
-                bb.set("process/auto/current_step", 7) # 정렬기 반출(7번)부터 재개
-                
-                Logger.info(f"[Logic] DetermineTask: Collection done. Resuming Specimen {next_spec_no} from aligner at step 7.")
-                return LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN
+
+        elif step == 7: # 인장 시험 시작 완료 -> 인장기에서 시편 수거 (8)
+            Logger.info("[Logic] DetermineTask: Step 7 (Start Tensile Test) command sent. -> Step 8 (Pick from Tensile Machine).")
+            bb.set("process/auto/current_step", 8)
+            return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
+
+        elif step == 8: # 인장기 수거 완료 -> 스크랩 처리 (9)
+            Logger.info("[Logic] DetermineTask: Step 8 (Pick from Tensile Machine) done. -> Step 9 (Dispose Scrap).")
+            bb.set("process/auto/current_step", 9)
+            return LogicEvent.DO_DISPOSE_SCRAP
+
+        elif step == 9: # 스크랩 처리 완료 -> 시편 공정 종료
+            Logger.info("[Logic] DetermineTask: Step 9 (Dispose Scrap) done. Current specimen cycle finished.")
 
             spec_no = bb.get("process/auto/current_specimen_no")
 
@@ -491,10 +451,10 @@ class LogicPickSpecimenStrategy(Strategy):
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicMoveToIndigatorStrategy(Strategy):
+class LogicMeasureSpecimenThicknessStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[Logic] Moving to indigator.")
+        Logger.info("[Logic] Measuring specimen thickness.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -509,56 +469,8 @@ class LogicMoveToIndigatorStrategy(Strategy):
             return LogicEvent.PROCESS_STOP
 
         floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        return context.move_to_indigator(floor, num)
-    def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
-
-class LogicPlaceSpecimenAndMeasureStrategy(Strategy):
-    def prepare(self, context: LogicContext, **kwargs):
-        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[Logic] Placing specimen and measuring.")
-        context._seq = 0
-    def operate(self, context: LogicContext) -> LogicEvent:
-        tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
-        if tensile_cmd == 3:
-            bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
-            # 진행 중인 로봇/장비 명령 취소
-            bb.set("process/auto/robot/cmd", None)
-            bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
-
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.place_specimen_and_measure(floor, num, seq)
-    def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
-
-class LogicPickSpecimenOutFromIndigatorStrategy(Strategy):
-    def prepare(self, context: LogicContext, **kwargs):
-        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[Logic] Picking specimen out from indigator.")
-        context._seq = 0
-    def operate(self, context: LogicContext) -> LogicEvent:
-        tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
-        if tensile_cmd == 3:
-            bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
-            # 진행 중인 로봇/장비 명령 취소
-            bb.set("process/auto/robot/cmd", None)
-            bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
-
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.Pick_specimen_out_from_indigator(floor, num, seq)
+        num = bb.get("process/auto/current_specimen_no")
+        return context.Measure_specimen_thickness(num)
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
@@ -579,14 +491,11 @@ class LogicAlignSpecimenStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.align_specimen(floor, num, seq)
+        return context.Specimen_Align()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicPickSpecimenOutFromAlignStrategy(Strategy):
+class LogicPickSpecimenFromAlignStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Picking specimen out from aligner.")
@@ -603,14 +512,11 @@ class LogicPickSpecimenOutFromAlignStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.Pick_specimen_out_from_align(floor, num, seq)
+        return context.Pick_Specimen_From_Align()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicLoadTensileMachineStrategy(Strategy):
+class LogicLoadSpecimenTensileMachineStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Loading tensile machine.")
@@ -627,38 +533,11 @@ class LogicLoadTensileMachineStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.load_tensile_machine(floor, num, seq)
+        return context.Load_Specimen_Tensile_Machine()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicRetreatTensileMachineStrategy(Strategy):
-    def prepare(self, context: LogicContext, **kwargs):
-        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[Logic] Retreating from tensile machine.")
-        context._seq = 0
-    def operate(self, context: LogicContext) -> LogicEvent:
-        tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
-        if tensile_cmd == 3:
-            bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
-            # 진행 중인 로봇/장비 명령 취소
-            bb.set("process/auto/robot/cmd", None)
-            bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
-
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.retreat_tensile_machine(floor, num, seq)
-    def exit(self, context: LogicContext, event: LogicEvent) -> None:
-        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
-
-class LogicStartTensileTestStrategy(Strategy):
+class LogicStartTensileTestStrategy(Strategy): # 이 전략은 그대로 사용
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Starting tensile test.")
@@ -679,7 +558,7 @@ class LogicStartTensileTestStrategy(Strategy):
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicPickTensileMachineStrategy(Strategy):
+class LogicPickSpecimenFromTensileMachineStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Picking from tensile machine.")
@@ -696,14 +575,12 @@ class LogicPickTensileMachineStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.pick_tensile_machine(floor, num, seq)
+        num = bb.get("process/auto/current_specimen_no")
+        return context.Pick_Specimen_From_Tensile_Machine(num, 0) # pos_z는 현재 사용 안함
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicRetreatAndHandleScrapStrategy(Strategy):
+class LogicDisposeScrapStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Retreating and handling scrap.")
@@ -720,10 +597,7 @@ class LogicRetreatAndHandleScrapStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/target_num")
-        seq = bb.get("process/auto/sequence")
-        return context.retreat_and_handle_scrap(floor, num, seq)
+        return context.Disposer_Scrap()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 

@@ -65,16 +65,13 @@ class LogicFSM(FiniteStateMachine):
             LogicState.DETERMINE_TASK: {
                 LogicEvent.DO_MOVE_TO_RACK_FOR_QR: LogicState.MOVE_TO_RACK_FOR_QR,
                 LogicEvent.DO_PICK_SPECIMEN: LogicState.PICK_SPECIMEN,
-                LogicEvent.DO_MOVE_TO_INDIGATOR: LogicState.MOVE_TO_INDIGATOR,
-                LogicEvent.DO_PLACE_SPECIMEN_AND_MEASURE: LogicState.PLACE_SPECIMEN_AND_MEASURE,
-                LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_INDIGATOR: LogicState.PICK_SPECIMEN_OUT_FROM_INDIGATOR,
+                LogicEvent.DO_MEASURE_THICKNESS: LogicState.MEASURE_SPECIMEN_THICKNESS,
                 LogicEvent.DO_ALIGN_SPECIMEN: LogicState.ALIGN_SPECIMEN,
-                LogicEvent.DO_PICK_SPECIMEN_OUT_FROM_ALIGN: LogicState.PICK_SPECIMEN_OUT_FROM_ALIGN,
+                LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN: LogicState.PICK_SPECIMEN_FROM_ALIGN,
                 LogicEvent.DO_LOAD_TENSILE_MACHINE: LogicState.LOAD_TENSILE_MACHINE,
-                LogicEvent.DO_RETREAT_TENSILE_MACHINE: LogicState.RETREAT_TENSILE_MACHINE,
                 LogicEvent.DO_START_TENSILE_TEST: LogicState.START_TENSILE_TEST,
-                LogicEvent.DO_PICK_TENSILE_MACHINE: LogicState.PICK_TENSILE_MACHINE,
-                LogicEvent.DO_RETREAT_AND_HANDLE_SCRAP: LogicState.RETREAT_AND_HANDLE_SCRAP,
+                LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE: LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE,
+                LogicEvent.DO_DISPOSE_SCRAP: LogicState.DISPOSE_SCRAP,
                 LogicEvent.DO_PROCESS_COMPLETE: LogicState.PROCESS_COMPLETE,                
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
@@ -83,73 +80,46 @@ class LogicFSM(FiniteStateMachine):
             LogicState.MOVE_TO_RACK_FOR_QR: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_SPECIMEN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
-            LogicState.MOVE_TO_INDIGATOR: {
+            LogicState.MEASURE_SPECIMEN_THICKNESS: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
-                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
-            },
-            LogicState.PLACE_SPECIMEN_AND_MEASURE: {
-                LogicEvent.DONE: LogicState.DETERMINE_TASK,
-                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
-                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
-            },
-            LogicState.PICK_SPECIMEN_OUT_FROM_INDIGATOR: {
-                LogicEvent.DONE: LogicState.DETERMINE_TASK,
-                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.ALIGN_SPECIMEN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
-            LogicState.PICK_SPECIMEN_OUT_FROM_ALIGN: {
+            LogicState.PICK_SPECIMEN_FROM_ALIGN: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.LOAD_TENSILE_MACHINE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
-                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
-            },
-            LogicState.RETREAT_TENSILE_MACHINE: {
-                LogicEvent.DONE: LogicState.DETERMINE_TASK,
-                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.START_TENSILE_TEST: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
-            LogicState.PICK_TENSILE_MACHINE: {
+            LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
-            LogicState.RETREAT_AND_HANDLE_SCRAP: {
+            LogicState.DISPOSE_SCRAP: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
-                LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PROCESS_COMPLETE: {
@@ -180,21 +150,17 @@ class LogicFSM(FiniteStateMachine):
 
             LogicState.MOVE_TO_RACK_FOR_QR: LogicMoveToRackForQRReadStrategy(),
             LogicState.PICK_SPECIMEN: LogicPickSpecimenStrategy(),
-
-            LogicState.MOVE_TO_INDIGATOR: LogicMoveToIndigatorStrategy(),
-            LogicState.PLACE_SPECIMEN_AND_MEASURE: LogicPlaceSpecimenAndMeasureStrategy(),            
-            LogicState.PICK_SPECIMEN_OUT_FROM_INDIGATOR: LogicPickSpecimenOutFromIndigatorStrategy(),
+            LogicState.MEASURE_SPECIMEN_THICKNESS: LogicMeasureSpecimenThicknessStrategy(),
 
             LogicState.ALIGN_SPECIMEN: LogicAlignSpecimenStrategy(),
-            LogicState.PICK_SPECIMEN_OUT_FROM_ALIGN: LogicPickSpecimenOutFromAlignStrategy(),
+            LogicState.PICK_SPECIMEN_FROM_ALIGN: LogicPickSpecimenFromAlignStrategy(),
 
-            LogicState.LOAD_TENSILE_MACHINE: LogicLoadTensileMachineStrategy(),
-            LogicState.RETREAT_TENSILE_MACHINE: LogicRetreatTensileMachineStrategy(),
+            LogicState.LOAD_TENSILE_MACHINE: LogicLoadSpecimenTensileMachineStrategy(),
 
             LogicState.START_TENSILE_TEST: LogicStartTensileTestStrategy(),
 
-            LogicState.PICK_TENSILE_MACHINE: LogicPickTensileMachineStrategy(),
-            LogicState.RETREAT_AND_HANDLE_SCRAP: LogicRetreatAndHandleScrapStrategy(),
+            LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE: LogicPickSpecimenFromTensileMachineStrategy(),
+            LogicState.DISPOSE_SCRAP: LogicDisposeScrapStrategy(),
 
             LogicState.PROCESS_COMPLETE: LogicProcessCompleteStrategy(),
             
