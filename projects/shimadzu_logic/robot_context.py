@@ -209,7 +209,7 @@ class RobotContext(ContextBase):
         """
         # 1. 정적 명령 매핑 (주로 상태 변경 또는 파라미터 없는 이동)
         static_mapping = {
-            MotionCommand.MOVE_TO_INDIGATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
+            MotionCommand.MOVE_TO_INDICATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
             MotionCommand.MOVE_TO_ALIGN: RobotMotionCommand.ALIGNER_FRONT_MOVE,
             MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD: RobotMotionCommand.TENSILE_FRONT_MOVE,
             MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK: RobotMotionCommand.TENSILE_FRONT_MOVE,
@@ -222,13 +222,13 @@ class RobotContext(ContextBase):
             MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK: RobotMotionCommand.TENSILE_FRONT_RETURN,
             MotionCommand.RETREAT_FROM_SCRAP_DISPOSER: RobotMotionCommand.SCRAP_FRONT_RETURN,
 
-            MotionCommand.GRIPPER_OPEN_AT_INDIGATOR: RobotMotionCommand.GRIPPER_OPEN,
+            MotionCommand.GRIPPER_OPEN_AT_INDICATOR: RobotMotionCommand.GRIPPER_OPEN,
             MotionCommand.GRIPPER_OPEN_AT_ALIGN: RobotMotionCommand.GRIPPER_OPEN,
             MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE: RobotMotionCommand.GRIPPER_OPEN,
             MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER: RobotMotionCommand.GRIPPER_OPEN,
 
             MotionCommand.GRIPPER_CLOSE_FOR_RACK: RobotMotionCommand.GRIPPER_CLOSE,
-            MotionCommand.GRIPPER_CLOSE_FOR_INDIGATOR: RobotMotionCommand.GRIPPER_CLOSE,
+            MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR: RobotMotionCommand.GRIPPER_CLOSE,
             MotionCommand.GRIPPER_CLOSE_FOR_ALIGN: RobotMotionCommand.GRIPPER_CLOSE,
             MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE: RobotMotionCommand.GRIPPER_CLOSE,
         }
@@ -251,11 +251,11 @@ class RobotContext(ContextBase):
             if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PLACE
             if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PLACE
             if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PLACE
-        elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_INDIGATOR:
+        elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_INDICATOR:
             if pos == 1: return RobotMotionCommand.THICK_GAUGE_SAMPLE_1_PICK
             if pos == 2: return RobotMotionCommand.THICK_GAUGE_SAMPLE_2_PICK
             if pos == 3: return RobotMotionCommand.THICK_GAUGE_SAMPLE_3_PICK
-        elif motion_name == MotionCommand.RETREAT_FROM_INDIGATOR_AFTER_PLACE or motion_name == MotionCommand.RETREAT_FROM_INDIGATOR_AFTER_PICK:
+        elif motion_name == MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PLACE or motion_name == MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PICK:
             if pos == 1: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_1
             if pos == 2: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_2
             if pos == 3: return RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_3

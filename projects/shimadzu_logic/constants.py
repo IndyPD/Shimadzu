@@ -47,15 +47,17 @@ class LogicState(OpState):
     DETERMINE_TASK                      = 11            # 6. 작업 내용 판단
     MOVE_TO_RACK_FOR_QR                 = 12            # 7. QR 리딩을 위한 랙 이동
     PICK_SPECIMEN                       = 13            # 8. 시편 잡기 (ACT01)
-    MEASURE_SPECIMEN_THICKNESS          = 14            # 9. 두께 측정 (ACT02)
-    ALIGN_SPECIMEN                      = 15            # 10. 시편 정렬 (ACT03)
-    PICK_SPECIMEN_FROM_ALIGN            = 16            # 11. 정렬기에서 시편 반출 (ACT03)
-    LOAD_TENSILE_MACHINE                = 17            # 12. 인장기 장착 (ACT04)
-    START_TENSILE_TEST                  = 18            # 13. 인장 시험 시작
-    PICK_SPECIMEN_FROM_TENSILE_MACHINE  = 19            # 14. 인장기 시편 수거 (ACT05)
-    DISPOSE_SCRAP                       = 20            # 15. 스크랩 처리 (ACT06)
-    PROCESS_COMPLETE                    = 21            # 16. 공정 완료
-    RESET_DATA                          = 25            # 19. 데이터 리셋
+    MOVE_TO_INDICATOR                   = 14            # 9. 두께 측정기로 이동
+    MEASURE_SPECIMEN_THICKNESS          = 15            # 10. 두께 측정
+    MOVE_TO_ALIGN                       = 16            # 11. 정렬기로 이동
+    ALIGN_SPECIMEN                      = 17            # 12. 시편 정렬
+    PICK_SPECIMEN_FROM_ALIGN            = 18            # 13. 정렬기에서 시편 반출
+    LOAD_TENSILE_MACHINE                = 19            # 14. 인장기 장착
+    START_TENSILE_TEST                  = 20            # 15. 인장 시험 시작
+    PICK_SPECIMEN_FROM_TENSILE_MACHINE  = 21            # 16. 인장기 시편 수거
+    DISPOSE_SCRAP                       = 22            # 17. 스크랩 처리
+    PROCESS_COMPLETE                    = 23            # 18. 공정 완료
+    RESET_DATA                          = 26            # 19. 데이터 리셋
     
 
     
@@ -91,14 +93,16 @@ class LogicEvent(OpEvent):
     DO_STEP_STOP                        = 26            # 단계 정지 실행
     DO_DETERMINE_TASK                   = 27            # 작업 내용 판단 실행
     DO_MOVE_TO_RACK_FOR_QR              = 28            # QR 리딩을 위한 랙 이동 실행
-    DO_PICK_SPECIMEN                    = 29            # 시편 잡고 나오기 실행
-    DO_MEASURE_THICKNESS                = 30            # 두께 측정 실행
-    DO_ALIGN_SPECIMEN                   = 31            # 시편 정렬 실행
-    DO_PICK_SPECIMEN_FROM_ALIGN         = 32            # 정렬기에서 시편 반출 실행
-    DO_LOAD_TENSILE_MACHINE             = 33            # 인장기 장착 실행
-    DO_START_TENSILE_TEST               = 34            # 인장 시험 시작 실행
-    DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE = 35          # 인장기 시편 수거 실행
-    DO_DISPOSE_SCRAP                    = 36            # 스크랩 처리 실행
+    DO_PICK_SPECIMEN                    = 29            # 시편 잡기 실행
+    DO_MOVE_TO_INDICATOR                = 30            # 두께 측정기로 이동 실행
+    DO_MEASURE_THICKNESS                = 31            # 두께 측정 실행
+    DO_MOVE_TO_ALIGN                    = 32            # 정렬기로 이동 실행
+    DO_ALIGN_SPECIMEN                   = 33            # 시편 정렬 실행
+    DO_PICK_SPECIMEN_FROM_ALIGN         = 34            # 정렬기에서 시편 반출 실행
+    DO_LOAD_TENSILE_MACHINE             = 35            # 인장기 장착 실행
+    DO_START_TENSILE_TEST               = 36            # 인장 시험 시작 실행
+    DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE = 37          # 인장기 시편 수거 실행
+    DO_DISPOSE_SCRAP                    = 38            # 스크랩 처리 실행
     DO_PROCESS_COMPLETE                 = 39            # 공정 완료 실행
     DO_DATA_RESET                       = 40            # 데이터 리셋 실행
     
@@ -469,14 +473,14 @@ class MotionCommand(str, Enum):
     GRIPPER_CLOSE_FOR_RACK              = "gripper_close_for_rack"
     RETREAT_FROM_RACK                   = "retreat_from_rack"
 
-    # ACT02: 치수 측정기 (Indigator)
-    MOVE_TO_INDIGATOR                   = "move_to_indigator"
+    # ACT02: 치수 측정기 (Indicator) 최대 3회 실시, 위치변경 좌 중 우
+    MOVE_TO_INDICATOR                   = "move_to_indicator"
     PLACE_SPECIMEN_AND_MEASURE          = "place_specimen_and_measure"
-    GRIPPER_OPEN_AT_INDIGATOR           = "gripper_open_at_indigator"
-    RETREAT_FROM_INDIGATOR_AFTER_PLACE  = "retreat_from_indigator_after_place"
-    PICK_SPECIMEN_FROM_INDIGATOR        = "pick_specimen_from_indigator"
-    GRIPPER_CLOSE_FOR_INDIGATOR         = "gripper_close_for_indigator"
-    RETREAT_FROM_INDIGATOR_AFTER_PICK   = "retreat_from_indigator_after_pick"
+    GRIPPER_OPEN_AT_INDICATOR           = "gripper_open_at_indicator"
+    RETREAT_FROM_INDICATOR_AFTER_PLACE  = "retreat_from_indicator_after_place"
+    PICK_SPECIMEN_FROM_INDICATOR        = "pick_specimen_from_indicator"
+    GRIPPER_CLOSE_FOR_INDICATOR         = "gripper_close_for_indicator"
+    RETREAT_FROM_INDICATOR_AFTER_PICK   = "retreat_from_indicator_after_pick"
 
     # ACT03: 시편 정렬기 (Aligner)
     MOVE_TO_ALIGN                       = "move_to_align"

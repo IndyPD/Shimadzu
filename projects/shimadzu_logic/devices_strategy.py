@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 
 from pkg.utils.blackboard import GlobalBlackboard
 from .devices_context import *
@@ -267,14 +268,13 @@ class WaitCommandStrategy(Strategy):
         device_cmd_key = "process/auto/device/cmd"
         device_cmd = bb.get(device_cmd_key)
 
-        if device_cmd :
+        if device_cmd and not device_cmd.get("is_done"):
             Logger.info(f"[device] Command : {device_cmd}")
             # LogicContext에서 command 또는 process 키를 혼용하여 사용하므로 둘 다 확인합니다.
             cmd = device_cmd.get("process") or device_cmd.get("command")
             
             if cmd == DeviceCommand.QR_READ:
-                if device_cmd.get("state") != 'error':
-                    return DeviceEvent.DO_READ_QR
+                return DeviceEvent.DO_READ_QR
             elif cmd == DeviceCommand.MEASURE_THICKNESS:
                 return DeviceEvent.DO_MEASURE_THICKNESS
             elif cmd == DeviceCommand.ALIGN_SPECIMEN:
@@ -319,7 +319,7 @@ class ReadQRStrategy(Strategy):
             cmd_data = bb.get("process/auto/device/cmd")
             if isinstance(cmd_data, dict):
                 cmd_data["state"] = "error"
-                cmd_data["is_done"] = False
+                cmd_data["is_done"] = True
                 bb.set("process/auto/device/cmd", cmd_data)
                 context.qr_reader.quit()
             return DeviceEvent.QR_READ_FAIL
@@ -332,27 +332,92 @@ class MeasureThicknessStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter MeasureThicknessStrategy")
         Logger.info("[device] Device: Measuring Thickness.")
+        self.measure_seq = 0
+        self.get_thickness = None
+        self.start_time = None
+        self.retry_count = 0
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # 게이지 측정 로직
-        thickness = context.get_dial_gauge_value()
-        cmd_data = bb.get("process/auto/device/cmd")
+        # TODO 무게 측정 장비 제어 명령 추가 및 변경
+        # Seq 1 : indicator_up(), 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인 후, self.start_time = datetime.now()
+        if self.measure_seq == 0:
+            Logger.info("[device][Measure] Seq 0: Moving indicator up.")
+            if not context.indicator_up():
+                Logger.error("[device][Measure] Failed to send indicator_up command.")
+                cmd_data = bb.get("process/auto/device/cmd")
+                if isinstance(cmd_data, dict):
+                    cmd_data["is_done"] = True
+                    cmd_data["state"] = "error"
+                    bb.set("process/auto/device/cmd", cmd_data)
+                return DeviceEvent.GAUGE_MEASURE_FAIL
+            self.measure_seq = 1
+        
+        if self.measure_seq == 1:
+            is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
+            is_down = bb.get("device/remote/input/INDICATOR_GUIDE_DOWN")
+            if is_up and not is_down:
+                Logger.info("[device][Measure] Seq 1: Indicator is up. Starting wait time.")
+                self.start_time = datetime.now()
+                self.measure_seq = 2
+        
+        # Seq 2 : 정확한 측정을 위한 5초 대기, ex (self.current_time-self.start_time).totalseconds()> 5이면 다음으로
+        if self.measure_seq == 2:
+            if self.start_time and (datetime.now() - self.start_time).total_seconds() > 5.0:
+                Logger.info("[device][Measure] Seq 2: Wait time finished. Measuring thickness.")
+                self.measure_seq = 3
 
-        if isinstance(cmd_data, dict):
-            if thickness is not None and thickness > -999.0: # -999.0은 오류 값으로 가정
+        # Seq 3 : get_dial_gauge_value()함수로 데이터 측정, 완료시 다음 시퀀스
+        if self.measure_seq == 3:            
+            thickness = context.get_dial_gauge_value()
+            if thickness is not None and thickness > -999.0:
+                self.get_thickness = thickness
+                Logger.info(f"[device][Measure] Seq 3: Measured thickness: {self.get_thickness}.")
+                self.measure_seq = 4
+            else:
+                self.retry_count += 1
+                Logger.warn(f"[device][Measure] Failed to get thickness value. Retry {self.retry_count}/20.")
+                if self.retry_count >= 20:
+                    Logger.error("[device][Measure] Failed to get valid thickness value after 20 retries. Continuing with subsequent motions.")
+                    self.get_thickness = None  # 명시적으로 None으로 설정하여 실패를 기록
+                    self.measure_seq = 4       # 다음 시퀀스(indicator_down)로 진행
+                else:
+                    time.sleep(0.1) # 재시도 전 짧은 대기
+
+        # Seq 4 : indicator_down(), 명령 후 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인
+        if self.measure_seq == 4:
+            Logger.info("[device][Measure] Seq 4: Moving indicator down.")
+            if not context.indicator_down():
+                Logger.error("[device][Measure] Failed to send indicator_down command.")
+                cmd_data = bb.get("process/auto/device/cmd")
+                if isinstance(cmd_data, dict):
+                    cmd_data["is_done"] = True
+                    cmd_data["state"] = "error"
+                    bb.set("process/auto/device/cmd", cmd_data)
+                return DeviceEvent.GAUGE_MEASURE_FAIL
+            self.measure_seq = 5
+
+        if self.measure_seq == 5:
+            is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
+            is_down = bb.get("device/remote/input/INDICATOR_GUIDE_DOWN")
+            if not is_up and is_down:
+                Logger.info("[device][Measure] Seq 5: Indicator is down. Finalizing.")
+                self.measure_seq = 6
+
+        # Seq 5 : 측정받은 데이터 cmd_data 결과 정리 reuturn Done
+        if self.measure_seq == 6:
+            cmd_data = bb.get("process/auto/device/cmd")
+            if isinstance(cmd_data, dict):
                 cmd_data["is_done"] = True
-                cmd_data["result"] = thickness
+                cmd_data["result"] = self.get_thickness
                 cmd_data["state"] = "done"
                 bb.set("process/auto/device/cmd", cmd_data)
+                Logger.info("[device][Measure] Process complete. Returning THICKNESS_MEASURE_DONE.")
                 return DeviceEvent.THICKNESS_MEASURE_DONE
             else:
-                cmd_data["is_done"] = False
-                cmd_data["state"] = "error"
-                bb.set("process/auto/device/cmd", cmd_data)
+                Logger.error("[device][Measure] No command found on blackboard to update.")
                 return DeviceEvent.GAUGE_MEASURE_FAIL
-        
-        Logger.error("[device] MeasureThicknessStrategy: No command found on blackboard.")
-        return DeviceEvent.GAUGE_MEASURE_FAIL
+
+        return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info(f"[device] exit MeasureThicknessStrategy with event: {event}")

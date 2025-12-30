@@ -24,9 +24,9 @@
 | `M00_MOVE_TO_RACK` | "move_to_rack" | 랙 전면으로 이동 |
 | `M01_MOVE_TO_QR_SCAN_POS` | "move_to_qr_scan_pos" | QR 스캔 위치로 이동 |
 | `M02_PICK_SPECIMEN` | "pick_specimen" | 랙에서 시편 취출 |
-| `M03_MOVE_TO_INDICATOR` | "move_to_indigator" | 두께 측정기 앞으로 이동 |
+| `M03_MOVE_TO_INDICATOR` | "move_to_indicator" | 두께 측정기 앞으로 이동 |
 | `M04_PLACE_AND_MEASURE` | "place_specimen_and_measure" | 측정기에 시편 거치 후 후퇴 |
-| `M05_PICK_OUT_FROM_INDICATOR` | "Pick_specimen_out_from_indigator" | 측정기에서 시편 회수 |
+| `M05_PICK_OUT_FROM_INDICATOR` | "Pick_specimen_out_from_indicator" | 측정기에서 시편 회수 |
 | `M06_ALIGN_SPECIMEN` | "align_specimen" | 정렬기에 시편 거치 |
 | `M07_PICK_OUT_FROM_ALIGN` | "Pick_specimen_out_from_align" | 정렬기에서 시편 회수 |
 | `M08_LOAD_TENSILE_MACHINE` | "load_tensile_machine" | 인장기에 시편 진입/거치 |
@@ -72,14 +72,14 @@
 2.  **시편 가져오기 (`pick_specimen`)**
     *   [Robot] `M02_PICK_SPECIMEN` (랙에서 시편 잡기)
 
-3.  **측정기 이동 (`move_to_indigator`)**
+3.  **측정기 이동 (`move_to_indicator`)**
     *   [Robot] `M03_MOVE_TO_INDICATOR` (두께 측정기 앞으로 이동)
 
 4.  **시편 거치 및 측정 (`place_specimen_and_measure`)**
     *   [Robot] `M04_PLACE_AND_MEASURE` (측정기 거치 후 후퇴)
     *   Device: `MEASURE_THICKNESS` (두께 측정 실행) -> 결과값 `process/auto/thickness/{Seq}` 저장
 
-5.  **측정기 시편 반출 (`Pick_specimen_out_from_indigator`)**
+5.  **측정기 시편 반출 (`Pick_specimen_out_from_indicator`)**
     *   [Robot] `M05_PICK_OUT_FROM_INDICATOR` (측정기에서 시편 다시 잡기)
 
 6.  **시편 정렬 (`align_specimen`)**

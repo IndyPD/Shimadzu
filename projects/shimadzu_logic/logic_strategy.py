@@ -303,13 +303,18 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/current_step", 2)
             return LogicEvent.DO_PICK_SPECIMEN
 
-        elif step == 2: # 시편 잡기 완료 -> 두께 측정 (3)
-            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Measure Thickness).")
+        elif step == 2: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
+            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Indicator).")
             bb.set("process/auto/current_step", 3)
+            return LogicEvent.DO_MOVE_TO_INDICATOR
+
+        elif step == 3: # 두께 측정기 이동 완료 -> 두께 측정 (4)
+            Logger.info("[Logic] DetermineTask: Step 3 (Move to Indicator) done. -> Step 4 (Measure Thickness).")
+            bb.set("process/auto/current_step", 4)
             return LogicEvent.DO_MEASURE_THICKNESS
 
-        elif step == 3: # 두께 측정 완료 -> 시편 정렬 (4)
-            Logger.info("[Logic] DetermineTask: Step 3 (Measure Thickness) done. -> Step 4 (Align Specimen).")
+        elif step == 4: # 두께 측정 완료 -> 정렬기로 이동 (5)
+            Logger.info("[Logic] DetermineTask: Step 4 (Measure Thickness) done. -> Step 5 (Move to Aligner).")
             # 측정된 두께를 test_tray_items에 업데이트
             tray_no = current_specimen['tray_no']
             specimen_no = bb.get("process/auto/current_specimen_no")
@@ -320,36 +325,41 @@ class LogicDetermineTaskStrategy(Strategy):
                 context.db.update_test_tray_item(tray_no, specimen_no, {'dimension': float(dimension)})
             else:
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
-            bb.set("process/auto/current_step", 4)
+            bb.set("process/auto/current_step", 5)
+            return LogicEvent.DO_MOVE_TO_ALIGN
+
+        elif step == 5: # 정렬기로 이동 완료 -> 시편 정렬 (6)
+            Logger.info("[Logic] DetermineTask: Step 5 (Move to Aligner) done. -> Step 6 (Align Specimen).")
+            bb.set("process/auto/current_step", 6)
             return LogicEvent.DO_ALIGN_SPECIMEN
 
-        elif step == 4: # 시편 정렬 완료 -> 정렬기에서 시편 잡기 (5)
-            Logger.info("[Logic] DetermineTask: Step 4 (Align Specimen) done. -> Step 5 (Pick from Aligner).")
-            bb.set("process/auto/current_step", 5)
+        elif step == 6: # 시편 정렬 완료 -> 정렬기에서 시편 잡기 (7)
+            Logger.info("[Logic] DetermineTask: Step 6 (Align Specimen) done. -> Step 7 (Pick from Aligner).")
+            bb.set("process/auto/current_step", 7)
             return LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN
 
-        elif step == 5: # 정렬기에서 잡기 완료 -> 인장기 장착 (6)
-            Logger.info("[Logic] DetermineTask: Step 5 (Pick from Aligner) done. -> Step 6 (Load Tensile Machine).")
-            bb.set("process/auto/current_step", 6)
+        elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
+            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
+            bb.set("process/auto/current_step", 8)
             return LogicEvent.DO_LOAD_TENSILE_MACHINE
 
-        elif step == 6: # 인장기 장착 완료 -> 인장 시험 시작 (7)
-            Logger.info("[Logic] DetermineTask: Step 6 (Load Tensile Machine) done. -> Step 7 (Start Tensile Test).")
-            bb.set("process/auto/current_step", 7)
+        elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
+            Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
+            bb.set("process/auto/current_step", 9)
             return LogicEvent.DO_START_TENSILE_TEST
 
-        elif step == 7: # 인장 시험 시작 완료 -> 인장기에서 시편 수거 (8)
-            Logger.info("[Logic] DetermineTask: Step 7 (Start Tensile Test) command sent. -> Step 8 (Pick from Tensile Machine).")
-            bb.set("process/auto/current_step", 8)
+        elif step == 9: # 인장 시험 시작 완료 -> 인장기에서 시편 수거 (10)
+            Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick from Tensile Machine).")
+            bb.set("process/auto/current_step", 10)
             return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
 
-        elif step == 8: # 인장기 수거 완료 -> 스크랩 처리 (9)
-            Logger.info("[Logic] DetermineTask: Step 8 (Pick from Tensile Machine) done. -> Step 9 (Dispose Scrap).")
-            bb.set("process/auto/current_step", 9)
+        elif step == 10: # 인장기 수거 완료 -> 스크랩 처리 (11)
+            Logger.info("[Logic] DetermineTask: Step 10 (Pick from Tensile Machine) done. -> Step 11 (Dispose Scrap).")
+            bb.set("process/auto/current_step", 11)
             return LogicEvent.DO_DISPOSE_SCRAP
 
-        elif step == 9: # 스크랩 처리 완료 -> 시편 공정 종료
-            Logger.info("[Logic] DetermineTask: Step 9 (Dispose Scrap) done. Current specimen cycle finished.")
+        elif step == 11: # 스크랩 처리 완료 -> 시편 공정 종료
+            Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. Current specimen cycle finished.")
 
             spec_no = bb.get("process/auto/current_specimen_no")
 
@@ -451,10 +461,10 @@ class LogicPickSpecimenStrategy(Strategy):
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicMeasureSpecimenThicknessStrategy(Strategy):
+class LogicMoveToIndicatorStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[Logic] Measuring specimen thickness.")
+        Logger.info("[Logic] Moving to indicator.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -468,9 +478,82 @@ class LogicMeasureSpecimenThicknessStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        floor = bb.get("process/auto/target_floor")
-        num = bb.get("process/auto/current_specimen_no")
-        return context.Measure_specimen_thickness(num)
+        return context.Move_to_Indicator()
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicMeasureSpecimenThicknessStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[Logic] Measuring specimen thickness.")
+        context._seq = 0
+        self.measure_point = 1  # 1, 2, 3번 위치 측정을 위한 시퀀스
+
+    def operate(self, context: LogicContext) -> LogicEvent:
+        tensile_cmd = bb.get("ui/cmd/auto/tensile")
+        # 즉시 정지 (Stop)
+        if tensile_cmd == 3:
+            bb.set("ui/cmd/auto/tensile", 0)  # 명령 소비
+            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            # 진행 중인 로봇/장비 명령 취소
+            bb.set("process/auto/robot/cmd", None)
+            bb.set("process/auto/device/cmd", None)
+            bb.set("indy_command/stop_program", True)  # 로봇 프로그램 정지
+            return LogicEvent.PROCESS_STOP
+
+        # 현재 측정 위치에 대한 두께 측정을 수행합니다.
+        # Logger.info(f"[Logic] Starting/continuing thickness measurement for point {self.measure_point}.")
+        result = context.Measure_specimen_thickness(self.measure_point)
+
+        if result == LogicEvent.DONE:
+            Logger.info(f"[Logic] Finished thickness measurement for point {self.measure_point}.")
+            # 개별 측정 포이트에 대한 두께 값을 정확히 가져옵니다.
+            thickness_data = bb.get("process/auto/thickness") or {}
+            current_measurement = thickness_data.get(str(self.measure_point))
+            if current_measurement is not None:
+                bb.set(f"specimen/thickness_{self.measure_point}", current_measurement)
+            else:
+                Logger.warn(f"Could not find thickness measurement for point {self.measure_point}")
+
+            self.measure_point += 1
+            context._seq = 0  # 다음 측정을 위해 context 내부 시퀀스 초기화
+
+            if self.measure_point > 3:
+                Logger.info("[Logic] All 3 thickness measurements are complete.")
+                specimen_1 = bb.get("specimen/thickness_1") or 0
+                specimen_2 = bb.get("specimen/thickness_2") or 0
+                specimen_3 = bb.get("specimen/thickness_3") or 0
+                specimen_avg = (specimen_1 + specimen_2 + specimen_3) / 3
+                bb.set("specimen/thickness_avg", specimen_avg)
+                Logger.info(f"[Logic] specime01 : {specimen_1}")
+                Logger.info(f"[Logic] specime02 : {specimen_2}")
+                Logger.info(f"[Logic] specime03 : {specimen_3}")
+                Logger.info(f"[Logic] specime_avg : {specimen_avg}")
+                return LogicEvent.DONE
+
+        return LogicEvent.NONE
+        
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicMoveToAlignStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[Logic] Moving to aligner.")
+        context._seq = 0
+    def operate(self, context: LogicContext) -> LogicEvent:
+        tensile_cmd = bb.get("ui/cmd/auto/tensile")
+        # 즉시 정지 (Stop)
+        if tensile_cmd == 3:
+            bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
+            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            # 진행 중인 로봇/장비 명령 취소
+            bb.set("process/auto/robot/cmd", None)
+            bb.set("process/auto/device/cmd", None)
+            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
+            return LogicEvent.PROCESS_STOP
+
+        return context.Move_to_Align()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 

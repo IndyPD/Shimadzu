@@ -35,8 +35,8 @@ class DeviceContext(ContextBase):
         config: dict = load_json(config_path)
         self.debug_mode = config.get("debug_mode")
         Logger.info(f"[device] Debug mode : {self.debug_mode}")
-        Logger.info(f"[device] configs : {config.get('remote_io')}")
-        Logger.info(f"[device] configs : {config.get('shimadzu_ip')} : {config.get('shimadzu_port')}")
+        Logger.info(f"[device] RemoteIO configs : {config.get('remote_io')}")
+        Logger.info(f"[device] Shimadzu configs : {config.get('shimadzu_ip')} : {config.get('shimadzu_port')}")
 
         self._io_lock = threading.Lock()
 
@@ -47,6 +47,7 @@ class DeviceContext(ContextBase):
         
         # MitutoyoGauge 장치 인스턴스 생성
         if self.dev_gauge_enable :
+            Logger.info(f"[device] Gauge Initialized")
             self.gauge = MitutoyoGauge(connection_type=1)  # 예: connection_type=1는 시리얼 통신을 의미
         # 측정, 상태 확인 명령 전송 방지 변수
         self.gauge_initial_check_done = False
@@ -54,6 +55,7 @@ class DeviceContext(ContextBase):
 
         # remote I/O 장치 인스턴스 생성
         if self.dev_remoteio_enable :
+            Logger.info(f"[device] remote I/O Initialized")
             self.iocontroller = AutonicsEIPClient()
             # self.th_IO_reader = self.iocontroller.connect()
             time.sleep(0.5)
@@ -71,6 +73,7 @@ class DeviceContext(ContextBase):
 
         # QRReader 장치 인스턴스 생성
         if self.dev_qr_enable:
+            Logger.info(f"[device] QR Reader Initialized")
             self.qr_reader = QRReader()
             # QR 데이터 수신 시 블랙보드에 자동으로 저장하도록 콜백 등록
             self.qr_reader.on_qr_data = lambda data: bb.set("device/qr/result", data)
@@ -118,18 +121,23 @@ class DeviceContext(ContextBase):
         # 초기 장비 설정
         # 장비 내 램프 켜기
         try :
+            Logger.info(f"[device] lamp on")
             self.lamp_on()
             
             # 정렬기 후퇴
+            Logger.info(f"[device] align stop")
             self.align_stop()
             time.sleep(1)
 
+            Logger.info(f"[device] align pull")
             self.align_pull()
             time.sleep(0.1)
 
             # 측정기 받침 내리기
+            Logger.info(f"[device] indicator down")
             self.indicator_down()
             time.sleep(0.1)
+
         except Exception as e:
             Logger.error(f"[device] Error in __init__: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -879,12 +887,16 @@ class DeviceContext(ContextBase):
         :return: 성공 시 True, 실패 시 False
         '''
         try:
+            Logger.info(f"[device] Indicator Down Command Sent.")
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.INDICATOR_UP] = 0
             output_data[DigitalOutput.INDICATOR_DOWN] = 1
             self.iocontroller.write_output_data(output_data)
+            Logger.info(f"[device] Indicator Down Command Sent Successfully.")
             time.sleep(0.1)
+            Logger.info(f"[device] Indicator read State")
             read_data = self.iocontroller.read_output_data()
+            Logger.info(f"[device] Indicator read State: {read_data}")
             if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
                 read_data[DigitalOutput.INDICATOR_DOWN] == 1):
                 Logger.info(f"[device] Indicator Down Command Sent Successfully.")
