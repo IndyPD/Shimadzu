@@ -183,6 +183,13 @@ class LogicRunProcessStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Running process loop.")
+        # 공정 시작 시간 기록
+        now = datetime.now()
+        starttime_str = now.strftime('%H:%M:%S')
+        bb.set("process_status/runtime/starttime", starttime_str)
+        bb.set("process_status/runtime_start_obj", now) # 계산을 위해 datetime 객체도 저장
+        bb.set("process_status/runtime/elapsedtime", "00:00:00")
+        bb.set("process_status/runtime", {"starttime": starttime_str, "elapsedtime": "00:00:00"})
     
     def operate(self, context: LogicContext) -> LogicEvent:
         # 하위 FSM(Robot, Device)의 상태를 모니터링하며 전체 공정 시퀀스를 제어합니다.
@@ -208,6 +215,19 @@ class LogicDetermineTaskStrategy(Strategy):
         Logger.info("[Logic] Determining next task.")
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        # 경과 시간 업데이트
+        start_time_obj = bb.get("process_status/runtime_start_obj")
+        if start_time_obj:
+            elapsed = datetime.now() - start_time_obj
+            # total_seconds()를 사용하여 초로 변환 후 시:분:초 형식으로 변환
+            total_seconds = int(elapsed.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            elapsed_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+            runtime_status = bb.get("process_status/runtime") or {}
+            runtime_status['elapsedtime'] = elapsed_str
+            bb.set("process_status/runtime", runtime_status)
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -266,6 +286,24 @@ class LogicDetermineTaskStrategy(Strategy):
             Logger.info(f"[Logic] DetermineTask: Initializing all specimens in tray {current_specimen['tray_no']} to 'WAITING' (1) in DB.")
             tray_no = current_specimen['tray_no']
             test_spec = current_specimen['test_method']
+            
+            # test_spec 변수(시험 방법)를 기준으로 DB의 batch_method_items 테이블에서 상세 정보를 조회합니다.
+            method_details = context.db.get_test_method_details(test_spec)
+            if method_details:
+                # 필요한 데이터(size1, size2, ql, chuckl, thickness)를 추출하여 블랙보드에 저장합니다.
+                details_to_save = {
+                    "size1": method_details.get("size1"),
+                    "size2": method_details.get("size2"),
+                    "ql": method_details.get("ql"),
+                    "chuckl": method_details.get("chuckl"),
+                    "thickness": method_details.get("thickness")
+                }
+                bb.set("process/auto/current_method_details", details_to_save)
+                Logger.info(f"[Logic] Loaded method details for '{test_spec}': {details_to_save}")
+            else:
+                Logger.error(f"[Logic] Could not find method details for '{test_spec}' in DB. Cannot proceed.")
+                return LogicEvent.VIOLATION_DETECT
+
             # 해당 트레이의 모든 시편을 '대기' 상태로 설정
             for i in range(1, 6):
                 context.db.update_test_tray_item(tray_no, i, {'status': 1, 'test_spec': test_spec})
@@ -306,6 +344,10 @@ class LogicDetermineTaskStrategy(Strategy):
         elif step == 2: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
             Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Indicator).")
             bb.set("process/auto/current_step", 3)
+            bb.set("specimen/thickness_1",0)
+            bb.set("specimen/thickness_2",0)
+            bb.set("specimen/thickness_3",0)
+            bb.set("specimen/thickness_avg",0)
             return LogicEvent.DO_MOVE_TO_INDICATOR
 
         elif step == 3: # 두께 측정기 이동 완료 -> 두께 측정 (4)
@@ -319,7 +361,8 @@ class LogicDetermineTaskStrategy(Strategy):
             tray_no = current_specimen['tray_no']
             specimen_no = bb.get("process/auto/current_specimen_no")
             thickness_map = bb.get("process/auto/thickness") or {}
-            dimension = thickness_map.get(str(specimen_no))
+            # dimension = thickness_map.get(str(specimen_no))
+            dimension = bb.get("specimen/thickness_avg")
             if dimension is not None:
                 Logger.info(f"[Logic] DetermineTask: Updating dimension for Tray {tray_no}, Specimen {specimen_no} to {dimension}.")
                 context.db.update_test_tray_item(tray_no, specimen_no, {'dimension': float(dimension)})
@@ -338,10 +381,15 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/current_step", 7)
             return LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN
 
-        elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
-            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
-            bb.set("process/auto/current_step", 8)
-            return LogicEvent.DO_LOAD_TENSILE_MACHINE
+        # elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
+        #     Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
+        #     bb.set("process/auto/current_step", 8)
+        #     return LogicEvent.DO_LOAD_TENSILE_MACHINE
+        
+        elif step == 7: # 정렬기에서 잡기 완료 -> 스크랩 처리 (11) [임시 수정]
+            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 11 (Dispose Scrap) [TEMP: SKIPPING TENSILE TEST].")
+            bb.set("process/auto/current_step", 11)
+            return LogicEvent.DO_DISPOSE_SCRAP
 
         elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
             Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
@@ -690,6 +738,9 @@ class LogicProcessCompleteStrategy(Strategy):
         Logger.info("[Logic] All batch processes are complete.")
         context._seq = 0
 
+        # 런타임 계산 중지를 위해 시작 시간 객체 제거
+        bb.set("process_status/runtime_start_obj", None)
+
         # MQTT 'process_completed' 이벤트 발행
         batch_data = bb.get("process/auto/batch_data")
         batch_id = batch_data.get("batch_id", "N/A")
@@ -703,6 +754,9 @@ class LogicProcessCompleteStrategy(Strategy):
         bb.set("logic/events/one_shot", event_payload)
     
     def operate(self, context: LogicContext) -> LogicEvent:
+        # 공정 완료 후, 자동 시작 명령을 리셋하여 무한 루프를 방지합니다.
+        bb.set("ui/cmd/auto/tensile", 0)
+        Logger.info("[Logic] Auto start command has been reset. Waiting for next batch command.")
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:

@@ -37,7 +37,7 @@ class RobotCommunication:
         ''' Indy command '''
         Logger.info(f'[Indy7] Attempting to connect to robot at {robot_ip}')
         self.indy = IndyDCP3(robot_ip, *args, **kwargs)
-        self.indy.set_speed_ratio(30) 
+        self.indy.set_speed_ratio(0) # (70) 
         # self.indy.set_auto_mode(True)
         is_auto_mode : dict = self.indy.check_auto_mode()
         if not is_auto_mode.get('on') :
@@ -105,7 +105,7 @@ class RobotCommunication:
                     Logger.info("Stop program!!")
                     self.indy.stop_program()
                     bb.set("ui/reset/robot/recover_motion",True)
-                    self.indy.set_speed_ratio(30) 
+                    self.indy.set_speed_ratio(0) # (70) 
                 except:
                     Logger.error("Stop program fail")
 
@@ -237,7 +237,7 @@ class RobotCommunication:
                     # if is_auto_mode.get('on') :
                     #     self.indy.set_auto_mode(False)
                     bb.set("robot/recover/motion/cmd",0)
-                    self.indy.set_speed_ratio(30)
+                    self.indy.set_speed_ratio(0) # (70)
                 except:
                     Logger.error("Stop program fail")
 
@@ -457,7 +457,7 @@ class RobotCommunication:
             elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
                 bb.set("ui/reset/program_control", True) # 명령 소비
                 if self.indy.get_motion_data().get("speed_ratio") != 100:
-                    self.indy.set_speed_ratio(30)
+                    self.indy.set_speed_ratio(0) # (70)
                     Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.

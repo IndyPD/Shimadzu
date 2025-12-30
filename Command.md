@@ -227,6 +227,7 @@
 | | 정렬기 시편 놓기 | O | `aligner_sample_place` | 5001 | 5501 | 15001 | CA | C | 그리퍼 열기 -> 앞 복귀 | 시편 정렬 대기 |
 | | 정렬기 앞 복귀 | O | `aligner_front_return` | 6000 | 6500 | 16000 | C | CR | - | |
 | | 정렬기 시편 잡기 | O | `aligner_sample_pick` | 5011 | 5511 | 15011 | CA | C | 그리퍼 닫기 -> 앞 복귀 | |
+| | 정렬기 앞 대기 | O | `aligner_front_wait` | 5012 | 5512 | 15012 | C | C |  | |
 | | 인장시험기 앞 이동 | | `tensile_front_move` | 7000 | 7500 | 17000 | CR | DA | 인장기 시편 잡는 위치 이동 | |
 | | 인장기 시편 아래 놓기 | | `tensile_sample_place_pos_down` | 7001 | 7501 | 17001 | DA | D | 신호 대기 -> 그리퍼 열기 -> 앞 복귀 | 시험 시작 후 대기 |
 | | 인장기 시편 위 놓기 | | `tensile_sample_place_pos_up` | 7002 | 7502 | 17002 | DA | D | 신호 대기 -> 그리퍼 열기 -> 앞 복귀 | 시험 시작 후 대기 |

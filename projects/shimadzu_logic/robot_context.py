@@ -211,6 +211,7 @@ class RobotContext(ContextBase):
         static_mapping = {
             MotionCommand.MOVE_TO_INDICATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
             MotionCommand.MOVE_TO_ALIGN: RobotMotionCommand.ALIGNER_FRONT_MOVE,
+            MotionCommand.ALIGNER_FRONT_WAIT: RobotMotionCommand.ALIGNER_FRONT_WAIT,
             MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD: RobotMotionCommand.TENSILE_FRONT_MOVE,
             MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK: RobotMotionCommand.TENSILE_FRONT_MOVE,
             MotionCommand.MOVE_TO_SCRAP_DISPOSER: RobotMotionCommand.SCRAP_FRONT_MOVE,

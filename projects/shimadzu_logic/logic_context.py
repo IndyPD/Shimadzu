@@ -365,6 +365,13 @@ class LogicContext(ContextBase):
                         thickness_data = bb.get("process/auto/thickness") or {}
                         thickness_data[str(num)] = thickness_result
                         bb.set("process/auto/thickness", thickness_data)
+                        # TEST 화면 두께 측정 현재, 이전 측정 값
+                        t_data : dict = bb.get("process_status/thickness_measurement")
+                        t_data["previous"] = t_data["current"]
+                        t_data["current"] = thickness_result
+                        bb.set("process_status/thickness_measurement",t_data)
+                        
+                        
                         Logger.info(f"[Logic] Step 7: Thickness measurement done. Result: {thickness_result}")
                         bb.set(device_cmd_key, None)
                         self._seq = 8
@@ -497,19 +504,36 @@ class LogicContext(ContextBase):
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                 Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
 
-        # Seq 3: Robot-Motion-RETREAT_FROM_ALIGN_AFTER_PLACE
+        # Seq 3: 인장 시험기 상태에 따라 분기
         elif self._seq == 4:
-            robot_cmd = {"process": MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE, "state": ""}
-            Logger.info(f"[Logic] Step 4: Sending command: {MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE}")
+            # 인장 시험기 상태 확인
+            shimadzu_state = bb.get("device/shimadzu/run_state")
+            is_tensile_busy = False
+            if shimadzu_state and isinstance(shimadzu_state, dict):
+                run_status = shimadzu_state.get("RUN")
+                if run_status == 'C':  # 'C' means Testing
+                    is_tensile_busy = True
+            
+            if is_tensile_busy:
+                # Case 1: 인장 시험기가 사용 중이면, 정렬기에서 후퇴합니다.
+                motion_to_perform = MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE
+            else:
+                # Case 2: 인장 시험기가 대기 중이면, 정렬기 앞에서 대기합니다.
+                motion_to_perform = MotionCommand.ALIGNER_FRONT_WAIT
+
+            robot_cmd = {"process": motion_to_perform, "state": ""}
+            Logger.info(f"[Logic] Step 4: Tensile busy: {is_tensile_busy}. Sending command: {motion_to_perform}")
             bb.set(robot_cmd_key, robot_cmd)
             self._seq = 5
+
         elif self._seq == 5:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE and get_robot_cmd.get("state") == "done":
-                Logger.info(f"[Logic] Step 5: Retreat from align done.")
-                bb.set(robot_cmd_key, None)
-                self._seq = 6
-            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+            if get_robot_cmd and (get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE or get_robot_cmd.get("process") == MotionCommand.ALIGNER_FRONT_WAIT):
+                if get_robot_cmd.get("state") == "done":
+                    Logger.info(f"[Logic] Step 5: Motion '{get_robot_cmd.get('process')}' done.")
+                    bb.set(robot_cmd_key, None)
+                    self._seq = 6
+                elif get_robot_cmd.get("state") == "error":
+                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
 
         # Seq 4: Device-Align-ALIGN_SPECIMEN
         elif self._seq == 6:
@@ -535,6 +559,26 @@ class LogicContext(ContextBase):
         정렬된 시편을 집어서 나오는 전체 시퀀스입니다.
         """
         get_robot_cmd = bb.get(robot_cmd_key)
+
+        # 시퀀스 시작 시점에 인장기 상태를 확인하여 분기합니다.
+        if self._seq == 0:
+            shimadzu_state = bb.get("device/shimadzu/run_state")
+            is_tensile_busy = False
+            if shimadzu_state and isinstance(shimadzu_state, dict):
+                run_status = shimadzu_state.get("RUN")
+                if run_status == 'C':  # 'C' means Testing
+                    is_tensile_busy = True
+            
+            if not is_tensile_busy:
+                # 인장기가 시험 중이 아니면, 로봇은 정렬기 앞에서 대기했을 것이므로
+                # 이동 동작(Seq 0)을 건너뛰고 그리퍼 닫기(Seq 2)부터 시작합니다.
+                Logger.info("[Logic] Tensile is not busy. Robot waited at aligner. Skipping move, starting from seq 2 (Gripper Close).")
+                self._seq = 2
+            else:
+                # 인장기가 시험 중이면, 로봇은 후퇴했으므로 다시 정렬기로 이동해야 합니다.
+                # 따라서 전체 시퀀스를 Seq 0부터 시작합니다.
+                Logger.info("[Logic] Tensile is busy. Robot must return to aligner. Starting full sequence from seq 0.")
+                # self._seq는 0으로 유지됩니다.
 
         # Seq 1: Robot-Motion-PICK_SPECIMEN_FROM_ALIGN
         if self._seq == 0:
@@ -912,6 +956,16 @@ class LogicContext(ContextBase):
                     Logger.error(f"[Logic] Failed to get test method details for '{test_method_name}' from DB.")
                     self._seq = 0
                     return LogicEvent.VIOLATION_DETECT
+
+                # 각 트레이의 첫 시편(specimen_no == 1) 작업 시작 전, test_method 기준 등록 두께(thickness)를 BB에 기록
+                if specimen_no == 1:
+                    registered_thickness = method_details.get("thickness")
+                    if registered_thickness is not None:
+                        t_data = bb.get("process_status/thickness_measurement") or {"current": 0.0, "previous": 0.0}
+                        # DB에서 가져온 값은 Decimal 타입일 수 있으므로 float으로 변환
+                        t_data["registered"] = float(registered_thickness)
+                        bb.set("process_status/thickness_measurement", t_data)
+                        Logger.info(f"[Logic] Set registered thickness for tray from DB: {t_data['registered']}")
 
                 # 1.3. 시편 치수 정보 가져오기 (두께 측정 결과)
                 thickness_map = bb.get("process/auto/thickness") or {}

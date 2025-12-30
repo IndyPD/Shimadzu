@@ -324,6 +324,7 @@ class RobotMotionCommand(IntEnum):
     ALIGNER_FRONT_MOVE = 5000
     ALIGNER_SAMPLE_PLACE = 5001
     ALIGNER_SAMPLE_PICK = 5011
+    ALIGNER_FRONT_WAIT = 5012
     ALIGNER_FRONT_RETURN = 6000
     TENSILE_FRONT_MOVE = 7000
     TENSILE_SAMPLE_PLACE_POS_DOWN = 7001
@@ -487,6 +488,7 @@ class MotionCommand(str, Enum):
     PLACE_SPECIMEN_ON_ALIGN             = "place_specimen_on_align"
     GRIPPER_OPEN_AT_ALIGN               = "gripper_open_at_align"
     RETREAT_FROM_ALIGN_AFTER_PLACE      = "retreat_from_align_after_place"
+    ALIGNER_FRONT_WAIT                  = "aligner_front_wait"
     PICK_SPECIMEN_FROM_ALIGN            = "pick_specimen_from_align"
     GRIPPER_CLOSE_FOR_ALIGN             = "gripper_close_for_align"
     RETREAT_FROM_ALIGN_AFTER_PICK       = "retreat_from_align_after_pick"

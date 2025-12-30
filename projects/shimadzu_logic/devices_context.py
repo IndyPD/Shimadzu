@@ -288,13 +288,17 @@ class DeviceContext(ContextBase):
                     # are_you_there는 dict를 반환하므로, 응답이 있는지 여부로 판단
                     smz_status = self.smz_are_you_there() is not None
                     bb.set("device/shimadzu/comm_status", 1 if smz_status else 0)
+                    if smz_status:
+                        smz_run_state = self.smz_ask_sys_status()
+                        if smz_run_state:
+                            bb.set("device/shimadzu/run_state", smz_run_state)
                 
                 # Robot과 Vision은 각자의 Context에서 처리될 것으로 예상됩니다.
 
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_comm_status_updater: {e}\n{traceback.format_exc()}")
             
-            time.sleep(10.0) # 10초 간격으로 업데이트
+            time.sleep(1.0) # 1초 간격으로 업데이트
         Logger.info(f"[device] _thread_comm_status_updater stopped")
 
 

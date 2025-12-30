@@ -217,7 +217,15 @@
     "previous": 0.0,
     "registered": 0.0
   },
+  "process/auto/current_method_details" : {
+      "size1": 0,
+      "size2": 0,
+      "ql": 0,
+      "chuckl": 0,
+      "thickness": 0
+  },
   "process_status/aligner_status": "대기",
+  "process/auto/step_stop_requested" : 0,
   
   "process/auto/robot/cmd": null,
   "process/auto/device/cmd": null,
@@ -237,7 +245,11 @@
   "device/remote/comm_status": 0,
   "device/qr/comm_status": 0,
   "device/vision/comm_status": 0,
+  "device/shimadzu/run_state" : {
+    "RUN": "N"
+  },
   "logic/fsm/current_process": "idle",
+
 
   "process_status": {
     "batch_info": {
