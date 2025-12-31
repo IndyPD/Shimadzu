@@ -52,6 +52,8 @@ class QRReader:
         self.on_qr_data = None      # QR 데이터 수신 시 호출: func(data_str)
         self.on_heartbeat = None    # 하트비트 수신 시 호출: func()
 
+        self.quit()
+
     def connect(self) -> bool:
         """서버에 접속하고 수신 스레드를 시작합니다."""
         try:

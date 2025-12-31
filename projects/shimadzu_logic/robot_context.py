@@ -209,6 +209,20 @@ class RobotContext(ContextBase):
         """
         # 1. 정적 명령 매핑 (주로 상태 변경 또는 파라미터 없는 이동)
         static_mapping = {
+            # ACT00
+            MotionCommand.HOME_RACK_FRONT: RobotMotionCommand.HOME_RACK_FRONT,
+            MotionCommand.HOME_TOOL_FRONT: RobotMotionCommand.HOME_TOOL_FRONT,
+            MotionCommand.HOME_THICK_GAUGE_FRONT: RobotMotionCommand.HOME_THICK_GAUGE_FRONT,
+            MotionCommand.HOME_ALIGNER_FRONT: RobotMotionCommand.HOME_ALIGNER_FRONT,
+            MotionCommand.HOME_TENSILE_TESTER_FRONT: RobotMotionCommand.HOME_TENSILE_TESTER_FRONT,
+            MotionCommand.HOME_SCRAP_DISPOSER_FRONT: RobotMotionCommand.HOME_SCRAP_DISPOSER_FRONT,
+            MotionCommand.RACK_FRONT_HOME: RobotMotionCommand.RACK_FRONT_HOME,
+            MotionCommand.TOOL_FRONT_HOME: RobotMotionCommand.TOOL_FRONT_HOME,
+            MotionCommand.THICK_GAUGE_FRONT_HOME: RobotMotionCommand.THICK_GAUGE_FRONT_HOME,
+            MotionCommand.ALIGNER_FRONT_HOME: RobotMotionCommand.ALIGNER_FRONT_HOME,
+            MotionCommand.TENSILE_TESTER_FRONT_HOME: RobotMotionCommand.TENSILE_TESTER_FRONT_HOME,
+            MotionCommand.SCRAP_DISPOSER_FRONT_HOME: RobotMotionCommand.SCRAP_DISPOSER_FRONT_HOME,
+
             MotionCommand.MOVE_TO_INDICATOR: RobotMotionCommand.THICK_GAUGE_FRONT_MOVE,
             MotionCommand.MOVE_TO_ALIGN: RobotMotionCommand.ALIGNER_FRONT_MOVE,
             MotionCommand.ALIGNER_FRONT_WAIT: RobotMotionCommand.ALIGNER_FRONT_WAIT,

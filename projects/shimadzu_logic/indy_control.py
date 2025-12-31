@@ -37,7 +37,7 @@ class RobotCommunication:
         ''' Indy command '''
         Logger.info(f'[Indy7] Attempting to connect to robot at {robot_ip}')
         self.indy = IndyDCP3(robot_ip, *args, **kwargs)
-        self.indy.set_speed_ratio(0) # (70) 
+        self.indy.set_speed_ratio(70) # (70) 
         # self.indy.set_auto_mode(True)
         is_auto_mode : dict = self.indy.check_auto_mode()
         if not is_auto_mode.get('on') :
@@ -100,17 +100,17 @@ class RobotCommunication:
         if self.running:
             self.running = False
 
-            if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
-                try:
-                    Logger.info("Stop program!!")
-                    self.indy.stop_program()
-                    bb.set("ui/reset/robot/recover_motion",True)
-                    self.indy.set_speed_ratio(0) # (70) 
-                except:
-                    Logger.error("Stop program fail")
+            # if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+            #     try:
+            #         # Logger.info("Stop program!!")
+            #         # self.indy.stop_program()
+            #         bb.set("ui/reset/robot/recover_motion",True)
+            #         # self.indy.set_speed_ratio(70) # (70) 
+            #     except:
+            #         Logger.error("Stop program fail")
 
-            self.indy.stop_motion(stop_category=2)
-            self.indy.set_int_variable([{'addr': int(self.config["int_var/cmd/addr"]), 'value': 0}])
+            # self.indy.stop_motion(stop_category=2)
+            # self.indy.set_int_variable([{'addr': int(self.config["int_var/cmd/addr"]), 'value': 0}])
 
             if self.thread:
                 self.thread.join()
@@ -278,7 +278,7 @@ class RobotCommunication:
             if motion_ack is not None:
                 bb.set("int_var/motion_ack/val", motion_ack)
                 # 로봇의 현재 위치를 ack 값 기반으로 저장 (충돌 방지 로직용)
-                if motion_ack > 500: # 유효한 ack 값일 경우 (e.g. CMD 100 -> ACK 600)
+                if motion_ack >= 1500: # 자동화 공정 기준으로 값 결정
                     current_pos_id = motion_ack - 500
                     bb.set("robot/current/position", current_pos_id)
                     # Logger.info(f"[Safety] Robot position updated to: {current_pos_id}")
@@ -457,7 +457,7 @@ class RobotCommunication:
             elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
                 bb.set("ui/reset/program_control", True) # 명령 소비
                 if self.indy.get_motion_data().get("speed_ratio") != 100:
-                    self.indy.set_speed_ratio(0) # (70)
+                    self.indy.set_speed_ratio(70) # (70)
                     Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.
@@ -476,9 +476,9 @@ class RobotCommunication:
                         bb.set("ui/state/program_state", 3)  # Pause
                     elif self.indy.get_motion_data().get("speed_ratio", 100) == 100:
                         bb.set("ui/state/program_state", 1)  # Start
-                elif self.program_state == ProgramState.PROG_STOPPING:
-                    bb.set("ui/state/program_state", 4)  # Stop
-                    if self.indy.get_motion_data().get("speed_ratio", 100) == 0:
-                        bb.set("ui/state/program_state", 3)  # Pause
-                    elif self.indy.get_motion_data().get("speed_ratio", 100) == 100:
-                        bb.set("ui/state/program_state", 2)  # Resume
+                # elif self.program_state == ProgramState.PROG_STOPPING:
+                #     bb.set("ui/state/program_state", 4)  # Stop
+                #     if self.indy.get_motion_data().get("speed_ratio", 100) == 0:
+                #         bb.set("ui/state/program_state", 3)  # Pause
+                #     elif self.indy.get_motion_data().get("speed_ratio", 100) == 100:
+                #         bb.set("ui/state/program_state", 2)  # Resume

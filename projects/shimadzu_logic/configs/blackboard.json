@@ -227,6 +227,7 @@
   "process_status/aligner_status": "대기",
   "process/auto/step_stop_requested" : 0,
   
+  
   "process/auto/robot/cmd": null,
   "process/auto/device/cmd": null,
   "process/auto/batch_data": {},

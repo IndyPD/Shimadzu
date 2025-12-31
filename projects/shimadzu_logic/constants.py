@@ -467,6 +467,20 @@ class DigitalOutput(IntEnum):
 
 class MotionCommand(str, Enum):
     """로봇의 개별 동작을 정의하는 Enum 클래스입니다."""
+    # ACT00: 기본 이동 (Basic Movement)
+    HOME_RACK_FRONT                     = "home_rack_front"
+    HOME_TOOL_FRONT                     = "home_tool_front"
+    HOME_THICK_GAUGE_FRONT              = "home_thick_gauge_front"
+    HOME_ALIGNER_FRONT                  = "home_aligner_front"
+    HOME_TENSILE_TESTER_FRONT           = "home_tensile_tester_front"
+    HOME_SCRAP_DISPOSER_FRONT           = "home_scrap_disposer_front"
+    RACK_FRONT_HOME                     = "rack_front_home"
+    TOOL_FRONT_HOME                     = "tool_front_home"
+    THICK_GAUGE_FRONT_HOME              = "thick_gauge_front_home"
+    ALIGNER_FRONT_HOME                  = "aligner_front_home"
+    TENSILE_TESTER_FRONT_HOME           = "tensile_tester_front_home"
+    SCRAP_DISPOSER_FRONT_HOME           = "scrap_disposer_front_home"
+
     # ACT01: 시편 랙 (Specimen Rack)
     MOVE_TO_RACK                        = "move_to_rack"
     MOVE_TO_QR_SCAN_POS                 = "move_to_qr_scan_pos"

@@ -212,10 +212,13 @@ class MqttComm:
                     if self.Logger: self.Logger.info(f"[LOGIC] Tensile control command received: {action}")
                     if action == "start":
                         self.bb.set("ui/cmd/auto/tensile", 1) # 1: 시작 (Start)
+                        # pass
                     elif action == "stop":
                         self.bb.set("ui/cmd/auto/tensile", 3) # 3: 즉시 정지 (Stop)
+                        # pass
                     elif action == "step_stop":
                         self.bb.set("ui/cmd/auto/tensile", 4) # 4: 현재 시편 완료 후 정지 (Step Stop)
+                        # pass
                     elif action == "reset":
                         # Command.md 4.3. Reset은 Stop 이후 공정 데이터 초기화.
                         # 사용자가 요청한대로 'data'/'reset'과 동일하게 처리.

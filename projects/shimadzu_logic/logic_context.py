@@ -43,8 +43,11 @@ class LogicContext(ContextBase):
         ContextBase.__init__(self)
         self.status = LogicStatus()
         self.violation_code = 0x00
-        self._seq = 0
+        self._set_seq = 0
+        self._sub_seq = 0
         self.db = db_handler
+        self._sub_seq_bk = 0
+        self._seq_bk = 0
 
     def check_violation(self) -> int:
         self.violation_code = 0x00
@@ -95,7 +98,7 @@ class LogicContext(ContextBase):
             }
             Logger.info(f"[Logic] Step 0: Sending command to move to rack front.")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1 # Immediately transition to waiting state
+            self.set_seq(1) # Immediately transition to waiting state
             return LogicEvent.NONE
 
         # Step 1: Wait for rack front move to complete
@@ -104,11 +107,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info("[Logic] Step 1: Move to rack front is done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 2 # Transition to next action
+                    self.set_seq(2) # Transition to next action
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE # Keep waiting if not done or no cmd yet
 
@@ -123,7 +126,7 @@ class LogicContext(ContextBase):
             }
             Logger.info(f"[Logic] Step 2: Sending command to move to QR scan position.")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3 # Immediately transition to waiting state
+            self.set_seq(3) # Immediately transition to waiting state
             return LogicEvent.NONE
 
         # Step 3: Wait for QR scan position move to complete
@@ -132,11 +135,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info("[Logic] Step 3: Move to QR scan position is done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 4 # Transition to next action (device command)
+                    self.set_seq(4) # Transition to next action (device command)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -150,7 +153,7 @@ class LogicContext(ContextBase):
             }
             Logger.info(f"[Logic] Step 4: Sending command to read QR code.")
             bb.set(device_cmd_key, device_cmd)
-            self._seq = 5 # Immediately transition to waiting state
+            self.set_seq(5) # Immediately transition to waiting state
             return LogicEvent.NONE
 
         # Step 5: Wait for QR read to complete
@@ -167,12 +170,12 @@ class LogicContext(ContextBase):
                     bb.set("process/auto/qr_data", qr_data)
                     Logger.info(f"[Logic] Step 5: QR Read is done. Result: {qr_result}")
                     bb.set(device_cmd_key, None) # Consume the result
-                    self._seq = 0 # Reset sequence for the next call of this function
+                    self.set_seq(0) # Reset sequence for the next call of this function
                     return LogicEvent.DONE
                 else: # state == "error"
                     Logger.error(f"[Logic] Step 5 failed: {get_device_cmd}")
                     bb.set(device_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -200,7 +203,7 @@ class LogicContext(ContextBase):
             }
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.PICK_SPECIMEN_FROM_RACK}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
             return LogicEvent.NONE
         
         # Step 1: Wait for pick move to complete, then close gripper
@@ -211,12 +214,12 @@ class LogicContext(ContextBase):
                     bb.set(robot_cmd_key, None)
                     robot_cmd = { "process" : MotionCommand.GRIPPER_CLOSE_FOR_RACK, "state" : "" }
                     bb.set(robot_cmd_key, robot_cmd)
-                    self._seq = 2
+                    self.set_seq(2)
                     return LogicEvent.NONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -232,12 +235,12 @@ class LogicContext(ContextBase):
                         "state" : ""
                     }
                     bb.set(robot_cmd_key, robot_cmd)
-                    self._seq = 3
+                    self.set_seq(3)
                     return LogicEvent.NONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 2 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -247,12 +250,12 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 3: Retreat from rack is done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.DONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
         
@@ -266,15 +269,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_INDICATOR, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.MOVE_TO_INDICATOR}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_INDICATOR and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Move to indicator done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
+                self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
         return LogicEvent.NONE
 
     def Measure_specimen_thickness(self, num: int):
@@ -291,7 +294,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.PLACE_SPECIMEN_AND_MEASURE, "position": num, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.PLACE_SPECIMEN_AND_MEASURE} at pos {num}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
             return LogicEvent.NONE
 
         elif self._seq == 1:
@@ -299,11 +302,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 1: Place specimen done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 2
+                    self.set_seq(2)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -312,7 +315,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_INDICATOR, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.GRIPPER_OPEN_AT_INDICATOR}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
             return LogicEvent.NONE
 
         elif self._seq == 3:
@@ -320,11 +323,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 3: Gripper open done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 4
+                    self.set_seq(4)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -333,7 +336,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PLACE, "position": num, "state": ""}
             Logger.info(f"[Logic] Step 4: Sending command: {MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PLACE}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 5
+            self.set_seq(5)
             return LogicEvent.NONE
 
         elif self._seq == 5:
@@ -341,11 +344,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 5: Retreat from indicator done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 6
+                    self.set_seq(6)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -354,7 +357,7 @@ class LogicContext(ContextBase):
             device_cmd = {"command": DeviceCommand.MEASURE_THICKNESS, "result": None, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 6: Sending command: {DeviceCommand.MEASURE_THICKNESS}")
             bb.set(device_cmd_key, device_cmd)
-            self._seq = 7
+            self.set_seq(7)
             return LogicEvent.NONE
 
         elif self._seq == 7:
@@ -374,11 +377,11 @@ class LogicContext(ContextBase):
                         
                         Logger.info(f"[Logic] Step 7: Thickness measurement done. Result: {thickness_result}")
                         bb.set(device_cmd_key, None)
-                        self._seq = 8
+                        self.set_seq(8)
                     else:  # error
                         Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}")
                         bb.set(device_cmd_key, None)
-                        self._seq = 0
+                        self.set_seq(0)
                         return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -387,7 +390,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.PICK_SPECIMEN_FROM_INDICATOR, "position": num, "state": ""}
             Logger.info(f"[Logic] Step 8: Sending command: {MotionCommand.PICK_SPECIMEN_FROM_INDICATOR}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 9
+            self.set_seq(9)
             return LogicEvent.NONE
 
         elif self._seq == 9:
@@ -395,11 +398,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 9: Pick from indicator done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 10
+                    self.set_seq(10)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -408,7 +411,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR, "state": ""}
             Logger.info(f"[Logic] Step 10: Sending command: {MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 11
+            self.set_seq(11)
             return LogicEvent.NONE
 
         elif self._seq == 11:
@@ -416,11 +419,11 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 11: Gripper close done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 12
+                    self.set_seq(12)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 11 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -429,7 +432,7 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PICK, "position": num, "state": ""}
             Logger.info(f"[Logic] Step 12: Sending command: {MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PICK}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 13
+            self.set_seq(13)
             return LogicEvent.NONE
 
         elif self._seq == 13:
@@ -437,12 +440,12 @@ class LogicContext(ContextBase):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 13: Final retreat from indicator is done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.DONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 13 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -457,15 +460,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_ALIGN, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.MOVE_TO_ALIGN}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_ALIGN and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Move to align done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
+                self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
         return LogicEvent.NONE
     
     def Specimen_Align(self):
@@ -481,28 +484,28 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.PLACE_SPECIMEN_ON_ALIGN, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.PLACE_SPECIMEN_ON_ALIGN}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.PLACE_SPECIMEN_ON_ALIGN and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Place specimen on align done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 2
+                self.set_seq(2)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         # Seq 2: Robot-Motion-GRIPPER_OPEN_AT_ALIGN
         elif self._seq == 2:
             robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_ALIGN, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.GRIPPER_OPEN_AT_ALIGN}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
         elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_ALIGN and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 3: Gripper open at align done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 4
+                self.set_seq(4)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         # Seq 3: 인장 시험기 상태에 따라 분기
         elif self._seq == 4:
@@ -524,32 +527,32 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": motion_to_perform, "state": ""}
             Logger.info(f"[Logic] Step 4: Tensile busy: {is_tensile_busy}. Sending command: {motion_to_perform}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 5
+            self.set_seq(5)
 
         elif self._seq == 5:
             if get_robot_cmd and (get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE or get_robot_cmd.get("process") == MotionCommand.ALIGNER_FRONT_WAIT):
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 5: Motion '{get_robot_cmd.get('process')}' done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 6
-                elif get_robot_cmd.get("state") == "error":
-                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    self.set_seq(6)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         # Seq 4: Device-Align-ALIGN_SPECIMEN
         elif self._seq == 6:
             device_cmd = {"command": DeviceCommand.ALIGN_SPECIMEN, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 6: Sending command: {DeviceCommand.ALIGN_SPECIMEN}")
             bb.set(device_cmd_key, device_cmd)
-            self._seq = 7
+            self.set_seq(7)
         elif self._seq == 7:
             if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.ALIGN_SPECIMEN and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 7: Align specimen done.")
                     bb.set(device_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.DONE
                 else:
-                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         return LogicEvent.NONE
     
@@ -573,7 +576,7 @@ class LogicContext(ContextBase):
                 # 인장기가 시험 중이 아니면, 로봇은 정렬기 앞에서 대기했을 것이므로
                 # 이동 동작(Seq 0)을 건너뛰고 그리퍼 닫기(Seq 2)부터 시작합니다.
                 Logger.info("[Logic] Tensile is not busy. Robot waited at aligner. Skipping move, starting from seq 2 (Gripper Close).")
-                self._seq = 2
+                self.set_seq(2)
             else:
                 # 인장기가 시험 중이면, 로봇은 후퇴했으므로 다시 정렬기로 이동해야 합니다.
                 # 따라서 전체 시퀀스를 Seq 0부터 시작합니다.
@@ -585,16 +588,16 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.PICK_SPECIMEN_FROM_ALIGN, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.PICK_SPECIMEN_FROM_ALIGN}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
             return LogicEvent.NONE
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.PICK_SPECIMEN_FROM_ALIGN:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 1: Pick from align done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 2
+                    self.set_seq(2)
                 elif get_robot_cmd.get("state") == "error":
-                    Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 2: Robot-Motion-GRIPPER_CLOSE_FOR_ALIGN
@@ -602,16 +605,16 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_CLOSE_FOR_ALIGN, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.GRIPPER_CLOSE_FOR_ALIGN}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
             return LogicEvent.NONE
         elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_ALIGN:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 3: Gripper close for align done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 4
+                    self.set_seq(4)
                 elif get_robot_cmd.get("state") == "error":
-                    Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 3: Robot-Motion-RETREAT_FROM_ALIGN_AFTER_PICK
@@ -619,17 +622,17 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK, "state": ""}
             Logger.info(f"[Logic] Step 4: Sending command: {MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 5
+            self.set_seq(5)
             return LogicEvent.NONE
         elif self._seq == 5:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 5: Retreat from align done.")
                     bb.set(robot_cmd_key, None)
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.DONE
                 elif get_robot_cmd.get("state") == "error":
-                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         return LogicEvent.NONE
@@ -647,15 +650,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
             return LogicEvent.NONE
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_LOAD and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Move to tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 2
+                self.set_seq(2)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 2: Robot-Motion-load_tensile_machine
@@ -663,15 +666,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.LOAD_TENSILE_MACHINE, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.LOAD_TENSILE_MACHINE}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
             return LogicEvent.NONE
         elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.LOAD_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 3: Load tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 4
+                self.set_seq(4)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 3: Device-Tensil_gripper-TENSILE_GRIPPER_ON
@@ -679,16 +682,16 @@ class LogicContext(ContextBase):
             device_cmd = {"command": DeviceCommand.TENSILE_GRIPPER_ON, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 4: Sending command: {DeviceCommand.TENSILE_GRIPPER_ON}")
             bb.set(device_cmd_key, device_cmd)
-            self._seq = 5
+            self.set_seq(5)
             return LogicEvent.NONE
         elif self._seq == 5:
             if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.TENSILE_GRIPPER_ON and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 5: Tensile gripper on done.")
                     bb.set(device_cmd_key, None)
-                    self._seq = 6
+                    self.set_seq(6)
                 else:
-                    Logger.error(f"[Logic] Step 5 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 5 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 4: Robot-Motion-GRIPPER_OPEN_AT_TENSILE_MACHINE
@@ -696,15 +699,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE, "state": ""}
             Logger.info(f"[Logic] Step 6: Sending command: {MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 7
+            self.set_seq(7)
             return LogicEvent.NONE
         elif self._seq == 7:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 7: Gripper open at tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 8
+                self.set_seq(8)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 5: Robot-Motion-RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD
@@ -712,15 +715,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD, "state": ""}
             Logger.info(f"[Logic] Step 8: Sending command: {MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 9
+            self.set_seq(9)
             return LogicEvent.NONE
         elif self._seq == 9:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 9: Retreat from tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 10
+                self.set_seq(10)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
         
         # Seq 6: Robot-Motion-MOVE_TO_HOME
@@ -728,16 +731,16 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
             Logger.info(f"[Logic] Step 10: Sending command: {MotionCommand.MOVE_TO_HOME}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 11
+            self.set_seq(11)
             return LogicEvent.NONE
         elif self._seq == 11:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 11: Move to home done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
+                self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 11 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 11 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         return LogicEvent.NONE
@@ -757,29 +760,29 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_TENSILE_MACHINE_FOR_PICK and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Move to tensile for pick done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 2
+                self.set_seq(2)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         # Seq 2: Robot_Motion-PICK_FROM_TENSILE_MACHINE
         elif self._seq == 2:
             robot_cmd = {"process": MotionCommand.PICK_FROM_TENSILE_MACHINE, "position": num, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.PICK_FROM_TENSILE_MACHINE} at pos {num}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
             return LogicEvent.NONE
         elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.PICK_FROM_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 3: Pick from tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 4
+                self.set_seq(4)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 3: GRIPPER_CLOSE_FOR_TENSILE_MACHINE
@@ -787,15 +790,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE, "state": ""}
             Logger.info(f"[Logic] Step 4: Sending command: {MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 5
+            self.set_seq(5)
             return LogicEvent.NONE
         elif self._seq == 5:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 5: Gripper close for tensile machine done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 6
+                self.set_seq(6)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 4: Device-Tensile_gripper-TENSILE_GRIPPER_OFF
@@ -803,16 +806,16 @@ class LogicContext(ContextBase):
             device_cmd = {"command": DeviceCommand.TENSILE_GRIPPER_OFF, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 6: Sending command: {DeviceCommand.TENSILE_GRIPPER_OFF}")
             bb.set(device_cmd_key, device_cmd)
-            self._seq = 7
+            self.set_seq(7)
             return LogicEvent.NONE
         elif self._seq == 7:
             if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.TENSILE_GRIPPER_OFF and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 7: Tensile gripper off done.")
                     bb.set(device_cmd_key, None)
-                    self._seq = 8
+                    self.set_seq(8)
                 else:
-                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 5: RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK
@@ -820,15 +823,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK, "state": ""}
             Logger.info(f"[Logic] Step 8: Sending command: {MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 9
+            self.set_seq(9)
         elif self._seq == 9:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 9: Retreat from tensile machine after pick done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
+                self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
 
         return LogicEvent.NONE
 
@@ -844,15 +847,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_SCRAP_DISPOSER, "state": ""}
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.MOVE_TO_SCRAP_DISPOSER}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 1
+            self.set_seq(1)
             return LogicEvent.NONE
         elif self._seq == 1:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 1: Move to scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 2
+                self.set_seq(2)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 2: Robot-Motion-PLACE_IN_SCRAP_DISPOSER
@@ -860,15 +863,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.PLACE_IN_SCRAP_DISPOSER, "state": ""}
             Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.PLACE_IN_SCRAP_DISPOSER}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 3
+            self.set_seq(3)
             return LogicEvent.NONE
         elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.PLACE_IN_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 3: Place in scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 4
+                self.set_seq(4)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 3: Robot-Motion-GRIPPER_OPEN_AT_SCRAP_DISPOSER
@@ -876,15 +879,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER, "state": ""}
             Logger.info(f"[Logic] Step 4: Sending command: {MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 5
+            self.set_seq(5)
             return LogicEvent.NONE
         elif self._seq == 5:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 5: Gripper open at scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 6
+                self.set_seq(6)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 4: Robot-Motion-RETREAT_FROM_SCRAP_DISPOSER
@@ -892,15 +895,15 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.RETREAT_FROM_SCRAP_DISPOSER, "state": ""}
             Logger.info(f"[Logic] Step 6: Sending command: {MotionCommand.RETREAT_FROM_SCRAP_DISPOSER}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 7
+            self.set_seq(7)
             return LogicEvent.NONE
         elif self._seq == 7:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 7: Retreat from scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 8
+                self.set_seq(8)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 5: Robot-Motion-MOVE_TO_HOME
@@ -908,21 +911,20 @@ class LogicContext(ContextBase):
             robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
             Logger.info(f"[Logic] Step 8: Sending command: {MotionCommand.MOVE_TO_HOME}")
             bb.set(robot_cmd_key, robot_cmd)
-            self._seq = 9
+            self.set_seq(9)
             return LogicEvent.NONE
         elif self._seq == 9:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done":
                 Logger.info(f"[Logic] Step 9: Move to home done.")
                 bb.set(robot_cmd_key, None)
-                self._seq = 0
+                self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self._seq = 0; return LogicEvent.VIOLATION_DETECT
+                Logger.error(f"[Logic] Step 9 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         return LogicEvent.NONE
-    
-            
+        
     def regist_tensil_data(self):
         """
         현재 시편의 시험 조건을 DB에서 조회하여 Device FSM에 등록 명령을 전달하고 완료를 대기합니다.
@@ -939,7 +941,7 @@ class LogicContext(ContextBase):
                 
                 if not current_specimen_in_tray:
                     Logger.error("[Logic] regist_tensil_data: Cannot find running tray.")
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
 
                 specimen_no = bb.get("process/auto/current_specimen_no")
@@ -954,7 +956,7 @@ class LogicContext(ContextBase):
                 method_details = self.db.get_test_method_details(test_method_name)
                 if not method_details:
                     Logger.error(f"[Logic] Failed to get test method details for '{test_method_name}' from DB.")
-                    self._seq = 0
+                    self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
 
                 # 각 트레이의 첫 시편(specimen_no == 1) 작업 시작 전, test_method 기준 등록 두께(thickness)를 BB에 기록
@@ -991,7 +993,7 @@ class LogicContext(ContextBase):
                 device_cmd = { "command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False }
                 bb.set(device_cmd_key, device_cmd)
                 Logger.info(f"[Logic] Sent REGISTER_METHOD command to DeviceFSM for specimen {tpname}")
-                self._seq = 1
+                self.set_seq(1)
                 return LogicEvent.NONE
 
             # Step 2: 명령 완료 대기
@@ -1003,17 +1005,17 @@ class LogicContext(ContextBase):
                     if get_device_cmd.get("state") == "done":
                         Logger.info(f"[Logic] DeviceFSM completed method registration.")
                         bb.set(device_cmd_key, None)
-                        self._seq = 0
+                        self.set_seq(0)
                         return LogicEvent.DONE
                     else:
                         Logger.error(f"[Logic] DeviceFSM failed to register method: {get_device_cmd.get('result')}")
                         bb.set(device_cmd_key, None)
-                        self._seq = 0
+                        self.set_seq(0)
                         return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
         except Exception as e:
             Logger.error(f"[Logic] Exception in regist_tensil_data: {e}")
-            self._seq = 0
+            self.set_seq(0)
             return LogicEvent.VIOLATION_DETECT
 
     def start_tensile_test(self):
@@ -1033,7 +1035,7 @@ class LogicContext(ContextBase):
                 }
                 bb.set(device_cmd_key, device_cmd)
                 Logger.info(f"[Logic] Sent START_TENSILE_TEST command to DeviceFSM.")
-                self._seq = 1
+                self.set_seq(1)
                 return LogicEvent.NONE
 
             # Step 2: 명령 완료 대기
@@ -1045,20 +1047,250 @@ class LogicContext(ContextBase):
                     if get_device_cmd.get("state") == "done":
                         Logger.info("[Logic] DeviceFSM confirmed tensile test started.")
                         bb.set(device_cmd_key, None)
-                        self._seq = 0
+                        self.set_seq(0)
                         return LogicEvent.DONE
                     else:
                         Logger.error(f"[Logic] DeviceFSM failed to start tensile test: {get_device_cmd.get('result')}")
                         bb.set(device_cmd_key, None)
-                        self._seq = 0
+                        self.set_seq(0)
                         return LogicEvent.VIOLATION_DETECT
             
             return LogicEvent.NONE
 
         except Exception as e:
             Logger.error(f"[Logic] Exception in start_tensile_test: {e}")
-            self._seq = 0
+            self.set_seq(0)
             return LogicEvent.VIOLATION_DETECT
+    def set_seq(self, num) :
+        if self._seq != num :
+            Logger.info(f"original seq : {self._seq}, new : {num}")
+        self._seq = num
+    
+    def set_sub_seq(self, num) :
+        if self._sub_seq != num :
+            Logger.info(f"original sub_seq : {self._sub_seq}, new : {num}")
+        self._sub_seq = num
+
+    def execute_controlled_stop(self):
+        """
+        제어된 정지 절차를 수행합니다.
+        - 로봇의 현재 위치를 파악하여 안전하게 후퇴합니다.
+        - 시편이 장비에 놓여있으면 회수합니다.
+        - 시편을 들고 있으면 스크랩 처리를 합니다.
+        - 최종적으로 홈 위치로 복귀합니다.
+        """
+        get_robot_cmd = bb.get(robot_cmd_key)
+
+        if self._seq == 0:
+            # Step 0: 현재 상태를 파악하여 다음 행동을 결정합니다.
+            current_pos_id = int(bb.get("robot/current/position") or 0)
+            is_holding = (bb.get("robot/gripper/actual_state") == 2)
+            
+            Logger.info(f"[Logic] Controlled Stop: Start. Position ID: {current_pos_id}, Holding Specimen: {is_holding}")
+
+            # Case 1: 시편이 두께 측정기에 놓여 있는 경우 (회수 필요)
+            if 3001 <= current_pos_id <= 3003:
+                Logger.info("[Logic] Controlled Stop: Specimen is at indicator. Starting recovery.")
+                self.set_seq(10)  # 두께 측정기에서 회수하는 상태
+                self.set_sub_seq(0)
+                self.recovery_pos = current_pos_id - 3000
+            # Case 2: 시편이 정렬기에 놓여 있는 경우 (회수 필요)
+            elif current_pos_id == 5001:
+                Logger.info("[Logic] Controlled Stop: Specimen is at aligner. Starting recovery.")
+                self.set_seq(20)  # 정렬기에서 회수하는 상태
+                self.set_sub_seq(0)
+            # Case 3: 로봇이 시편을 들고 있는 경우 (후퇴 후 스크랩 처리 필요)
+            elif is_holding:
+                # 로봇의 현재 위치에 따라 필요한 후퇴 동작을 결정합니다.
+                if 1001 <= current_pos_id <= 1105: # 랙 내부
+                    Logger.info("[Logic] Controlled Stop: Holding specimen inside rack. Retreating first.")
+                    self.set_seq(50) # 랙에서 후퇴하는 상태
+                    self.set_sub_seq(0)
+                elif 7001 <= current_pos_id <= 7012: # 인장기 내부
+                    Logger.info("[Logic] Controlled Stop: Holding specimen inside tensile machine. Retreating first.")
+                    self.set_seq(60) # 인장기에서 후퇴하는 상태
+                else: # 이미 안전한 위치(Waypoint)에 있다고 판단, 바로 스크랩 처리로 이동
+                    Logger.info("[Logic] Controlled Stop: Robot is holding specimen in a safe area. Moving to scrap disposal.")
+                    self.set_seq(30)  # 스크랩 처리 상태
+                    self.set_sub_seq(0)
+            # Case 4: 그 외 (시편 없음), 홈으로 바로 복귀
+            else:
+                Logger.info("[Logic] Controlled Stop: No specimen to handle. Moving to home.")
+                self.set_seq(40)  # 홈으로 복귀하는 상태
+                self.set_sub_seq(0)
+            return LogicEvent.NONE
+
+        # State 10: 두께 측정기에서 시편 회수
+        elif self._seq == 10:
+            if self._sub_seq == 0: # PICK
+                cmd = MotionCommand.PICK_SPECIMEN_FROM_INDICATOR
+                robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1: # Wait for PICK
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(2)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # CLOSE
+                cmd = MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # Wait for CLOSE
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(4)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 4: # RETREAT
+                cmd = MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PICK
+                robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(5)
+            elif self._sub_seq == 5: # Wait for RETREAT
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None); Logger.info("[Logic] Controlled Stop: Recovery from indicator complete.")
+                    self.set_seq(30); self.set_sub_seq(0)  # 스크랩 처리로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 20: 정렬기에서 시편 회수
+        elif self._seq == 20:
+            if self._sub_seq == 0: # PICK
+                cmd = MotionCommand.PICK_SPECIMEN_FROM_ALIGN
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1: # Wait for PICK
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(2)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # CLOSE
+                cmd = MotionCommand.GRIPPER_CLOSE_FOR_ALIGN
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # Wait for CLOSE
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(4)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 4: # RETREAT
+                cmd = MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(5)
+            elif self._sub_seq == 5: # Wait for RETREAT
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None); Logger.info("[Logic] Controlled Stop: Recovery from aligner complete.")
+                    self.set_seq(30); self.set_sub_seq(0)  # 스크랩 처리로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 30: 스크랩 처리
+        elif self._seq == 30:
+            # 이 상태는 시편을 들고 안전한 위치에 있을 때 진입합니다.
+            # 경로: 현재 위치 -> 스크랩 처리기 -> 폐기 -> 홈
+            if self._sub_seq == 0: # 스크랩 처리기로 이동
+                cmd = MotionCommand.MOVE_TO_SCRAP_DISPOSER
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(1)
+            elif self._sub_seq == 1: # 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(2)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # 스크랩 처리기에 놓기
+                cmd = MotionCommand.PLACE_IN_SCRAP_DISPOSER
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 놓기 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(4)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 4: # 그리퍼 열기
+                cmd = MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(5)
+            elif self._sub_seq == 5: # 열기 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(6)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 6: # 스크랩 처리기에서 후퇴
+                cmd = MotionCommand.RETREAT_FROM_SCRAP_DISPOSER
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(7)
+            elif self._sub_seq == 7: # 후퇴 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Scrap disposal complete.")
+                    self.set_seq(40); self.set_sub_seq(0)  # 최종 홈 복귀 상태로 전환
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 40: 홈으로 복귀
+        elif self._seq == 40:
+            if self._sub_seq == 0:
+                # 현재 위치에 따라 적절한 홈 복귀 명령을 선택합니다.
+                current_pos_id = int(bb.get("robot/current/position") or 0)
+                home_cmd = MotionCommand.MOVE_TO_HOME # 기본 홈 복귀 명령
+                
+                # Command.md의 후퇴 시퀀스에 따라, 각 Waypoint에서 Home으로 가는 전용 명령이 있다면 사용합니다.
+                if current_pos_id == RobotMotionCommand.RACK_FRONT_RETURN: # 랙 앞
+                    home_cmd = MotionCommand.RACK_FRONT_HOME
+                elif current_pos_id in [RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_1, RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_2, RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_3]: # 측정기 앞
+                    home_cmd = MotionCommand.THICK_GAUGE_FRONT_HOME
+                elif current_pos_id == RobotMotionCommand.ALIGNER_FRONT_RETURN: # 정렬기 앞
+                    home_cmd = MotionCommand.ALIGNER_FRONT_HOME
+                elif current_pos_id == RobotMotionCommand.TENSILE_FRONT_RETURN: # 인장기 앞
+                    home_cmd = MotionCommand.TENSILE_TESTER_FRONT_HOME
+                elif current_pos_id == RobotMotionCommand.SCRAP_FRONT_RETURN: # 스크랩 처리기 앞
+                    home_cmd = MotionCommand.SCRAP_DISPOSER_FRONT_HOME
+
+                Logger.info(f"[Logic] Controlled Stop: Sending final home command: {home_cmd}")
+                bb.set(robot_cmd_key, {"process": home_cmd, "state": ""}); self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None); Logger.info("[Logic] Controlled Stop: Sequence finished at Home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    return LogicEvent.PROCESS_STOP
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+        
+        # State 50: 랙에서 후퇴
+        elif self._seq == 50:
+            if self._sub_seq == 0:
+                current_pos_id = int(bb.get("robot/current/position") or 0)
+                floor = (current_pos_id - 1000) // 10
+                cmd = MotionCommand.RETREAT_FROM_RACK
+                robot_cmd = {"process": cmd, "target_floor": floor, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from rack complete.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 60: 인장기에서 후퇴
+        elif self._seq == 60:
+            if self._sub_seq == 0:
+                cmd = MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from tensile machine complete.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+            
+        return LogicEvent.NONE
+
+       
 
     def process_complete(self):
         """ 모든 배치 공정이 완료되었음을 처리하고 FSM을 대기 상태로 전환합니다. """
