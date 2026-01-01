@@ -79,16 +79,39 @@ class LogicContext(ContextBase):
 
         get_robot_cmd = bb.get(robot_cmd_key)
         get_device_cmd = bb.get(device_cmd_key)
-        # Logger.info(f"-------------------------------------------------------")
-        # Logger.info(f"move_to_rack_for_QRRead called.")
-        # Logger.info(f"floor: {floor}, specimen_num: {specimen_num}, Sequence: {Sequence}")
-        # Logger.info(f"_seq : {self._seq}")
-        # Logger.info(f"get_robot_cmd: {get_robot_cmd}")
-        # Logger.info(f"get_device_cmd: {get_device_cmd}")
-        # Logger.info(f"-------------------------------------------------------")
 
-        # Step 0: Send command to move to rack front (ID: 1000)
+        # Step 0: Check gripper status, open if not already open
+        # Step 0: 그리퍼 상태 확인. 닫혀있으면 열기 명령 전송
         if self._seq == 0:
+            gripper_state = bb.get("robot/gripper/actual_state")
+            if gripper_state == 1:  # 1: 열림 상태
+                Logger.info("[Logic] Gripper is already open. Proceeding.")
+                self.set_seq(2)  # Skip to moving to rack
+            else:
+                Logger.info(f"[Logic] Gripper is not open (state: {gripper_state}). Sending open command.")
+                robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_INDICATOR, "state": ""}
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_seq(1)
+            return LogicEvent.NONE
+
+        # Step 1: Wait for gripper to open
+        # Step 1: 그리퍼 열기 완료 대기
+        elif self._seq == 1:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_INDICATOR:
+                if get_robot_cmd.get("state") == "done":
+                    Logger.info("[Logic] Gripper open command is done.")
+                    bb.set(robot_cmd_key, None)
+                    self.set_seq(2)
+                elif get_robot_cmd.get("state") == "error":
+                    Logger.error(f"[Logic] Gripper open command failed: {get_robot_cmd}")
+                    bb.set(robot_cmd_key, None)
+                    self.set_seq(0)
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Step 2: Send command to move to rack front (ID: 1000)
+        # Step 2: 로봇을 랙 앞으로 이동시키는 명령 전송
+        elif self._seq == 2:
             robot_cmd = {
                 "process" : MotionCommand.MOVE_TO_RACK,
                 "target_floor" : floor,
@@ -97,26 +120,31 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             Logger.info(f"[Logic] Step 0: Sending command to move to rack front.")
+            Logger.info(f"[Logic] Step 2: Sending command to move to rack front.")
             bb.set(robot_cmd_key, robot_cmd)
-            self.set_seq(1) # Immediately transition to waiting state
+            self.set_seq(3) # Immediately transition to waiting state
             return LogicEvent.NONE
 
-        # Step 1: Wait for rack front move to complete
-        elif self._seq == 1:
+        # Step 3: Wait for rack front move to complete
+        # Step 3: 랙 앞으로 이동 완료 대기
+        elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_RACK:
                 if get_robot_cmd.get("state") == "done":
-                    Logger.info("[Logic] Step 1: Move to rack front is done.")
+                    Logger.info("[Logic] Step 3: Move to rack front is done.")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(2) # Transition to next action
+                    self.set_seq(4) # Transition to next action
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}")
+                    Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE # Keep waiting if not done or no cmd yet
 
-        # Step 2: Send command to move to QR scan position
-        elif self._seq == 2:
+        # Step 4: Send command to move to QR scan position
+        # Step 4: QR 스캔 위치로 이동 명령 전송
+        elif self._seq == 4:
             robot_cmd = {
                 "process" : MotionCommand.MOVE_TO_QR_SCAN_POS,
                 "target_floor" : floor,
@@ -125,26 +153,33 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             Logger.info(f"[Logic] Step 2: Sending command to move to QR scan position.")
+            Logger.info(f"[Logic] Step 4: Sending command to move to QR scan position.")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(3) # Immediately transition to waiting state
+            self.set_seq(5) # Immediately transition to waiting state
             return LogicEvent.NONE
 
-        # Step 3: Wait for QR scan position move to complete
-        elif self._seq == 3:
+        # Step 5: Wait for QR scan position move to complete
+        # Step 5: QR 스캔 위치로 이동 완료 대기
+        elif self._seq == 5:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_QR_SCAN_POS:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info("[Logic] Step 3: Move to QR scan position is done.")
+                    Logger.info("[Logic] Step 5: Move to QR scan position is done.")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(4) # Transition to next action (device command)
+                    self.set_seq(6) # Transition to next action (device command)
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
+                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Step 4: Send device command for QR read
-        elif self._seq == 4:
+        # Step 6: Send device command for QR read
+        # Step 6: QR 읽기 장치에 명령 전송
+        elif self._seq == 6:
             device_cmd = {
                 "process" : DeviceCommand.QR_READ,
                 "result" : None,
@@ -152,12 +187,15 @@ class LogicContext(ContextBase):
                 "is_done" : False
             }
             Logger.info(f"[Logic] Step 4: Sending command to read QR code.")
+            Logger.info(f"[Logic] Step 6: Sending command to read QR code.")
             bb.set(device_cmd_key, device_cmd)
             self.set_seq(5) # Immediately transition to waiting state
+            self.set_seq(7) # Immediately transition to waiting state
             return LogicEvent.NONE
 
-        # Step 5: Wait for QR read to complete
-        elif self._seq == 5:
+        # Step 7: Wait for QR read to complete
+        # Step 7: QR 읽기 완료 대기
+        elif self._seq == 7:
             if get_device_cmd and get_device_cmd.get("process") == DeviceCommand.QR_READ:
                 if not get_device_cmd.get("is_done"):
                     return LogicEvent.NONE # 아직 완료되지 않음, 대기
@@ -169,15 +207,33 @@ class LogicContext(ContextBase):
                     qr_data[str(Sequence)] = qr_result
                     bb.set("process/auto/qr_data", qr_data)
                     Logger.info(f"[Logic] Step 5: QR Read is done. Result: {qr_result}")
+                    Logger.info(f"[Logic] Step 7: QR Read is done. Result: {qr_result}")
                     bb.set(device_cmd_key, None) # Consume the result
                     self.set_seq(0) # Reset sequence for the next call of this function
                     return LogicEvent.DONE
-                else: # state == "error"
+                elif get_device_cmd.get("state") == "error": # state == "error"
                     Logger.error(f"[Logic] Step 5 failed: {get_device_cmd}")
+                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}")
                     bb.set(device_cmd_key, None)
-                    self.set_seq(0)
-                    return LogicEvent.VIOLATION_DETECT
+                    # VIOLATION_DETECT 대신 사용자 입력을 대기하는 새로운 시퀀스로 전환
+                    Logger.info("[Logic] QR Read failed. Waiting for user command (e.g., retry).")
+                    self.set_seq(6) # 사용자 명령 대기 상태
+                    self.set_seq(8) # 사용자 명령 대기 상태
+                    return LogicEvent.NONE # 현재 Strategy에 머무름
             return LogicEvent.NONE
+
+        # Step 8: Wait for user command after QR failure
+        elif self._seq == 8:
+            # UI로부터 재시도 명령(예: bb.get("ui/cmd/qr_read/retry") == 1)을 기다립니다.
+            # 현재는 별도 UI 명령이 없으므로, 재시도 로직을 구현하고 대기 상태를 유지합니다.
+            # UI에서 'ui/cmd/qr_read/retry' 값을 1로 설정하면 재시도합니다.
+            if bb.get("ui/cmd/qr_read/retry") == 1:
+                bb.set("ui/cmd/qr_read/retry", 0) # 명령 소비
+                Logger.info("[Logic] QR Read retry command received. Retrying from Step 4.")
+                self.set_seq(4) # QR 읽기 명령을 보내는 단계로 복귀
+                Logger.info("[Logic] QR Read retry command received. Retrying from Step 6.")
+                self.set_seq(6) # QR 읽기 명령을 보내는 단계로 복귀
+            return LogicEvent.NONE # UI 명령이 있을 때까지 계속 대기
 
         return LogicEvent.NONE
 
@@ -193,7 +249,40 @@ class LogicContext(ContextBase):
         get_robot_cmd = bb.get(robot_cmd_key)
 
         # Step 0: Send command to pick specimen from rack
+        # Step 0: Check gripper status, open if not already open
+        # Step 0: 그리퍼 상태 확인. 닫혀있으면 열기 명령 전송
         if self._seq == 0:
+            gripper_state = bb.get("robot/gripper/actual_state")
+            if gripper_state == 1:  # 1 is open
+                Logger.info("[Logic] Gripper is already open. Proceeding to pick specimen.")
+            if gripper_state == 1:  # 1: 열림 상태
+                Logger.info("[Logic] Gripper is already open. Proceeding.")
+                self.set_seq(2)
+            else:
+                Logger.info(f"[Logic] Gripper is not open (state: {gripper_state}). Sending open command.")
+                robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_INDICATOR, "state": ""}
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_seq(1)
+            return LogicEvent.NONE
+
+        # Step 1: Wait for gripper to open
+        # Step 1: 그리퍼 열기 완료 대기
+        elif self._seq == 1:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_INDICATOR:
+                if get_robot_cmd.get("state") == "done":
+                    Logger.info("[Logic] Gripper open command is done.")
+                    bb.set(robot_cmd_key, None)
+                    self.set_seq(2)
+                elif get_robot_cmd.get("state") == "error":
+                    Logger.error(f"[Logic] Gripper open command failed: {get_robot_cmd}")
+                    bb.set(robot_cmd_key, None)
+                    self.set_seq(0)
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Step 2: Send command to pick specimen from rack
+        # Step 2: 랙에서 시편을 집기 위한 위치로 이동 명령 전송
+        elif self._seq == 2:
             robot_cmd = {
                 "process" : MotionCommand.PICK_SPECIMEN_FROM_RACK,
                 "target_floor" : floor,
@@ -202,32 +291,38 @@ class LogicContext(ContextBase):
                 "state" : ""
             }
             Logger.info(f"[Logic] Step 0: Sending command: {MotionCommand.PICK_SPECIMEN_FROM_RACK}")
+            Logger.info(f"[Logic] Step 2: Sending command: {MotionCommand.PICK_SPECIMEN_FROM_RACK}")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(1)
+            self.set_seq(3)
             return LogicEvent.NONE
-        
-        # Step 1: Wait for pick move to complete, then close gripper
-        elif self._seq == 1:
+
+        # Step 3: Wait for pick move to complete, then close gripper
+        elif self._seq == 3:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.PICK_SPECIMEN_FROM_RACK:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 1: Pick move done. Closing gripper.")
+                    Logger.info(f"[Logic] Step 3: Pick move done. Closing gripper.")
                     bb.set(robot_cmd_key, None)
                     robot_cmd = { "process" : MotionCommand.GRIPPER_CLOSE_FOR_RACK, "state" : "" }
                     bb.set(robot_cmd_key, robot_cmd)
                     self.set_seq(2)
+                    self.set_seq(4)
                     return LogicEvent.NONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 1 failed: {get_robot_cmd}")
+                    Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Step 2: Wait for gripper to close, then retreat from rack
-        elif self._seq == 2:
+        # Step 4: Wait for gripper to close, then retreat from rack
+        elif self._seq == 4:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_RACK:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 2: Gripper close done. Retreating from rack.")
+                    Logger.info(f"[Logic] Step 4: Gripper close done. Retreating from rack.")
                     bb.set(robot_cmd_key, None)
                     robot_cmd = {
                         "process" : MotionCommand.RETREAT_FROM_RACK,
@@ -236,24 +331,28 @@ class LogicContext(ContextBase):
                     }
                     bb.set(robot_cmd_key, robot_cmd)
                     self.set_seq(3)
+                    self.set_seq(5)
                     return LogicEvent.NONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 2 failed: {get_robot_cmd}")
+                    Logger.error(f"[Logic] Step 4 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Step 3: Wait for retreat to complete
-        elif self._seq == 3:
+        # Step 5: Wait for retreat to complete
+        elif self._seq == 5:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.RETREAT_FROM_RACK:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 3: Retreat from rack is done.")
+                    Logger.info(f"[Logic] Step 5: Retreat from rack is done.")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.DONE
                 elif get_robot_cmd.get("state") == "error":
                     Logger.error(f"[Logic] Step 3 failed: {get_robot_cmd}")
+                    Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.VIOLATION_DETECT
@@ -322,6 +421,8 @@ class LogicContext(ContextBase):
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_INDICATOR:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 3: Gripper open done.")
+                    bb.set("process/auto/specimen_on_indicator", True)
+                    Logger.info("[Logic] Specimen is now on the indicator.")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(4)
                 elif get_robot_cmd.get("state") == "error":
@@ -418,6 +519,8 @@ class LogicContext(ContextBase):
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 11: Gripper close done.")
+                    bb.set("process/auto/specimen_on_indicator", False)
+                    Logger.info("[Logic] Specimen has been picked up from the indicator.")
                     bb.set(robot_cmd_key, None)
                     self.set_seq(12)
                 elif get_robot_cmd.get("state") == "error":
@@ -1082,11 +1185,50 @@ class LogicContext(ContextBase):
         get_robot_cmd = bb.get(robot_cmd_key)
 
         if self._seq == 0:
+            # UI로부터 STOP 명령을 받으면 5초간 대기합니다.
+            Logger.info("[Logic] Controlled Stop: Waiting 5 seconds before proceeding...")
+            time.sleep(5)
+
             # Step 0: 현재 상태를 파악하여 다음 행동을 결정합니다.
             current_pos_id = int(bb.get("robot/current/position") or 0)
             is_holding = (bb.get("robot/gripper/actual_state") == 2)
+            specimen_on_indicator = bb.get("process/auto/specimen_on_indicator") or False
             
-            Logger.info(f"[Logic] Controlled Stop: Start. Position ID: {current_pos_id}, Holding Specimen: {is_holding}")
+            Logger.info(f"[Logic] Controlled Stop: Start. Position ID: {current_pos_id}, Holding Specimen: {is_holding}, FSM State: {self.state.name}")
+
+            # [추가] 측정 공정 중 시편을 들고 있을 때 정지 명령이 들어온 경우
+            if self.state == LogicState.MEASURE_SPECIMEN_THICKNESS and is_holding:
+                Logger.info("[Logic] Controlled Stop: Stop during measurement while holding specimen. Retreating from indicator.")
+                self.set_seq(15)  # 측정기에서 시편 들고 후퇴하는 상태
+                self.set_sub_seq(0)
+                # 현재 측정 중인 포인트(1, 2, 또는 3)를 알아내어 후퇴 위치로 지정합니다.
+                measure_point = bb.get("process/auto/measure_point") or 1
+                self.recovery_pos = int(measure_point)
+                return LogicEvent.NONE
+
+            # [수정] 측정 또는 정렬 공정 중에 정지 명령이 들어온 경우, 시편이 장비 위에 있다고 간주하고 회수 절차를 우선적으로 실행합니다.
+            if (self.state == LogicState.MEASURE_SPECIMEN_THICKNESS and not is_holding) or specimen_on_indicator:
+                Logger.info("[Logic] Controlled Stop: Stop during measurement or specimen on indicator. Recovering specimen from indicator.")
+                self.set_seq(10)  # 두께 측정기에서 회수하는 상태
+                self.set_sub_seq(0)
+                # 현재 측정 중인 포인트(1, 2, 또는 3)를 알아내어 회수 위치로 지정합니다.
+                # LogicMeasureSpecimenThicknessStrategy에서 'process/auto/measure_point'를 설정합니다.
+                measure_point = bb.get("process/auto/measure_point") or 1
+                self.recovery_pos = int(measure_point)
+                return LogicEvent.NONE
+
+            if self.state == LogicState.ALIGN_SPECIMEN and not is_holding:
+                Logger.info("[Logic] Controlled Stop: Stop during alignment. Recovering specimen from aligner.")
+                self.set_seq(20)  # 정렬기에서 회수하는 상태
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] 정렬 공정 중 시편을 들고 있을 때 정지 명령이 들어온 경우
+            if self.state == LogicState.PICK_SPECIMEN_FROM_ALIGN and is_holding:
+                Logger.info("[Logic] Controlled Stop: Stop while holding specimen from aligner. Retreating.")
+                self.set_seq(25) # 정렬기에서 시편 들고 후퇴
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
 
             # Case 1: 시편이 두께 측정기에 놓여 있는 경우 (회수 필요)
             if 3001 <= current_pos_id <= 3003:
@@ -1102,7 +1244,11 @@ class LogicContext(ContextBase):
             # Case 3: 로봇이 시편을 들고 있는 경우 (후퇴 후 스크랩 처리 필요)
             elif is_holding:
                 # 로봇의 현재 위치에 따라 필요한 후퇴 동작을 결정합니다.
-                if 1001 <= current_pos_id <= 1105: # 랙 내부
+                if 1011 <= current_pos_id <= 1105:
+                    Logger.info("[Logic] Controlled Stop: is_holding Robot is inside rack without specimen. Opening gripper and retreating.")
+                    self.set_seq(55) # 랙에서 시편을 잡지 않고 후퇴하는 상태
+                    self.set_sub_seq(0)
+                elif 2010 <= current_pos_id <= 2100: # 랙 내부
                     Logger.info("[Logic] Controlled Stop: Holding specimen inside rack. Retreating first.")
                     self.set_seq(50) # 랙에서 후퇴하는 상태
                     self.set_sub_seq(0)
@@ -1113,7 +1259,14 @@ class LogicContext(ContextBase):
                     Logger.info("[Logic] Controlled Stop: Robot is holding specimen in a safe area. Moving to scrap disposal.")
                     self.set_seq(30)  # 스크랩 처리 상태
                     self.set_sub_seq(0)
-            # Case 4: 그 외 (시편 없음), 홈으로 바로 복귀
+            
+            # Case 4: 로봇이 시편 잡으로 접근은 했으나 시편 그대로 두고 나오기
+            elif 1011 <= current_pos_id <= 1105:
+                Logger.info("[Logic] Controlled Stop: Robot is inside rack without specimen. Opening gripper and retreating.")
+                self.set_seq(55) # 랙에서 시편을 잡지 않고 후퇴하는 상태
+                self.set_sub_seq(0)
+
+            # Case 5: 그 외 (시편 없음), 홈으로 바로 복귀
             else:
                 Logger.info("[Logic] Controlled Stop: No specimen to handle. Moving to home.")
                 self.set_seq(40)  # 홈으로 복귀하는 상태
@@ -1123,11 +1276,17 @@ class LogicContext(ContextBase):
         # State 10: 두께 측정기에서 시편 회수
         elif self._seq == 10:
             if self._sub_seq == 0: # PICK
-                cmd = MotionCommand.PICK_SPECIMEN_FROM_INDICATOR
-                robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
-                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
-                bb.set(robot_cmd_key, robot_cmd)
-                self.set_sub_seq(1)
+                # 측정기 받침이 내려가 있는지 확인
+                indicator_stand_state = bb.get("device/indicator/stand/state")
+                if indicator_stand_state == "down":
+                    cmd = MotionCommand.PICK_SPECIMEN_FROM_INDICATOR
+                    robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
+                    Logger.info(f"[Logic] Controlled Stop: Indicator is down. Sending command: {cmd}")
+                    bb.set(robot_cmd_key, robot_cmd)
+                    self.set_sub_seq(1)
+                else:
+                    Logger.warn(f"[Logic] Controlled Stop: Waiting for indicator stand to be 'down'. Current state: {indicator_stand_state}")
+                    return LogicEvent.NONE # 대기
             elif self._sub_seq == 1: # Wait for PICK
                 if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(2)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
@@ -1148,41 +1307,157 @@ class LogicContext(ContextBase):
                 self.set_sub_seq(5)
             elif self._sub_seq == 5: # Wait for RETREAT
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
-                    bb.set(robot_cmd_key, None); Logger.info("[Logic] Controlled Stop: Recovery from indicator complete.")
-                    self.set_seq(30); self.set_sub_seq(0)  # 스크랩 처리로 이동
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Recovery from indicator complete. Moving to home.")
+                    self.set_sub_seq(6) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 6: # 홈으로 이동 명령
+                cmd = MotionCommand.THICK_GAUGE_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(7)
+            elif self._sub_seq == 7: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 15: 두께 측정기에서 시편을 들고 후퇴
+        elif self._seq == 15:
+            if self._sub_seq == 0: # RETREAT
+                cmd = MotionCommand.RETREAT_FROM_INDICATOR_AFTER_PICK
+                robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1: # Wait for RETREAT
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from indicator complete. Moving to home.")
+                    self.set_sub_seq(2) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # 홈으로 이동 명령
+                cmd = MotionCommand.THICK_GAUGE_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # State 20: 정렬기에서 시편 회수
         elif self._seq == 20:
-            if self._sub_seq == 0: # PICK
+            if self._sub_seq == 0:
+                # 인장 시험기 상태를 확인하여 로봇의 다음 동작을 결정합니다.
+                shimadzu_state = bb.get("device/shimadzu/run_state")
+                is_tensile_busy = False
+                if shimadzu_state and isinstance(shimadzu_state, dict):
+                    run_status = shimadzu_state.get("RUN")
+                    if run_status == 'C':  # 'C' means Testing
+                        is_tensile_busy = True
+                
+                if is_tensile_busy:
+                    # 인장기가 사용 중이면 로봇은 후퇴한 상태이므로, 다시 정렬기로 이동해야 합니다.
+                    Logger.info("[Logic] Controlled Stop (Aligner): Tensile is busy. Robot must move back to aligner.")
+                    cmd = MotionCommand.MOVE_TO_ALIGN
+                    robot_cmd = {"process": cmd, "state": ""}
+                    bb.set(robot_cmd_key, robot_cmd)
+                    self.set_sub_seq(1) # 이동 완료 대기 후 접근
+                else:
+                    # 인장기가 대기 중이면 로봇은 정렬기 앞(5012)에서 대기하고 있으므로, 접근(5011) 동작 없이 바로 시편을 집습니다.
+                    Logger.info("[Logic] Controlled Stop (Aligner): Tensile not busy, robot at wait pos. Skipping move, proceeding to gripper close.")
+                    self.set_sub_seq(4) # 바로 그리퍼 닫기 단계로 이동
+            elif self._sub_seq == 1: # MOVE_TO_ALIGN 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    self.set_sub_seq(2) # 시편 집기 접근 단계로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # PICK (접근)
                 cmd = MotionCommand.PICK_SPECIMEN_FROM_ALIGN
                 robot_cmd = {"process": cmd, "state": ""}
-                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
-                bb.set(robot_cmd_key, robot_cmd)
-                self.set_sub_seq(1)
-            elif self._sub_seq == 1: # Wait for PICK
-                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(2)
-                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 2: # CLOSE
-                cmd = MotionCommand.GRIPPER_CLOSE_FOR_ALIGN
-                robot_cmd = {"process": cmd, "state": ""}
-                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                Logger.info(f"[Logic] Controlled Stop: Sending approach command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
                 self.set_sub_seq(3)
-            elif self._sub_seq == 3: # Wait for CLOSE
+            elif self._sub_seq == 3: # Wait for PICK
                 if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(4)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 4: # RETREAT
+            elif self._sub_seq == 4: # CLOSE (정렬기 상태 확인 후)
+                aligner_state = bb.get("device/align/state")
+                if aligner_state == "pull":
+                    cmd = MotionCommand.GRIPPER_CLOSE_FOR_ALIGN
+                    robot_cmd = {"process": cmd, "state": ""}
+                    Logger.info(f"[Logic] Controlled Stop: Aligner is 'pull'. Sending command: {cmd}")
+                    bb.set(robot_cmd_key, robot_cmd)
+                    self.set_sub_seq(5)
+                else:
+                    Logger.warn(f"[Logic] Controlled Stop: Waiting for aligner to be 'pull' before closing gripper. Current state: {aligner_state}")
+                    return LogicEvent.NONE # 대기
+            elif self._sub_seq == 5: # Wait for CLOSE
+                if get_robot_cmd and get_robot_cmd.get("state") == "done": bb.set(robot_cmd_key, None); self.set_sub_seq(6)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 6: # RETREAT
                 cmd = MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK
                 robot_cmd = {"process": cmd, "state": ""}
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
-                self.set_sub_seq(5)
-            elif self._sub_seq == 5: # Wait for RETREAT
+                self.set_sub_seq(7)
+            elif self._sub_seq == 7: # Wait for RETREAT
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
-                    bb.set(robot_cmd_key, None); Logger.info("[Logic] Controlled Stop: Recovery from aligner complete.")
-                    self.set_seq(30); self.set_sub_seq(0)  # 스크랩 처리로 이동
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Recovery from aligner complete. Moving to home.")
+                    self.set_sub_seq(8) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 8: # 홈으로 이동 명령
+                cmd = MotionCommand.ALIGNER_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(9)
+            elif self._sub_seq == 9: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 25: 정렬기에서 시편을 들고 후퇴
+        elif self._seq == 25:
+            if self._sub_seq == 0: # RETREAT
+                cmd = MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1: # Wait for RETREAT
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from aligner complete. Moving to home.")
+                    self.set_sub_seq(2) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # 홈으로 이동 명령
+                cmd = MotionCommand.ALIGNER_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30) # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
@@ -1190,6 +1465,7 @@ class LogicContext(ContextBase):
         elif self._seq == 30:
             # 이 상태는 시편을 들고 안전한 위치에 있을 때 진입합니다.
             # 경로: 현재 위치 -> 스크랩 처리기 -> 폐기 -> 홈
+            # 
             if self._sub_seq == 0: # 스크랩 처리기로 이동
                 cmd = MotionCommand.MOVE_TO_SCRAP_DISPOSER
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
@@ -1257,18 +1533,69 @@ class LogicContext(ContextBase):
             if self._sub_seq == 0:
                 current_pos_id = int(bb.get("robot/current/position") or 0)
                 floor = (current_pos_id - 1000) // 10
-                cmd = MotionCommand.RETREAT_FROM_RACK
-                robot_cmd = {"process": cmd, "target_floor": floor, "state": ""}
+                cmd = MotionCommand.PICK_SPECIMEN_FROM_RACK
+                robot_cmd = {"process": cmd, "target_floor": floor, "target_num": 0, "position": 0, "state": ""}
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
                 self.set_sub_seq(1)
             elif self._sub_seq == 1:
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     bb.set(robot_cmd_key, None)
-                    Logger.info("[Logic] Controlled Stop: Retreat from rack complete.")
+                    Logger.info("[Logic] Controlled Stop: Retreat from rack complete. Moving to home.")
+                    self.set_sub_seq(2) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # 홈으로 이동 명령
+                cmd = MotionCommand.RACK_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
                     self.set_seq(30) # 스크랩 처리로 이동
                     self.set_sub_seq(0)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 55: 랙에서 시편을 잡지 않고 후퇴 (제어된 정지)
+        elif self._seq == 55:
+            if self._sub_seq == 0: # 그리퍼 열기 (안전 조치)
+                cmd = MotionCommand.GRIPPER_OPEN_AT_INDICATOR # 범용 그리퍼 열기 명령 (ID: 90)
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1: # 그리퍼 열기 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_INDICATOR:
+                    if get_robot_cmd.get("state") == "done":
+                        bb.set(robot_cmd_key, None)
+                        self.set_sub_seq(2)
+                    elif get_robot_cmd.get("state") == "error":
+                        return LogicEvent.VIOLATION_DETECT
+                # 이전 명령의 완료/에러는 무시하고 현재 명령의 결과를 기다립니다.
+            elif self._sub_seq == 2: # 랙에서 후퇴
+                current_pos_id = int(bb.get("robot/current/position") or 0)
+                # current_pos_id가 1011~1105 범위에 있을 것으로 예상
+                floor = (current_pos_id - 1000) // 10
+                # [중요] 여기서 PICK_SPECIMEN_FROM_RACK을 사용하는 것은 의도된 동작입니다.
+                # 이 명령은 target_num=0, position=0 파라미터와 함께 사용될 때,
+                # 시편을 잡지 않고 랙 내부에서 안전하게 후퇴하는 동작을 수행합니다.
+                # MotionCommand.RETREAT_FROM_RACK은 시편을 든 상태에서의 후퇴를 가정하므로 여기서는 적합하지 않습니다.
+                cmd = MotionCommand.PICK_SPECIMEN_FROM_RACK
+                robot_cmd = {"process": cmd, "target_floor": floor, "target_num": 0, "position": 0, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 후퇴 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from rack complete.")
+                    self.set_seq(40) # 홈으로 복귀 상태로 전환
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # State 60: 인장기에서 후퇴
@@ -1282,7 +1609,19 @@ class LogicContext(ContextBase):
             elif self._sub_seq == 1:
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     bb.set(robot_cmd_key, None)
-                    Logger.info("[Logic] Controlled Stop: Retreat from tensile machine complete.")
+                    Logger.info("[Logic] Controlled Stop: Retreat from tensile machine complete. Moving to home.")
+                    self.set_sub_seq(2) # 홈으로 이동
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2: # 홈으로 이동 명령
+                cmd = MotionCommand.TENSILE_TESTER_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
                     self.set_seq(30) # 스크랩 처리로 이동
                     self.set_sub_seq(0)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error": return LogicEvent.VIOLATION_DETECT

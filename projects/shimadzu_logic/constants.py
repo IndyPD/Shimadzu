@@ -57,6 +57,7 @@ class LogicState(OpState):
     PICK_SPECIMEN_FROM_TENSILE_MACHINE  = 21            # 16. 인장기 시편 수거
     DISPOSE_SCRAP                       = 22            # 17. 스크랩 처리
     PROCESS_COMPLETE                    = 23            # 18. 공정 완료
+    AUTO_RECOVER                        = 24            # 자동 복구
     RESET_DATA                          = 26            # 19. 데이터 리셋
     
 
@@ -105,6 +106,7 @@ class LogicEvent(OpEvent):
     DO_DISPOSE_SCRAP                    = 38            # 스크랩 처리 실행
     DO_PROCESS_COMPLETE                 = 39            # 공정 완료 실행
     DO_DATA_RESET                       = 40            # 데이터 리셋 실행
+    DO_AUTO_RECOVER                     = 41            # 자동 복구 실행
     
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의

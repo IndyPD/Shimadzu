@@ -36,6 +36,7 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.START_AUTO_COMMAND: LogicState.WAIT_COMMAND, # 자동화 모드 진입
                 LogicEvent.DO_REGISTER_INFO: LogicState.REGISTER_PROCESS_INFO, # 데이터 저장
                 LogicEvent.DO_DATA_RESET: LogicState.RESET_DATA, # 데이터 리셋
+                LogicEvent.DO_AUTO_RECOVER: LogicState.AUTO_RECOVER,
                 LogicEvent.RECOVER: LogicState.RECOVERING,
             },
             
@@ -138,6 +139,10 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.DONE: LogicState.WAIT_COMMAND, # 완료 처리 후 -> 명령 대기 (다음 배치)
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
+            LogicState.AUTO_RECOVER: {
+                LogicEvent.DONE: LogicState.IDLE,
+                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
+            },
             LogicState.RESET_DATA: {
                 LogicEvent.DONE: LogicState.IDLE, # 데이터 리셋 완료 -> IDLE
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
@@ -177,5 +182,7 @@ class LogicFSM(FiniteStateMachine):
 
             LogicState.PROCESS_COMPLETE: LogicProcessCompleteStrategy(),
             
+            LogicState.AUTO_RECOVER: LogicAutoRecoverStrategy(),
+
             LogicState.RESET_DATA: LogicResetDataStrategy(),
         }

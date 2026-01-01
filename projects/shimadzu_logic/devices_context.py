@@ -73,7 +73,6 @@ class DeviceContext(ContextBase):
 
         # QRReader 장치 인스턴스 생성
         if self.dev_qr_enable:
-            Logger.info(f"[device] QR Reader Initialized")
             self.qr_reader = QRReader()
             # QR 데이터 수신 시 블랙보드에 자동으로 저장하도록 콜백 등록
             self.qr_reader.on_qr_data = lambda data: bb.set("device/qr/result", data)
@@ -121,26 +120,61 @@ class DeviceContext(ContextBase):
         # 초기 장비 설정
         # 장비 내 램프 켜기
         try :
-            Logger.info(f"[device] lamp on")
-            self.lamp_on()
-            
-            # 정렬기 후퇴
-            Logger.info(f"[device] align stop")
-            self.align_stop()
-            time.sleep(1)
+            # TODO remote io 연결확인 후
+            self.read_IO_status() # 초기 설정을 위해 현재 I/O 상태를 동기적으로 읽어옴
+            if self.remote_input_data[DigitalInput.SOL_SENSOR] == 1:
+                Logger.info(f"[device] SOL_SENSOR is ON. Performing initial device setup.")
 
-            Logger.info(f"[device] align pull")
-            self.align_pull()
-            time.sleep(0.1)
+                Logger.info(f"[device] lamp on")
+                self.lamp_on()
 
-            # 측정기 받침 내리기
-            Logger.info(f"[device] indicator down")
-            self.indicator_down()
-            time.sleep(0.1)
+                # 정렬기 후퇴
+                if bb.get("device/align/state") != "pull":
+                    Logger.info(f"[device] align stop")
+                    self.align_stop()
+                    time.sleep(1)
+
+                    Logger.info(f"[device] align pull")
+                    self.align_pull()
+                    time.sleep(0.1)
+                else:
+                    Logger.info(f"[device] Aligner is already in pull state.")
+
+                # 측정기 받침 내리기
+                if bb.get("device/indicator/stand/state") != "down":
+                    Logger.info(f"[device] indicator stand down")
+                    self.indicator_stand_down()
+                    time.sleep(0.1)
+                else:
+                    Logger.info(f"[device] Indicator stand is already down.")
+            else:
+                Logger.info(f"[device] SOL_SENSOR is OFF. Skipping initial device setup.")
+                # SOL_SENSOR가 꺼져있을 때는 안전을 위해 램프도 끕니다.
+                Logger.info(f"[device] lamp off")
+                self.lamp_off()
 
         except Exception as e:
             Logger.error(f"[device] Error in __init__: {e}\n{traceback.format_exc()}")
             reraise(e)
+    
+    def _is_io_writable(self) -> bool:
+        """
+        Remote I/O에 쓰기 작업이 가능한지 확인합니다.
+        (컨트롤러 존재 및 데이터 유효성)
+        """
+        if not self.dev_remoteio_enable:
+            return False
+            
+        if not hasattr(self, 'iocontroller') or self.iocontroller is None:
+            Logger.error("[device] I/O write failed: iocontroller is not initialized.")
+            return False
+
+        if not isinstance(self.remote_output_data, list) or len(self.remote_output_data) < 32:
+            Logger.error(f"[device] I/O write failed: remote_output_data is invalid (len: {len(self.remote_output_data) if self.remote_output_data is not None else 'None'}).")
+            return False
+            
+        return True
+
     
     def shimadzu_test(self) :
         # you are there 명령어 테스트
@@ -411,6 +445,37 @@ class DeviceContext(ContextBase):
                 bb.set("device/remote/input/ATC_2_1_SENSOR", self.remote_input_data[DigitalInput.ATC_2_1_SENSOR])
                 bb.set("device/remote/input/ATC_2_2_SENSOR", self.remote_input_data[DigitalInput.ATC_2_2_SENSOR])
 
+            # 측정기 받침 상태 저장
+            if (bb.get("device/remote/input/INDICATOR_GUIDE_UP") == 1 and
+                bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") == 0) :
+                bb.set("device/indicator/stand/state","up")
+            elif (bb.get("device/remote/input/INDICATOR_GUIDE_UP") == 0 and
+                  bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") == 1) :
+                bb.set("device/indicator/stand/state","down")
+            else :
+                bb.set("device/indicator/stand/state","")
+            
+            # 정렬기 상태 저장
+            if (bb.get("device/remote/input/ALIGN_1_PUSH") == 1 and
+                bb.get("device/remote/input/ALIGN_1_PULL") == 0 and
+                bb.get("device/remote/input/ALIGN_2_PUSH") == 1 and
+                bb.get("device/remote/input/ALIGN_2_PULL") == 0 and
+                bb.get("device/remote/input/ALIGN_3_PUSH") == 1 and
+                bb.get("device/remote/input/ALIGN_3_PULL") == 0) :
+                bb.set("device/align/state","push")
+
+            elif (bb.get("device/remote/input/ALIGN_1_PUSH") == 0 and
+                  bb.get("device/remote/input/ALIGN_1_PULL") == 1 and
+                  bb.get("device/remote/input/ALIGN_2_PUSH") == 0 and
+                  bb.get("device/remote/input/ALIGN_2_PULL") == 1 and
+                  bb.get("device/remote/input/ALIGN_3_PUSH") == 0 and
+                  bb.get("device/remote/input/ALIGN_3_PULL") == 1) :
+                bb.set("device/align/state","pull")
+
+
+            
+
+
             if len(self.remote_output_data) == 32 :
                 bb.set("device/remote/output/entire", self.remote_output_data)
                 # Output 데이터 bb set DigitalOutput 기반            
@@ -456,8 +521,7 @@ class DeviceContext(ContextBase):
         :return: 성공 여부
         '''
         try:
-            if not hasattr(self, 'iocontroller') or self.iocontroller is None:
-                Logger.error("[device] UI_DO_Control: iocontroller is not initialized.")
+            if not self._is_io_writable():
                 return False
             with self._io_lock:
                 output_data = self.remote_output_data.copy()
@@ -476,6 +540,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
 
             output_data[DigitalOutput.LOCAL_LAMP_C] = 1
@@ -503,6 +569,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.LOCAL_LAMP_C] = 0
             output_data[DigitalOutput.LOCAL_LAMP_L] = 0
@@ -530,6 +598,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1
             output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
@@ -554,6 +624,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
             output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
@@ -598,6 +670,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False        
         ''' 
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.EXT_FW] = 1
             output_data[DigitalOutput.EXT_BW] = 0
@@ -622,6 +696,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False        
         ''' 
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.EXT_FW] = 0
             output_data[DigitalOutput.EXT_BW] = 1
@@ -676,6 +752,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False    
         ''' 
         try :
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.EXT_FW] = 0
             output_data[DigitalOutput.EXT_BW] = 0
@@ -702,6 +780,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try:
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             # 1st 1번
             output_data[DigitalOutput.ALIGN_1_PUSH] = 1
@@ -750,6 +830,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try:
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             # 1st 1번
             output_data[DigitalOutput.ALIGN_1_PUSH] = 0
@@ -799,6 +881,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try:
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.ALIGN_1_PUSH] = 0
             output_data[DigitalOutput.ALIGN_1_PULL] = 0
@@ -861,12 +945,14 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
     
-    def indicator_up(self) -> bool:
+    def indicator_stand_up(self) -> bool:
         '''
         인디게이터 가이드를 위로 이동시킵니다.
         :return: 성공 시 True, 실패 시 False
         '''
         try:
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.INDICATOR_UP] = 1
             output_data[DigitalOutput.INDICATOR_DOWN] = 0
@@ -875,50 +961,54 @@ class DeviceContext(ContextBase):
             read_data = self.iocontroller.read_output_data()
             if (read_data[DigitalOutput.INDICATOR_UP] == 1 and
                 read_data[DigitalOutput.INDICATOR_DOWN] == 0):
-                Logger.info(f"[device] Indicator Up Command Sent Successfully.")
+                Logger.info(f"[device] Indicator Stand Up Command Sent Successfully.")
                 return True
             else:
-                Logger.error(f"[device] Indicator Up Command Failed. read_data: {read_data}")
+                Logger.error(f"[device] Indicator Stand Up Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_up: {e}\n{traceback.format_exc()}")
+            Logger.error(f"[device] Error in indicator_stand_up: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
-    def indicator_down(self) -> bool:
+    def indicator_stand_down(self) -> bool:
         '''
         인디게이터 가이드를 아래로 이동시킵니다.
         :return: 성공 시 True, 실패 시 False
         '''
         try:
-            Logger.info(f"[device] Indicator Down Command Sent.")
+            if not self._is_io_writable():
+                return False
+            Logger.info(f"[device] Indicator Stand Down Command Sent.")
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.INDICATOR_UP] = 0
             output_data[DigitalOutput.INDICATOR_DOWN] = 1
             self.iocontroller.write_output_data(output_data)
-            Logger.info(f"[device] Indicator Down Command Sent Successfully.")
+            Logger.info(f"[device] Remote IO Indicator Stand Down Command Sent Successfully.")
             time.sleep(0.1)
-            Logger.info(f"[device] Indicator read State")
+            Logger.info(f"[device] Remote IO Indicator Stand read State")
             read_data = self.iocontroller.read_output_data()
-            Logger.info(f"[device] Indicator read State: {read_data}")
+            Logger.info(f"[device] Remote IO Indicator Stand read State: {read_data}")
             if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
                 read_data[DigitalOutput.INDICATOR_DOWN] == 1):
-                Logger.info(f"[device] Indicator Down Command Sent Successfully.")
+                Logger.info(f"[device] Indicator Stand Down Command Sent Successfully.")
                 return True
             else:
-                Logger.error(f"[device] Indicator Down Command Failed. read_data: {read_data}")
+                Logger.error(f"[device] Indicator Stand Down Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_down: {e}\n{traceback.format_exc()}")
+            Logger.error(f"[device] Error in indicator_stand_down: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
-    def indicator_stop(self) -> bool:
+    def indicator_stand_stop(self) -> bool:
         '''
         인디게이터 가이드 이동을 정지합니다.
         :return: 성공 시 True, 실패 시 False
         '''
         try:
+            if not self._is_io_writable():
+                return False
             output_data = self.remote_output_data.copy()
             output_data[DigitalOutput.INDICATOR_UP] = 0
             output_data[DigitalOutput.INDICATOR_DOWN] = 0
@@ -927,13 +1017,13 @@ class DeviceContext(ContextBase):
             read_data = self.iocontroller.read_output_data()
             if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
                 read_data[DigitalOutput.INDICATOR_DOWN] == 0):
-                Logger.info(f"[device] Indicator Stop Command Sent Successfully.")
+                Logger.info(f"[device] Indicator Stand Stop Command Sent Successfully.")
                 return True
             else:
-                Logger.error(f"[device] Indicator Stop Command Failed. read_data: {read_data}")
+                Logger.error(f"[device] Indicator Stand Stop Command Failed. read_data: {read_data}")
                 return False
         except Exception as e:
-            Logger.error(f"[device] Error in indicator_stop: {e}\n{traceback.format_exc()}")
+            Logger.error(f"[device] Error in indicator_stand_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -981,7 +1071,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
 
-    def qr_read(self, max_error_count: int = 10) -> bool:
+    def qr_read(self, max_error_count: int = 30) -> bool:
         '''
         QR 코드를 읽고 결과를 블랙보드에 저장합니다.
         :param max_error_count: 연속 에러(파싱 실패 포함) 허용 횟수

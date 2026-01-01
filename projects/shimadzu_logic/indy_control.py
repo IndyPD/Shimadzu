@@ -37,7 +37,7 @@ class RobotCommunication:
         ''' Indy command '''
         Logger.info(f'[Indy7] Attempting to connect to robot at {robot_ip}')
         self.indy = IndyDCP3(robot_ip, *args, **kwargs)
-        self.indy.set_speed_ratio(70) # (70) 
+        self.indy.set_speed_ratio(30) # (70) 
         # self.indy.set_auto_mode(True)
         is_auto_mode : dict = self.indy.check_auto_mode()
         if not is_auto_mode.get('on') :
@@ -105,7 +105,7 @@ class RobotCommunication:
             #         # Logger.info("Stop program!!")
             #         # self.indy.stop_program()
             #         bb.set("ui/reset/robot/recover_motion",True)
-            #         # self.indy.set_speed_ratio(70) # (70) 
+            #         # self.indy.set_speed_ratio(30) # (70) 
             #     except:
             #         Logger.error("Stop program fail")
 

@@ -249,9 +249,14 @@ class MqttComm:
                     self.bb.set("ui/cmd/comm_test/trigger", 1)
             elif cmd == "recover":
                 if self.role == 'logic' and self.bb:
-                    if self.Logger: self.Logger.info(f"[LOGIC] 복구 명령 수신: {payload.get('action')}")
-                    self.bb.set("ui/cmd/recover/data", payload)
-                    self.bb.set("ui/cmd/recover/trigger", 1)
+                    action = payload.get("action")
+                    if self.Logger: self.Logger.info(f"[LOGIC] 복구 명령 수신: {action}")
+                    if action == "error":
+                        if self.Logger: self.Logger.info("[LOGIC] Received 'recover/error' command. Triggering robot recover function.")
+                        self.bb.set("indy_command/recover", True)
+                    elif action == "auto":
+                        self.bb.set("ui/cmd/recover/data", payload)
+                        self.bb.set("ui/cmd/recover/trigger", 1)
             elif cmd == "robot_control":
                 if self.role == 'logic' and self.bb:
                     target = payload.get("target")

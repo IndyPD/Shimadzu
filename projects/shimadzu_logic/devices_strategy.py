@@ -234,11 +234,11 @@ class ReadyStrategy(Strategy):
             elif manual_cmd == 11:
                 context.smz_ask_sys_status()
             elif manual_cmd == 12:
-                context.indicator_up()
+                context.indicator_stand_up()
             elif manual_cmd == 13:
-                context.indicator_down()
+                context.indicator_stand_down()
             elif manual_cmd == 14:
-                context.indicator_stop()
+                context.indicator_stand_stop()
             
             # 명령 실행 후 초기화
             bb.set("manual/device/tester", 0)
@@ -339,11 +339,11 @@ class MeasureThicknessStrategy(Strategy):
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # TODO 무게 측정 장비 제어 명령 추가 및 변경
-        # Seq 1 : indicator_up(), 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인 후, self.start_time = datetime.now()
+        # Seq 1 : indicator_stand_up(), 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인 후, self.start_time = datetime.now()
         if self.measure_seq == 0:
-            Logger.info("[device][Measure] Seq 0: Moving indicator up.")
-            if not context.indicator_up():
-                Logger.error("[device][Measure] Failed to send indicator_up command.")
+            Logger.info("[device][Measure] Seq 0: Moving indicator stand up.")
+            if not context.indicator_stand_up():
+                Logger.error("[device][Measure] Failed to send indicator_stand_up command.")
                 cmd_data = bb.get("process/auto/device/cmd")
                 if isinstance(cmd_data, dict):
                     cmd_data["is_done"] = True
@@ -356,7 +356,7 @@ class MeasureThicknessStrategy(Strategy):
             is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
             is_down = bb.get("device/remote/input/INDICATOR_GUIDE_DOWN")
             if is_up and not is_down:
-                Logger.info("[device][Measure] Seq 1: Indicator is up. Starting wait time.")
+                Logger.info("[device][Measure] Seq 1: Indicator stand is up. Starting wait time.")
                 self.start_time = datetime.now()
                 self.measure_seq = 2
         
@@ -383,11 +383,11 @@ class MeasureThicknessStrategy(Strategy):
                 else:
                     time.sleep(0.1) # 재시도 전 짧은 대기
 
-        # Seq 4 : indicator_down(), 명령 후 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인
+        # Seq 4 : indicator_stand_down(), 명령 후 명령 후 bb.get("device/remote/input/INDICATOR_GUIDE_UP"), bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") 값으로 명령 완료 확인
         if self.measure_seq == 4:
-            Logger.info("[device][Measure] Seq 4: Moving indicator down.")
-            if not context.indicator_down():
-                Logger.error("[device][Measure] Failed to send indicator_down command.")
+            Logger.info("[device][Measure] Seq 4: Moving indicator stand down.")
+            if not context.indicator_stand_down():
+                Logger.error("[device][Measure] Failed to send indicator_stand_down command.")
                 cmd_data = bb.get("process/auto/device/cmd")
                 if isinstance(cmd_data, dict):
                     cmd_data["is_done"] = True
@@ -400,7 +400,7 @@ class MeasureThicknessStrategy(Strategy):
             is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
             is_down = bb.get("device/remote/input/INDICATOR_GUIDE_DOWN")
             if not is_up and is_down:
-                Logger.info("[device][Measure] Seq 5: Indicator is down. Finalizing.")
+                Logger.info("[device][Measure] Seq 5: Indicator stand is down. Finalizing.")
                 self.measure_seq = 6
 
         # Seq 5 : 측정받은 데이터 cmd_data 결과 정리 reuturn Done

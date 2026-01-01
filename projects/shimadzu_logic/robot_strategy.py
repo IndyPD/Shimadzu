@@ -199,6 +199,12 @@ class RobotWaitAutoCommandStrategy(Strategy):
         robot_cmd_key = "process/auto/robot/cmd"
         robot_cmd : dict = bb.get(robot_cmd_key)
         if robot_cmd :
+            # A new command should not have a 'done' or 'error' state.
+            # If it does, it's a result meant for LogicFSM, so we ignore it
+            # to prevent re-executing a completed command.
+            if robot_cmd.get("state") in ["done", "error"]:
+                return RobotEvent.NONE
+
             # Logic FSM이 발행한 명령을 감지합니다.
             # Race Condition을 방지하기 위해, 명령을 컨텍스트에 저장하고 블랙보드에서 즉시 제거(소비)합니다.
             context.current_motion_command = robot_cmd
@@ -299,8 +305,15 @@ class RobotExecuteMotionStrategy(Strategy):
             else:
                 current_cmd["state"] = "error"
             robot_cmd_key = "process/auto/robot/cmd"
-            bb.set(robot_cmd_key, current_cmd)
-            Logger.info(f"[Robot] Wrote command result to blackboard: {current_cmd}")
+            # Check if a new command has been posted by LogicFSM. If so, don't overwrite it.
+            # A new command will have its "state" as "" (empty string).
+            existing_cmd = bb.get(robot_cmd_key)
+            if existing_cmd is None or existing_cmd.get("state") in ["done", "error"]:
+                bb.set(robot_cmd_key, current_cmd)
+                Logger.info(f"[Robot] Wrote command result to blackboard: {current_cmd}")
+            else:
+                Logger.warn(f"[Robot] A new command is on the blackboard. Not overwriting with result of '{current_cmd.get('process')}'.")
+                Logger.warn(f"[Robot] Existing command: {existing_cmd}")
             
 
         # 다음 모션을 위해 명령 변수 초기화

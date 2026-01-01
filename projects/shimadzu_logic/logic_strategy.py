@@ -120,6 +120,16 @@ class LogicIdleStrategy(Strategy):
         if bb.get("ui/cmd/auto/tensile") == 1: # ACTION_MAP_TENSIL["start"]
             return LogicEvent.START_AUTO_COMMAND
 
+        # 복구 명령 처리
+        if bb.get("ui/cmd/recover/trigger") == 1:
+            bb.set("ui/cmd/recover/trigger", 0) # 명령 소비
+            data = bb.get("ui/cmd/recover/data")
+            action = data.get("payload", {}).get("action")
+
+            if action == "auto":
+                Logger.info("[Logic] Received 'recover/auto' command. Starting auto recovery process.")
+                return LogicEvent.DO_AUTO_RECOVER
+
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -139,6 +149,19 @@ class LogicWaitCommandStrategy(Strategy):
             return LogicEvent.START_AUTO_COMMAND
         return LogicEvent.NONE
     
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicAutoRecoverStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[Logic] Starting auto recovery process.")
+        context._seq = 0
+        context._sub_seq = 0
+
+    def operate(self, context: LogicContext) -> LogicEvent:
+        return context.execute_auto_recovery()
+
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 

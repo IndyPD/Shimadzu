@@ -148,6 +148,9 @@
   "sys/gauge/comm/state": 0,
   "manual/device/tester": 0,
   "manual/robot/tester": 0,
+
+  "device/indicator/stand/state" : "",
+  "device/align/state" : "",
   "device/remote/input/SOL_SENSOR": 0,
   "device/remote/input/ENO_01_SW": 0,
   "device/remote/input/EMO_02_SI": 0,
@@ -188,6 +191,7 @@
   "ui/cmd/robot_control/data": {},
   "ui/cmd/data/trigger": 0,
   "ui/cmd/data/data": {},
+  "ui/cmd/qr_read/retry": 0,
   "ui/cmd/data/save": 0,
   "ui/cmd/data/reset": 0,
 
@@ -238,6 +242,7 @@
   "process/auto/thickness": {},
   "process/auto/current_step": 0,
   "process/auto/current_specimen_no": 0,
+  "process/auto/specimen_on_indicator": false,
   "device/qr/result": null,
   "device/robot/comm_status": 0,
   "device/shimadzu/comm_status": 0,
