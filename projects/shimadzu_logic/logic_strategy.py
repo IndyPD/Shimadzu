@@ -5,6 +5,27 @@ from .logic_context import *
 
 bb = GlobalBlackboard()
 
+def _update_system_status(context: LogicContext):
+    current_state = context.state
+    status_str = "대기"
+
+    # 에러 상태
+    if current_state in [LogicState.ERROR, LogicState.STOP_AND_OFF]:
+        status_str = "에러"
+    # 대기 상태 (실제 물리적 공정이 진행되지 않는 상태)
+    elif current_state in [
+        LogicState.INIT, LogicState.CONNECTING, LogicState.IDLE, 
+        LogicState.WAIT_COMMAND, LogicState.WAIT_PROCESS, LogicState.PROCESS_COMPLETE,
+        LogicState.REGISTER_PROCESS_INFO, LogicState.CHECK_DEVICE_STATUS, LogicState.RESET_DATA
+    ]:
+        status_str = "대기"
+    # 공정중 상태 (로봇/장비가 움직이거나 작업 중인 상태)
+    else:
+        status_str = "공정중"
+    
+    bb.set("process_status/system_status", status_str)
+
+
 # ----------------------------------------------------
 # 1. 범용 FSM 전략
 # ----------------------------------------------------
@@ -17,6 +38,7 @@ class LogicConnectingStrategy(Strategy):
         self.dev_smz_enable = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 각 모듈의 통신 상태를 블랙보드에서 확인합니다.
         # 이 값들은 각 장치 제어 스레드(indy_control, devices_context)에서 주기적으로 업데이트합니다.
         robot_ok = int(bb.get("device/robot/comm_status") or 0) == 1
@@ -75,6 +97,7 @@ class LogicErrorStrategy(Strategy):
 
         # TODO: 모든 서브 모듈에 정지/에러 명령 전파
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 오류 발생 시 외부 명령 없이 자동으로 복구 상태로 전환합니다.
         return LogicEvent.RECOVER
     
@@ -87,6 +110,7 @@ class LogicRecoveringStrategy(Strategy):
         Logger.info("[Logic] Coordinating full system recovery.")
         # TODO: Device FSM과 Robot FSM에 복구 명령을 순차적으로 전송
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # if sub_module_recovery_complete:
         return LogicEvent.DONE
     
@@ -100,6 +124,7 @@ class LogicStopOffStrategy(Strategy):
         Logger.info("[Logic] Emergency Stop - Coordinating full system shutdown.")
         # TODO: 모든 서브 모듈에 Stop/Off 명령 전파
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # if shutdown_complete:
         return LogicEvent.DONE
     
@@ -113,6 +138,7 @@ class LogicIdleStrategy(Strategy):
         Logger.info("[Logic] System Idle and waiting for batch start command.")
     
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if context.check_violation():
             return LogicEvent.VIOLATION_DETECT
             
@@ -145,6 +171,7 @@ class LogicWaitCommandStrategy(Strategy):
         Logger.info("[Logic] Waiting for batch start command.")
     
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if bb.get("ui/cmd/auto/tensile") == 1:
             return LogicEvent.START_AUTO_COMMAND
         return LogicEvent.NONE
@@ -160,6 +187,7 @@ class LogicAutoRecoverStrategy(Strategy):
         context._sub_seq = 0
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         return context.execute_auto_recovery()
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -171,6 +199,7 @@ class LogicRegisterProcessInfoStrategy(Strategy):
         Logger.info("[Logic] Registering process info.")
         
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 1. 기존 실행 데이터 초기화 (10개 슬롯 생성 및 ID 리셋)
 
         # 2. DB에서 공정 계획 로드 및 실행 테이블 기입
@@ -191,6 +220,7 @@ class LogicResetDataStrategy(Strategy):
         Logger.info("[Logic] Resetting batch data.")
         
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         Logger.info("[Logic] Batch data has been reset.")
         return LogicEvent.DONE
     
@@ -203,6 +233,7 @@ class LogicCheckDeviceStatusStrategy(Strategy):
         Logger.info("[Logic] Checking device status.")
         
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 장비 상태 확인 로직
         return LogicEvent.STATUS_CHECK_DONE
     
@@ -215,6 +246,7 @@ class LogicWaitProcessStrategy(Strategy):
         Logger.info("[Logic] Waiting for process start.")
         
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         return LogicEvent.PROCESS_START
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -231,8 +263,11 @@ class LogicRunProcessStrategy(Strategy):
         bb.set("process_status/runtime_start_obj", now) # 계산을 위해 datetime 객체도 저장
         bb.set("process_status/runtime/elapsedtime", "00:00:00")
         bb.set("process_status/runtime", {"starttime": starttime_str, "elapsedtime": "00:00:00"})
+        # 공정 시작/재개 시 현재 스텝을 0으로 초기화하여 DB 상태 기반으로 작업을 결정하도록 함
+        bb.set("process/auto/current_step", 0)
     
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 하위 FSM(Robot, Device)의 상태를 모니터링하며 전체 공정 시퀀스를 제어합니다.
         # 1. Robot FSM에게 동작 명령을 내리고 완료를 대기합니다.
         # 2. Device FSM에게 동작 명령을 내리고 완료를 대기합니다.
@@ -256,6 +291,37 @@ class LogicDetermineTaskStrategy(Strategy):
         Logger.info("[Logic] Determining next task.")
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
+
+        batch_data = bb.get("process/auto/batch_data")
+        if not batch_data or 'processData' not in batch_data:
+            Logger.error("[Logic] DetermineTask: Batch data is invalid or not found.")
+            return LogicEvent.VIOLATION_DETECT
+
+        # UI에 표시할 배치 정보 업데이트
+        batch_id = batch_data.get("batch_id", "N/A")
+        
+        # 전체 시편 수 계산 (seq_order > 0 인 트레이 수 * 5)
+        total_count = len(batch_data.get("processData", [])) * 5
+        
+        # 완료된 시편 수 계산
+        # 1. 완료된 트레이의 시편 수
+        completed_trays = [p for p in batch_data.get("processData", []) if p.get('seq_status') == 3]
+        current_count = len(completed_trays) * 5
+        
+        # 2. 현재 진행 중인 트레이에서 완료된 시편 수 추가
+        running_tray = next((p for p in batch_data.get("processData", []) if p.get('seq_status') == 2), None)
+        if running_tray:
+            tray_no = running_tray.get('tray_no')
+            # DB에서 해당 트레이의 완료된(status=3) 시편 수를 직접 카운트
+            with context.db.cursor() as cur:
+                cur.execute("SELECT COUNT(*) as count FROM test_tray_items WHERE tray_no = %s AND status = 3", (tray_no,))
+                result = cur.fetchone()
+                if result:
+                    current_count += result['count']
+        system_status = bb.get("process_status/system_status")
+        bb.set("process_status/batch_info", {"batch_id": batch_id, "status": system_status})
+
         # 경과 시간 업데이트
         start_time_obj = bb.get("process_status/runtime_start_obj")
         if start_time_obj:
@@ -296,11 +362,6 @@ class LogicDetermineTaskStrategy(Strategy):
             # 시편 완료 후 정지를 위해 플래그 설정
             bb.set("process/auto/step_stop_requested", True)
 
-        batch_data = bb.get("process/auto/batch_data")
-        if not batch_data or 'processData' not in batch_data:
-            Logger.error("[Logic] DetermineTask: Batch data is invalid or not found.")
-            return LogicEvent.VIOLATION_DETECT
-
         # 1. 현재 진행 중인 시편 찾기 (RUNNING: 2)
         current_specimen = next((s for s in batch_data['processData'] if s.get('seq_status') == 2), None)
         
@@ -330,6 +391,16 @@ class LogicDetermineTaskStrategy(Strategy):
             
             # test_spec 변수(시험 방법)를 기준으로 DB의 batch_method_items 테이블에서 상세 정보를 조회합니다.
             method_details = context.db.get_test_method_details(test_spec)
+
+            # [보완] test_method로 조회 실패 시, 해당 트레이의 qr_no로 다시 조회 시도
+            if not method_details:
+                tray_qr_no = current_specimen.get('qr_no')
+                Logger.warn(f"[Logic] Could not find method details for test_method '{test_spec}'. Trying with tray's qr_no '{tray_qr_no}'.")
+                if tray_qr_no:
+                    method_details = context.db.get_test_method_details(tray_qr_no)
+                    if method_details:
+                        Logger.info(f"[Logic] Found method details using tray's qr_no '{tray_qr_no}'.")
+
             Logger.info(f"[Logic] Method details for '{test_spec}': {method_details}")
             if method_details:
                 # 필요한 데이터(size1, size2, ql, chuckl, thickness)를 추출하여 블랙보드에 저장합니다.
@@ -343,15 +414,13 @@ class LogicDetermineTaskStrategy(Strategy):
                 bb.set("process/auto/current_method_details", details_to_save)
                 Logger.info(f"[Logic] Loaded method details for '{test_spec}': {details_to_save}")
             else:
-                Logger.error(f"[Logic] Could not find method details for '{test_spec}' in DB. Cannot proceed.")
+                Logger.error(f"[Logic] Could not find method details for test_method '{test_spec}' or tray_qr_no '{current_specimen.get('qr_no')}' in DB. Cannot proceed.")
                 return LogicEvent.VIOLATION_DETECT
 
             # 해당 트레이의 모든 시편을 '대기' 상태로 설정
             for i in range(1, 6):
                 context.db.update_test_tray_item(tray_no, i, {'status': 1, 'test_spec': test_spec})
-            # 첫 번째 시편만 '진행중' 상태로 변경
-            context.db.update_test_tray_item(tray_no, 1, {'status': 2})
-            Logger.info(f"[Logic] DetermineTask: Setting specimen 1 in tray {tray_no} to 'RUNNING' (2) in DB.")
+            Logger.info(f"[Logic] DetermineTask: Initialized specimens in tray {tray_no}. Specimen 1 will start.")
             
             # 작업 정보 설정
             bb.set("process/auto/target_floor", current_specimen['tray_no'])
@@ -365,6 +434,58 @@ class LogicDetermineTaskStrategy(Strategy):
 
         # 3. 진행 중인 시편의 다음 단계 결정 (Command.md 흐름 준수)
         step = bb.get("process/auto/current_step")
+        
+        # [Safety Check] step이 0이 아닌데 현재 진행 중인 시편 정보가 없다면 0으로 리셋하여 재판단
+        if step > 0 and not current_specimen:
+            Logger.warn(f"[Logic] DetermineTask: Step is {step} but no running specimen found. Resetting step to 0.")
+            step = 0
+            bb.set("process/auto/current_step", 0)
+
+        # [Start/Restart Logic] 스텝이 0인 경우, DB에서 현재 트레이의 시편 상태를 확인하여 작업을 결정합니다.
+        # 공정 중단 후 재시작 시, 중단된 시편은 스크랩 처리된 것으로 간주하고 다음 시편부터 시작합니다.
+        if step == 0:
+            tray_no = current_specimen['tray_no']
+            tray_items = context.db.get_test_tray_items(tray_no)
+            
+            # 1. 현재 진행 중(status=2)인 시편이 있다면 완료(3) 처리하고 스킵 (사용자 요청: Stop 후 재시작 시나리오)
+            running_item = next((item for item in tray_items if item['status'] == 2), None)
+            if running_item:
+                r_spec_no = running_item['specimen_no']
+                context.db.update_test_tray_item(tray_no, r_spec_no, {'status': 3})
+                context.db.insert_summary_log(batch_data['batch_id'], tray_no, r_spec_no, "DONE (STOPPED & SKIPPED)")
+                Logger.info(f"[Logic] Restart: Found RUNNING specimen {r_spec_no}. Marked as DONE(3) to skip (assumed scrapped).")
+                # DB 상태가 변경되었으므로 목록 다시 조회
+                tray_items = context.db.get_test_tray_items(tray_no)
+
+            # 2. 다음 작업할 시편(status != 3) 찾기
+            target_item = next((item for item in tray_items if item['status'] != 3), None)
+            
+            if target_item:
+                spec_no = target_item['specimen_no']
+                bb.set("process/auto/current_specimen_no", spec_no)
+                bb.set("process/auto/target_num", spec_no)
+                bb.set("process/auto/target_floor", tray_no)
+                
+                # # 상태를 2(RUNNING)로 변경
+                # context.db.update_test_tray_item(tray_no, spec_no, {'status': 2})
+                # Logger.info(f"[Logic] Restart: Starting next specimen {spec_no} in Tray {tray_no}.")
+
+                # 3. 시작 이벤트 결정 및 즉시 반환
+                if spec_no == 1:
+                    bb.set("process/auto/current_step", 1)
+                    return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
+                else:
+                    bb.set("process/auto/current_step", 2)
+                    return LogicEvent.DO_PICK_SPECIMEN
+            else:
+                # 해당 트레이의 모든 시편이 완료된 경우
+                Logger.info(f"[Logic] Restart: All specimens in Tray {tray_no} seem complete in DB. Marking tray as DONE.")
+                current_specimen['seq_status'] = 3 # DONE
+                bb.set("process/auto/batch_data", batch_data)
+                context.db.update_processing_status(current_specimen['seq_order'], 3)
+                # 다음 트레이 탐색을 위해 재귀 호출
+                return self.operate(context)
+
         Logger.info(f"[Logic] DetermineTask: Current sequence {current_specimen['seq_order']} is at step {step}.")
         
         # Command.md v2.0 (통합 함수 기반) 순서
@@ -462,7 +583,6 @@ class LogicDetermineTaskStrategy(Strategy):
 
                 # 현재 시편 완료 DB 업데이트
                 context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
-                context.db.update_test_tray_item(tray_no, spec_no, {'status': 3})
                 Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB due to Step Stop.")
                 
                 # MQTT 'process_step_stopped' 이벤트 발행
@@ -478,8 +598,6 @@ class LogicDetermineTaskStrategy(Strategy):
             
             # 현재 시편 완료 기록 (3.2, 3.3)
             context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
-            # test_tray_items 상태 '완료'로 업데이트
-            context.db.update_test_tray_item(tray_no, spec_no, {'status': 3})
             Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB.")
             if spec_no < 5:
                 # 다음 시편으로 루프 (동일 트레이)
@@ -490,8 +608,6 @@ class LogicDetermineTaskStrategy(Strategy):
                 bb.set("process/auto/current_step", 2)
                 # `batch_test_items`는 트레이(시퀀스) 단위로 상태를 관리하므로, 개별 시편 상태는 DB에 업데이트하지 않음.
                 context.db.insert_summary_log(batch_id=batch_data['batch_id'], tray_no=current_specimen['tray_no'], specimen_no=next_spec_no, work_history="START")
-                # test_tray_items 상태 '진행중'으로 업데이트
-                context.db.update_test_tray_item(tray_no, next_spec_no, {'status': 2})
                 Logger.info(f"[Logic] DetermineTask: Moving to next specimen {next_spec_no} in same tray. Skipping QR read, starting from Step 2 (Pick Specimen).")
                 return LogicEvent.DO_PICK_SPECIMEN
             else:
@@ -515,6 +631,7 @@ class LogicMoveToRackForQRReadStrategy(Strategy):
         Logger.info("[Logic] Moving to rack for QR read.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -541,7 +658,9 @@ class LogicPickSpecimenStrategy(Strategy):
         self.is_stopping = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -571,7 +690,9 @@ class LogicMoveToIndicatorStrategy(Strategy):
         self.is_stopping = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -601,7 +722,9 @@ class LogicMeasureSpecimenThicknessStrategy(Strategy):
         bb.set("process/auto/measure_point", self.measure_point)
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -661,7 +784,9 @@ class LogicMoveToAlignStrategy(Strategy):
         self.is_stopping = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -689,7 +814,9 @@ class LogicAlignSpecimenStrategy(Strategy):
         self.is_stopping = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -717,7 +844,9 @@ class LogicPickSpecimenFromAlignStrategy(Strategy):
         self.is_stopping = False
 
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
@@ -743,6 +872,7 @@ class LogicLoadSpecimenTensileMachineStrategy(Strategy):
         Logger.info("[Logic] Loading tensile machine.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -764,6 +894,7 @@ class LogicStartTensileTestStrategy(Strategy): # 이 전략은 그대로 사용
         Logger.info("[Logic] Starting tensile test.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -785,6 +916,7 @@ class LogicPickSpecimenFromTensileMachineStrategy(Strategy):
         Logger.info("[Logic] Picking from tensile machine.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -807,6 +939,7 @@ class LogicDisposeScrapStrategy(Strategy):
         Logger.info("[Logic] Retreating and handling scrap.")
         context._seq = 0
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
         # 즉시 정지 (Stop)
         if tensile_cmd == 3:
@@ -844,6 +977,7 @@ class LogicProcessCompleteStrategy(Strategy):
         bb.set("logic/events/one_shot", event_payload)
     
     def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
         # 공정 완료 후, 자동 시작 명령을 리셋하여 무한 루프를 방지합니다.
         bb.set("ui/cmd/auto/tensile", 0)
         Logger.info("[Logic] Auto start command has been reset. Waiting for next batch command.")

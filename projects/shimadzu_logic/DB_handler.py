@@ -108,10 +108,10 @@ class DBHandler:
         UI에서 설정한 배치 계획(`batch_plan_items`)을 `batch_test_items`로 복사/로드합니다.
         또한, 실시간 시편 상태를 기록할 `test_tray_items` 테이블을 초기화합니다.
         """
-        with self.cursor() as cur:
-            # 1. test_tray_items 테이블 초기화
-            self.initialize_test_tray_items()
+        # 1. test_tray_items 테이블 초기화
+        self.initialize_test_tray_items()
 
+        with self.cursor() as cur:
             # 2. 기존 테스트 항목 삭제
             cur.execute("TRUNCATE TABLE batch_test_items")
             logger.info("Truncated `batch_test_items` table.")
@@ -124,6 +124,18 @@ class DBHandler:
             """
             cur.execute(sql)
             logger.info(f"{cur.rowcount} rows copied from `batch_plan_items` to `batch_test_items`.")
+
+            # 4. batch_test_items 정보를 바탕으로 test_tray_items 업데이트
+            # seq_order > 0 인 항목에 대해 test_spec 업데이트 및 status=1(대기) 설정
+            update_sql = """
+            UPDATE test_tray_items t
+            JOIN batch_test_items b ON t.tray_no = b.tray_no
+            SET t.test_spec = b.test_method, t.status = 1
+            WHERE b.seq_order > 0
+            """
+            cur.execute(update_sql)
+            logger.info(f"Updated `test_tray_items` based on `batch_test_items`. Rows affected: {cur.rowcount}")
+
             return cur.rowcount
 
     def initialize_test_tray_items(self):
@@ -173,6 +185,12 @@ class DBHandler:
             sql = f"UPDATE test_tray_items SET {set_clause} WHERE tray_no = %s AND specimen_no = %s"
             cur.execute(sql, tuple(values))
             logger.info(f"Updated test_tray_items for tray {tray_no}, specimen {specimen_no} with {updates}")
+
+    def get_test_tray_items(self, tray_no: int):
+        """트레이 번호에 해당하는 시편 목록을 조회합니다."""
+        with self.cursor() as cur:
+            cur.execute("SELECT * FROM test_tray_items WHERE tray_no = %s ORDER BY specimen_no ASC", (tray_no,))
+            return cur.fetchall()
 
     def get_batch_data(self):
         """
@@ -242,12 +260,12 @@ class DBHandler:
             logger.info(f"Reset {cur.rowcount} rows in `batch_test_items` table to initial state.")
         return True
 
-    def get_test_method_details(self, test_method_name):
+    def get_test_method_details(self, qr_no):
         """
         시험 방법 이름으로 `batch_method_items` 테이블에서 상세 정보를 조회합니다.
         """
         with self.cursor() as cur:
-            cur.execute("SELECT * FROM batch_method_items WHERE test_method = %s", (test_method_name,))
+            cur.execute("SELECT * FROM batch_method_items WHERE qr_no = %s", (qr_no,))
             return cur.fetchone()
 
     def get_qr_recipe(self, qr_no):

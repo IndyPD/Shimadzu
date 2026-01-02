@@ -167,7 +167,9 @@ class RobotContext(ContextBase):
             time.sleep(0.1)
             Logger.info(f"{get_time()}: Wait for main program running")
             if self.check_program_running():
+                bb.set("indy_command/reset_init_var", True)
                 break
+        
 
     # def play_warming_program(self):
     #     bb.set("indy_command/play_warming_program", True)
@@ -256,6 +258,8 @@ class RobotContext(ContextBase):
             return RobotMotionCommand.RACK_FRONT_MOVE
         elif motion_name == MotionCommand.MOVE_TO_QR_SCAN_POS:
             return get_rack_nF_QR_scan_pos_cmd(floor)
+        elif motion_name == MotionCommand.MOVE_TO_TRAY :
+            return get_rack_nF_sample_N_pos_cmd(floor, 0)
         elif motion_name == MotionCommand.PICK_SPECIMEN_FROM_RACK:
             return get_rack_nF_sample_N_pos_cmd(floor, num)
         elif motion_name == MotionCommand.RETREAT_FROM_RACK:
@@ -335,6 +339,12 @@ class RobotContext(ContextBase):
         # 랙 앞(1000) -> QR 스캔 위치(13xx)
         if current_pos_id == RobotMotionCommand.RACK_FRONT_MOVE and (1300 <= next_cmd_id <= 1400):
             return True
+        
+        # 홈(100) or 랙 앞(1000) -> 랙 n층 앞(10x0) (QR 스캔 생략 시)
+        if current_pos_id in [RobotMotionCommand.RECOVERY_HOME, RobotMotionCommand.RACK_FRONT_MOVE]:
+             if 1000 <= next_cmd_id <= 1100 and next_cmd_id % 10 == 0:
+                return True
+
         # QR 스캔 위치(13xx) -> 랙 n층 앞(10x0)
         if 1300 <= current_pos_id <= 1400:
             floor = (current_pos_id - 1300) // 10

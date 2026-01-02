@@ -212,23 +212,24 @@ class DeviceViolation(ViolationType):
     SMZ_COMM_ERR                        = 1 << 3
 
     # Device Specific Errors
-    REMOTE_IO_DEVICE_ERR                = 1 << 4  # e.g., EMO button
+    REMOTE_IO_DEVICE_ERR                = 1 << 4  # 범용 Remote I/O 장치 오류
     GAUGE_DEVICE_ERROR                  = 1 << 5
     SMZ_DEVICE_ERR                      = 1 << 6  # e.g., Shimadzu reports an internal error
+    SOL_SENSOR_ERR                      = 1 << 7  # 솔레노이드 밸브 공압 공급 오류
 
     # Process/Sequence Errors
-    INITIAL_CHECK_FAIL                  = 1 << 7
-    REGISTER_FAIL                       = 1 << 8
-    GRIP_CLOSE_FAIL                     = 1 << 9
-    PRELOAD_FAIL                        = 1 << 10
-    TEST_START_FAIL                     = 1 << 11
-    EXT_MOVEMENT_FAIL                   = 1 << 12
-    TEST_RUNTIME_ERROR                  = 1 << 13
+    INITIAL_CHECK_FAIL                  = 1 << 8
+    REGISTER_FAIL                       = 1 << 9
+    GRIP_CLOSE_FAIL                     = 1 << 10
+    PRELOAD_FAIL                        = 1 << 11
+    TEST_START_FAIL                     = 1 << 12
+    EXT_MOVEMENT_FAIL                   = 1 << 13
+    TEST_RUNTIME_ERROR                  = 1 << 14
     
     # General Hardware Errors
-    ISO_EMERGENCY_BUTTON                = 1 << 14
-    HW_VIOLATION                        = 1 << 15  # Generic HW violation
-    HW_NOT_READY                        = 1 << 16
+    ISO_EMERGENCY_BUTTON                = 1 << 15
+    HW_VIOLATION                        = 1 << 16  # Generic HW violation
+    HW_NOT_READY                        = 1 << 17
 
 # =======================================================
 # 7. RobotState (로봇 제어 상태) 정의 - Robot은 Logic의 서브 모듈로 간주
@@ -486,6 +487,7 @@ class MotionCommand(str, Enum):
     # ACT01: 시편 랙 (Specimen Rack)
     MOVE_TO_RACK                        = "move_to_rack"
     MOVE_TO_QR_SCAN_POS                 = "move_to_qr_scan_pos"
+    MOVE_TO_TRAY                        = "move_to_tray"
     PICK_SPECIMEN_FROM_RACK             = "pick_specimen_from_rack"
     GRIPPER_CLOSE_FOR_RACK              = "gripper_close_for_rack"
     RETREAT_FROM_RACK                   = "retreat_from_rack"

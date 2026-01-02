@@ -215,6 +215,7 @@ class MqttComm:
                         # pass
                     elif action == "stop":
                         self.bb.set("ui/cmd/auto/tensile", 3) # 3: 즉시 정지 (Stop)
+                        self.bb.set("indy_command/reset_init_var", True)
                         # pass
                     elif action == "step_stop":
                         self.bb.set("ui/cmd/auto/tensile", 4) # 4: 현재 시편 완료 후 정지 (Step Stop)
@@ -449,6 +450,24 @@ class MqttComm:
                     process_status_msg_id = self.rules["event_ids"].get("process_status", "logic-evt-proc-status-001")
                     self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
                         self._create_frame("logic.event", "ui", process_status_msg_id, process_status_payload, False)))
+                    
+                    # 4. Event Publishing (logic/send_event) - One-shot events
+                    event_payload = self.bb.get("logic/send_event")
+                    if event_payload:
+                        # 이벤트 타입 추출
+                        evt_type = event_payload.get("evt", "unknown_event")
+                        # 고유 Msg ID 생성
+                        msg_id = f"logic-evt-{evt_type}-{uuid4().hex[:6]}"
+                        
+                        pub_data = json.dumps(self._create_frame("logic.event", "ui", msg_id, event_payload, False))
+                        # 메시지 발행
+                        self.client.publish(self.rules["topics"]["logic_evt"], pub_data)
+                        self.Logger.info(f"[MQTT] Error Event Occur : {pub_data}")
+
+                        if self.Logger: self.Logger.info(f">>> [SND EVT] {evt_type} | MsgID: {msg_id}")
+                        
+                        # 전송 후 데이터 초기화 (중복 전송 방지)
+                        self.bb.set("logic/send_event", {})
                 
                 except KeyError as e:
                     if self.Logger:

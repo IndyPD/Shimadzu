@@ -376,7 +376,7 @@ class DeviceContext(ContextBase):
                 sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
                 if sol_sensor == 0:
                     Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
-                    self.violation_code |= DeviceViolation.REMOTE_IO_DEVICE_ERR
+                    self.violation_code |= DeviceViolation.SOL_SENSOR_ERR
                 if emo_triggered:
                     Logger.info(f"[device] Check violation : EMO Error Detected")
                     self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
@@ -462,6 +462,7 @@ class DeviceContext(ContextBase):
                 bb.get("device/remote/input/ALIGN_2_PULL") == 0 and
                 bb.get("device/remote/input/ALIGN_3_PUSH") == 1 and
                 bb.get("device/remote/input/ALIGN_3_PULL") == 0) :
+                bb.set("process_status/aligner_status","정렬")
                 bb.set("device/align/state","push")
 
             elif (bb.get("device/remote/input/ALIGN_1_PUSH") == 0 and
@@ -470,6 +471,7 @@ class DeviceContext(ContextBase):
                   bb.get("device/remote/input/ALIGN_2_PULL") == 1 and
                   bb.get("device/remote/input/ALIGN_3_PUSH") == 0 and
                   bb.get("device/remote/input/ALIGN_3_PULL") == 1) :
+                bb.set("process_status/aligner_status","해제")
                 bb.set("device/align/state","pull")
 
 
@@ -501,6 +503,16 @@ class DeviceContext(ContextBase):
                 bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
                 bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
                 bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
+
+            # Remote IO 통신이 복구되었을 때 (꺼졌다가 다시 켜짐)
+            if not self.remote_comm_state and (
+                self.remote_output_data[DigitalOutput.LOCAL_LAMP_R] != 1 or
+                self.remote_output_data[DigitalOutput.LOCAL_LAMP_C] != 1 or
+                self.remote_output_data[DigitalOutput.LOCAL_LAMP_L] != 1
+            ):
+                Logger.info("[device] Remote IO System Error Detected.")
+                Logger.info("[device] Remote IO connection restored (was disconnected). Restoring Lamp status (R, C, L ON).")                
+                self.lamp_on()
 
             self.remote_comm_state = True
             # Logger.info(f"[device] Connect state : {self.remote_comm_state}")

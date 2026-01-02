@@ -237,7 +237,7 @@ class RobotCommunication:
                     # if is_auto_mode.get('on') :
                     #     self.indy.set_auto_mode(False)
                     bb.set("robot/recover/motion/cmd",0)
-                    self.indy.set_speed_ratio(0) # (70)
+                    # self.indy.set_speed_ratio(0) # (70)
                 except:
                     Logger.error("Stop program fail")
 
@@ -413,6 +413,16 @@ class RobotCommunication:
 
         if robot_state_ui == 2 :
             bb.set("system/emo/on",1)
+
+        # Robot status string for UI
+        robot_status_str = "대기"
+        if robot_state_ui in [2, 3, 5]: # Emergency, Error, Collision
+            robot_status_str = "에러"
+        elif self.program_state == ProgramState.PROG_RUNNING:
+            robot_status_str = "가동중"
+        elif self.program_state == ProgramState.PROG_PAUSING:
+            robot_status_str = "일시정지"
+        bb.set("process_status/robot_status", robot_status_str)
 
         # Logger.info(f"send_data_to_bb {robot_state_ui} {self.robot_running_hour} {self.robot_running_min}")
 

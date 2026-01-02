@@ -49,10 +49,55 @@ class RobotErrorStrategy(Strategy):
         bb.set("robot/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         violation_names = [v.name for v in RobotViolation if v & context.violation_code]
         Logger.error(f"Robot Violation Detected: {'|'.join(violation_names)}", popup=True)
+        
+        # UI로 에러 이벤트 메시지 전송 (상태 진입 시 1회 수행)
+        self._send_ui_error_event(context.violation_code)
+        self.last_send_time = time.time()
+
     def operate(self, context: RobotContext) -> RobotEvent:
+        # 3분(180초)마다 에러 메시지 재전송
+        if time.time() - self.last_send_time > 180.0:
+            Logger.info("[Robot] Resending error event to UI (3 min interval).")
+            self._send_ui_error_event(context.violation_code)
+            self.last_send_time = time.time()
+
         # 오류 발생 시 외부 명령 없이 자동으로 복구 상태로 전환합니다.
         return RobotEvent.RECOVER
     
+    def _send_ui_error_event(self, violation_code):
+        """MQTT_Protocol.md 5번 항목에 따른 에러 이벤트 메시지 전송"""
+        error_data = None
+        
+        # 우선순위에 따라 에러 메시지 매핑 (RobotViolation 상수 사용)
+        if violation_code & RobotViolation.COLLISION_VIOLATION:
+            error_data = ("COLLISION_VIOLATION", "로봇 충돌이 감지되었습니다.", "로봇을 안전한 위치로 수동 이동시킨 후 복구 시퀀스를 진행하세요.")
+        elif violation_code & RobotViolation.CONNECTION_TIMEOUT:
+            error_data = ("ROBOT_CONNECTION_ERR", "로봇 컨트롤러와의 통신이 두절되었습니다.", "로봇 컨트롤러 전원 및 LAN 케이블 연결 상태를 확인하세요.")
+        elif violation_code & RobotViolation.TOOL_CHANGE_FAIL:
+            error_data = ("TOOL_CHANGE_FAIL", "툴 교체 동작이 실패했습니다.", "툴 체인저 상태를 확인하고 수동으로 툴을 장착/탈착하세요.")
+        elif violation_code & RobotViolation.QR_READ_FAIL:
+             error_data = ("ROBOT_QR_READ_FAIL", "로봇 QR 리딩에 실패했습니다.", "QR 코드 위치 및 조명을 확인하세요.")
+        elif violation_code & RobotViolation.GRIPPER_FAIL:
+             error_data = ("GRIPPER_FAIL", "그리퍼 동작이 실패했습니다.", "공압 및 그리퍼 센서를 확인하세요.")
+        elif violation_code & RobotViolation.ISO_EMERGENCY_BUTTON:
+             error_data = ("EMERGENCY_STOP", "비상 정지 버튼이 눌렸습니다.", "비상 정지 버튼을 해제하고 리셋하세요.")
+        
+        if error_data:
+            code, msg, action = error_data
+            payload = {
+                "kind": "event",
+                "evt": "system_error_event",
+                "error_source": "robot",
+                "error_code": code,
+                "error_message": msg,
+                "severity": "critical",
+                "recommended_action": action
+            }
+            # GlobalBlackboard를 통해 MqttComm으로 이벤트 전달
+            bb.set("logic/send_event", payload)
+            Logger.info(f"[Robot] UI Error Event Queued: {code}")
+            Logger.info(f"[Robot] UI Error Event Message: {payload}")
+
     def exit(self, context: RobotContext, event: RobotEvent) -> None:
         Logger.info(f"[Robot] exit {self.__class__.__name__} with event: {event}")
 
@@ -164,6 +209,7 @@ class RobotProgramAutoOnStrategy(Strategy):
         # 1. 로봇 프로그램이 이미 실행 중인지 확인합니다.
         if context.check_program_running():
             Logger.info("[Robot] Program is running. Auto mode on is complete.")
+            bb.set("indy_command/reset_init_var", True)
             return RobotEvent.PROGRAM_AUTO_ON_DONE
 
         # 2. 프로그램이 실행 중이 아니고, 시작 명령을 아직 보내지 않았다면 보냅니다.
@@ -257,6 +303,22 @@ class RobotExecuteMotionStrategy(Strategy):
             #     # 안전하지 않은 이동이므로 실패 처리
             #     self.cmd_id = -1
             #     return
+
+            # 로봇 프로그램 실행 상태 확인 및 자동 시작
+            if not context.check_program_running():
+                Logger.warn("[Robot] Robot program is NOT running. Attempting to start...")
+                bb.set("indy_command/play_program", True)
+                
+                # 프로그램 시작 대기 (최대 5초)
+                for _ in range(50):
+                    time.sleep(0.1)
+                    if context.program_state() == ProgramState.PROG_RUNNING:
+                        Logger.info("[Robot] Robot program started.")
+                        break
+                else:
+                    Logger.error("[Robot] Failed to start robot program. Motion execution aborted.")
+                    self.cmd_id = -1
+                    return
 
             Logger.info(f"[Robot] '{self.motion_name}' 모션 실행 (CMD ID: {self.cmd_id})")
             # CMD_ack와 CMD_done 초기화 요청

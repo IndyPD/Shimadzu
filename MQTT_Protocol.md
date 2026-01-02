@@ -2,6 +2,8 @@ Markdown
 
 # 인장기 시험 자동화 Logic ↔ UI MQTT 프로토콜 정의서
 
+## 최종 작성일 : 2026-01-02
+
 ## 1. 명령 (Command) 및 응답 (ACK) 요약
 
 ### 1.1. 통신 요약 테이블
@@ -856,15 +858,286 @@ UI의 `stop` 명령에 따라 공정이 즉시 중단된 후, Logic이 UI에게 
 }
 ```
 
-## 5. JSON 데이터 모델 명세
+## 5. 시스템 오류 및 이벤트 보고 (UI 팝업)
 
-### 5.1. system_states 배열 (system_status)
-*   `[0]`: Robot Comm (1:OK)
-*   `[1]`: Shimadzu Device Comm (1:OK)
-*   `[2]`: Gauge Comm
-*   `[3]`: RIO Comm
-*   `[4]`: QR Reader Comm
-*   `[5]`: Vision Comm
+본 항목은 Logic 시스템이 로봇, 장비 등에서 발생한 심각한 오류나 주요 이벤트를 UI에 전달하여 사용자에게 팝업으로 알릴 때 사용하는 메시지를 정의합니다. 이를 통해 운영자는 시스템의 예외 상황을 즉시 인지하고 필요한 조치를 취할 수 있습니다.
 
-### 5.2. robot_pose 구조
-*   `x`, `y`, `z`, `rx`, `ry`, `rz` (단위: mm, degree)
+### 5.1. LOGIC → UI 오류 이벤트 (system_error_event)
+
+Logic은 시스템의 치명적인 오류(예: 공압 공급 중단, 로봇 충돌)가 감지되면 `system_error_event`를 UI로 즉시 발행합니다. UI는 이 메시지를 수신하면 사용자에게 오류 내용과 권장 조치를 담은 팝업을 표시해야 합니다.
+
+### 5.2. 주요 필드 설명
+
+| 필드명 | 설명 | 예시 |
+| :--- | :--- | :--- |
+| `error_source` | 오류가 발생한 주요 모듈을 명시합니다. | `device`, `robot`, `logic` |
+| `error_code` | `constants.py`에 정의된 `DeviceViolation` 또는 `RobotViolation`과 같은 구체적인 오류 코드입니다. | `SOL_SENSOR_ERR`, `COLLISION_VIOLATION` |
+| `error_message` | UI에 표시될 사용자 친화적인 오류 메시지입니다. | "로봇 충돌이 감지되었습니다." |
+| `severity` | 오류의 심각도를 나타냅니다. `critical`은 시스템 정지를 의미할 수 있습니다. | `critical`, `warning` |
+| `recommended_action` | 사용자에게 권장되는 조치 사항입니다. | "주 공압 공급 라인을 확인하세요." |
+
+### 5.3. 주요 오류 코드 및 메시지 정의
+
+시스템에서 발생할 수 있는 주요 치명적 오류(Critical) 목록입니다.
+
+| Error Source | Error Code | Error Message (Example) | Recommended Action |
+| :--- | :--- | :--- | :--- |
+| `device` | `SOL_SENSOR_ERR` | 솔레노이드 밸브 공압 공급 오류가 감지되었습니다. | 주 공압 공급 라인을 확인한 후 리셋 버튼을 누르세요. |
+| `robot` | `COLLISION_VIOLATION` | 로봇 충돌이 감지되었습니다. | 로봇을 안전한 위치로 수동 이동시킨 후 복구 시퀀스를 진행하세요. |
+| `robot` | `ROBOT_SINGULARITY_ERR` | 로봇이 특이점(Singularity) 자세에 도달했습니다. | 로봇 자세를 확인하고 티칭 포인트를 수정하거나 수동으로 이동시키세요. |
+| `device` | `REMOTE_IO_COMM_ERR` | Remote I/O 장치와의 통신이 두절되었습니다. | Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요. |
+| `device` | `QR_COMM_ERR` | QR 리더기와의 통신이 두절되었습니다. | QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요. |
+| `device` | `QR_READ_FAIL` | QR 코드를 읽는데 실패했습니다. (최대 횟수 초과) | 시편의 QR 코드 상태를 확인하거나 조명을 조절해주세요. |
+| `device` | `GAUGE_COMM_ERR` | 변위 측정기(Gauge)와의 통신이 두절되었습니다. | 측정기 전원 및 케이블 연결을 확인하세요. |
+| `device` | `GAUGE_MEASURE_FAIL` | 측정기로부터 유효한 값을 읽어오지 못했습니다. | 측정기 디스플레이 상태를 확인하고 재시도하세요. |
+| `device` | `SMZ_COMM_ERR` | 시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다. | 시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요. |
+| `device` | `SMZ_COMM_CONTROL_ERROR` | 시마즈(Shimadzu) 시험기 제어 명령이 실패하였습니다. | 시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요. |
+
+### 5.4. 주요 오류 코드 및 메세지 예시
+
+**오류 이벤트 메시지 예시 (COLLISION_VIOLATION)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-002",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:35:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "robot",
+    "error_code": "COLLISION_VIOLATION",
+    "error_message": "로봇 충돌이 감지되었습니다.",
+    "severity": "critical",
+    "recommended_action": "로봇을 안전한 위치로 수동 이동시킨 후 복구 시퀀스를 진행하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (ROBOT_SINGULARITY_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-003",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:36:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "robot",
+    "error_code": "ROBOT_SINGULARITY_ERR",
+    "error_message": "로봇이 특이점(Singularity) 자세에 도달했습니다.",
+    "severity": "critical",
+    "recommended_action": "로봇 자세를 확인하고 티칭 포인트를 수정하거나 수동으로 이동시키세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (SOL_SENSOR_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:30:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "SOL_SENSOR_ERR",
+    "error_message": "솔레노이드 밸브 공압 공급 오류가 감지되었습니다.",
+    "severity": "critical",
+    "recommended_action": "주 공압 공급 라인을 확인한 해주세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (REMOTE_IO_COMM_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-004",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:40:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "REMOTE_IO_COMM_ERR",
+    "error_message": "Remote I/O 장치와의 통신이 두절되었습니다.",
+    "severity": "critical",
+    "recommended_action": "Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (QR_COMM_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-005",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:41:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "QR_COMM_ERR",
+    "error_message": "QR 리더기와의 통신이 두절되었습니다.",
+    "severity": "critical",
+    "recommended_action": "QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (QR_READ_FAIL)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-006",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:42:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "QR_READ_FAIL",
+    "error_message": "QR 코드를 읽는데 실패했습니다. (최대 횟수 초과)",
+    "severity": "warning",
+    "recommended_action": "시편의 QR 코드 상태를 확인하거나 조명을 조절해주세요."
+  }
+}
+
+```
+
+**오류 이벤트 메시지 예시 (GAUGE_COMM_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-007",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:43:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "GAUGE_COMM_ERR",
+    "error_message": "변위 측정기(Gauge)와의 통신이 두절되었습니다.",
+    "severity": "critical",
+    "recommended_action": "측정기 전원 및 케이블 연결을 확인하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (GAUGE_MEASURE_FAIL)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-008",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:44:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "GAUGE_MEASURE_FAIL",
+    "error_message": "측정기로부터 유효한 값을 읽어오지 못했습니다.",
+    "severity": "warning",
+    "recommended_action": "측정기 디스플레이 상태를 확인하고 재시도하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (SMZ_COMM_ERR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-009",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:45:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "SMZ_COMM_ERR",
+    "error_message": "시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다.",
+    "severity": "critical",
+    "recommended_action": "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요."
+  }
+}
+```
+
+**오류 이벤트 메시지 예시 (SMZ_COMM_CONTROL_ERROR)**
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-error-009",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:45:00.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "system_error_event",
+    "error_source": "device",
+    "error_code": "SMZ_COMM_ERR",
+    "error_message": "시마즈(Shimadzu) 시험기 제어 명령이 실패하였습니다.",
+    "severity": "critical",
+    "recommended_action": "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요."
+  }
+}
+```
+
+## 6. JSON 데이터 모델 명세
+
+### 6.1. system_states 배열 (system_status)
+
+[0]: Robot Comm (1:OK)
+[1]: Shimadzu Device Comm (1:OK)
+[2]: Gauge Comm
+[3]: Remote IO Comm
+[4]: QR Reader Comm
+[5]: Vision Comm
+
+### 6.2. robot_pose 구조
+
+x, y, z, rx, ry, rz (단위: mm, degree)
+```

@@ -288,5 +288,7 @@
   "system/setting/contxt" :{
 
   },
-  "logic/events/one_shot" : {}
+  "logic/events/one_shot" : {},
+
+  "logic/send_event" : {}
 }

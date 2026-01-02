@@ -67,13 +67,87 @@ class ErrorStrategy(Strategy):
         # The context.violation_code should already be set by the check that triggered the VIOLATION_DETECT event.
         violation_names = [v.name for v in DeviceViolation if v & context.violation_code]
         Logger.error(f"[device] Violation Detected: {'|'.join(violation_names)}")
-        # This strategy now passively waits for an external RECOVER event.
-        # The recovery logic is moved to RecoveringStrategy.
+
+        violation_code = context.violation_code
+
+        # UI로 에러 이벤트 메시지 전송 (상태 진입 시 1회 수행)
+        self._send_ui_error_event(violation_code)
+        self.last_send_time = time.time()
+
+        # 자동 복구를 시도할 위반 목록 (통신 관련 에러)
+        auto_recoverable_violations = (
+            DeviceViolation.REMOTE_IO_COMM_ERR |
+            DeviceViolation.GAUGE_COMM_ERR |
+            DeviceViolation.QR_COMM_ERR |
+            DeviceViolation.SMZ_COMM_ERR
+        )
+
+        self.next_event = DeviceEvent.NONE
+        self.monitor_sol_sensor = False
+
+        # 감지된 위반 중 자동 복구 가능한 항목이 있는지 확인합니다.
+        if violation_code & auto_recoverable_violations:
+            Logger.info("[device] Auto-recoverable violation detected. Triggering automatic recovery.")
+            # 통신 오류의 경우, 자동으로 복구 상태로 전환합니다.
+            self.next_event = DeviceEvent.RECOVER
+        elif violation_code & DeviceViolation.SOL_SENSOR_ERR:
+            # SOL 센서 에러인 경우, 공압 공급(센서값 1)을 모니터링하여 자동 복구 시도
+            Logger.info("[device] SOL_SENSOR_ERR detected. Monitoring SOL_SENSOR for auto-recovery.")
+            self.monitor_sol_sensor = True
+        else:
+            # SOL 센서 에러와 같은 하드웨어 문제는 수동 조치가 필요합니다.
+            # FSM이 ERROR와 RECOVERING을 반복하지 않도록 ERROR 상태에 머무릅니다.
+            # 외부(예: UI)로부터 RECOVER 이벤트가 들어올 때까지 대기합니다.
+            Logger.warn("[device] Non-auto-recoverable violation. Waiting for external recovery command.")
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # 오류 발생 시 외부 명령 없이 자동으로 복구 상태로 전환합니다.
-        return DeviceEvent.RECOVER
+        # 3분(180초)마다 에러 메시지 재전송
+        if time.time() - self.last_send_time > 180.0:
+            Logger.info("[device] Resending error event to UI (3 min interval).")
+            self._send_ui_error_event(context.violation_code)
+            self.last_send_time = time.time()
+
+        if self.monitor_sol_sensor:
+            # Remote IO 데이터 확인 (DigitalInput.SOL_SENSOR)
+            if context.remote_input_data and len(context.remote_input_data) > DigitalInput.SOL_SENSOR:
+                if context.remote_input_data[DigitalInput.SOL_SENSOR] == 1:
+                    Logger.info("[device] SOL_SENSOR recovered (Value: 1). Triggering recovery.")
+                    return DeviceEvent.RECOVER
+
+        return self.next_event
     
+    def _send_ui_error_event(self, violation_code):
+        """MQTT_Protocol.md 5번 항목에 따른 에러 이벤트 메시지 전송"""
+        error_data = None
+        
+        # 우선순위에 따라 에러 메시지 매핑 (DeviceViolation 상수 사용)
+        if violation_code & DeviceViolation.SOL_SENSOR_ERR:
+            error_data = ("SOL_SENSOR_ERR", "솔레노이드 밸브 공압 공급 오류가 감지되었습니다.", "주 공압 공급 라인을 확인한 후 리셋 버튼을 누르세요.")
+        elif violation_code & DeviceViolation.REMOTE_IO_COMM_ERR:
+            error_data = ("REMOTE_IO_COMM_ERR", "Remote I/O 장치와의 통신이 두절되었습니다.", "Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요.")
+        elif violation_code & DeviceViolation.GAUGE_COMM_ERR:
+            error_data = ("GAUGE_COMM_ERR", "변위 측정기(Gauge)와의 통신이 두절되었습니다.", "측정기 전원 및 케이블 연결을 확인하세요.")
+        elif violation_code & DeviceViolation.QR_COMM_ERR:
+            error_data = ("QR_COMM_ERR", "QR 리더기와의 통신이 두절되었습니다.", "QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요.")
+        elif violation_code & DeviceViolation.SMZ_COMM_ERR:
+            error_data = ("SMZ_COMM_ERR", "시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다.", "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요.")
+        
+        if error_data:
+            code, msg, action = error_data
+            payload = {
+                "kind": "event",
+                "evt": "system_error_event",
+                "error_source": "device",
+                "error_code": code,
+                "error_message": msg,
+                "severity": "critical",
+                "recommended_action": action
+            }
+            # GlobalBlackboard를 통해 MqttComm으로 이벤트 전달 (키는 MqttComm 구현에 따름)
+            bb.set("logic/send_event", payload)
+            Logger.info(f"[device] UI Error Event Queued: {code}")
+            Logger.info(f"[device] UI Error Event Message: {payload}")
+
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info(f"[device] exit ErrorStrategy with event: {event}")
 
@@ -84,8 +158,9 @@ class ErrorStrategy(Strategy):
 class RecoveringStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
-        Logger.info("[device] enter RecoveringStrategy. Attempting to resolve violations.")
         # The violation code that led to the ERROR state is still in context.violation_code
+        violation_names = [v.name for v in DeviceViolation if v & context.violation_code]
+        Logger.info(f"[device] enter RecoveringStrategy. Attempting to resolve: {'|'.join(violation_names)}")
         self.violation_to_recover = context.violation_code
         self.reconnect_attempted = False
 
@@ -100,10 +175,6 @@ class RecoveringStrategy(Strategy):
                 self.violation_to_recover & DeviceViolation.GAUGE_COMM_ERR,
                 self.violation_to_recover & DeviceViolation.QR_COMM_ERR
             ])
-            Logger.info(f"REMOTE ERROR Std Value : {DeviceViolation.REMOTE_IO_COMM_ERR}")
-            Logger.info(f"GAUGE ERROR Std Value : {DeviceViolation.GAUGE_COMM_ERR}")
-            Logger.info(f"QR ERROR Std Value : {DeviceViolation.QR_COMM_ERR}")
-            Logger.info(f"Detail Error : {self.violation_to_recover}")
             if is_comm_error:
                 Logger.info("[device] [Recovery] Communication error detected, attempting auto-reconnection...")
                 if self.violation_to_recover & DeviceViolation.REMOTE_IO_COMM_ERR:
