@@ -74,6 +74,11 @@ class DBHandler:
                 if bb.get("ui/cmd/data/reset") == 1:
                     logger.info("[DBHandler] Received data reset command. Resetting batch data.")
                     self.reset_batch_test_items_data()
+                    bb.set("process/auto/target_floor", 0)
+                    bb.set("process/auto/current_tray_no", 0)
+                    bb.set("process/auto/current_specimen_no", 0)
+                    bb.set("process_status/runtime", 0)
+                    bb.set("process_status/system_status", "대기중")
                     bb.set("ui/cmd/data/reset", 0) # 명령 처리 후 플래그 리셋
 
             except Exception as e:

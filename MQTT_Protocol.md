@@ -711,6 +711,7 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
       "robot": {
         "conntion_info" : "192.168.2.20",
         "state" : 1,
+        "comm_state" : 1,
         "current_pos" : 0,
         "current_motion" : 100,
         "recover_motion" : 1103,
@@ -771,10 +772,8 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
       "elapsedtime" : "00:05:15.000"
     },
     "current_process_tray_info": {
-      "sequence_info": 3,
-      "status": 2,
-      "test_standard": "",
-      "dimensions": [300, 200]
+      "tray_num": 3,
+      "specimen_num": 2
     },
     "system_status": "시편 잡기",
     "tester_status": "대기",

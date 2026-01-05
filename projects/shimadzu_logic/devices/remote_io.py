@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import threading
+import logging
 
 DEBUG_MODE = False
 
@@ -33,6 +34,7 @@ SERVICE_WRITE_DATA = 0x10 # Set_Attribute_Single Service (단일 속성 쓰기)
 CIP_CLASS_ASSEMBLY = 0x04    # Class ID for Assembly Object
 CIP_ATTRIBUTE_DATA = 0x03   # Attribute ID for Data (data in the Assembly)
 # ===================================================================
+logging.getLogger('pycomm3').setLevel(logging.WARNING)
 
 def load_config(file_path):
     """
@@ -103,7 +105,8 @@ class AutonicsEIPClient:
         if DEBUG_MODE: print(f"APIO-C-EI ({self.ip_address})에 연결 시도...")
         try:
             # CIPDriver 인스턴스 생성 및 연결 시도
-            self.apioc = CIPDriver(self.ip_address)
+            # Autonics 장비 호환성을 위해 large_packets=False (Standard Forward Open) 설정
+            self.apioc = CIPDriver(self.ip_address, large_packets=False)
             self.apioc.open()
 
             if not self.apioc.connected:

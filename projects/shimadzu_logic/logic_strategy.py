@@ -21,11 +21,15 @@ def _update_system_status(context: LogicContext):
         status_str = "대기"
     # 공정중 상태 (로봇/장비가 움직이거나 작업 중인 상태)
     else:
-        status_str = "공정중"
+        status_str = "시험중"
     
     bb.set("process_status/system_status", status_str)
-
-
+    if bb.get("process/sequence/initialized"):
+        bb.set("process/sequence/initialized", False)
+        Logger.info("[Logic] Process sequence variable initialized.")
+        bb.set("process/auto/current_step", 0)
+        context.set_seq(0)
+        context.set_sub_seq(0)
 # ----------------------------------------------------
 # 1. 범용 FSM 전략
 # ----------------------------------------------------
@@ -98,8 +102,13 @@ class LogicErrorStrategy(Strategy):
         # TODO: 모든 서브 모듈에 정지/에러 명령 전파
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
-        # 오류 발생 시 외부 명령 없이 자동으로 복구 상태로 전환합니다.
-        return LogicEvent.RECOVER
+        # 오류 발생 시 자동 복구가 아닌 사용자 명령 대기
+        if bb.get("ui/cmd/recover/trigger") == 1:
+            bb.set("ui/cmd/recover/trigger", 0)
+            Logger.info("[Logic] Received 'recover' command. Starting recovery process.")
+            return LogicEvent.RECOVER
+
+        return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
@@ -143,8 +152,9 @@ class LogicIdleStrategy(Strategy):
             return LogicEvent.VIOLATION_DETECT
             
         # 자동화 모드 진입 명령 대기
-        if bb.get("ui/cmd/auto/tensile") == 1: # ACTION_MAP_TENSIL["start"]
-            return LogicEvent.START_AUTO_COMMAND
+        if bb.get("device/remote/input/SELECT_SW") == 1:
+            if bb.get("ui/cmd/auto/tensile") == 1: # ACTION_MAP_TENSIL["start"]
+                return LogicEvent.START_AUTO_COMMAND
 
         # 복구 명령 처리
         if bb.get("ui/cmd/recover/trigger") == 1:
@@ -172,8 +182,9 @@ class LogicWaitCommandStrategy(Strategy):
     
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
-        if bb.get("ui/cmd/auto/tensile") == 1:
-            return LogicEvent.START_AUTO_COMMAND
+        if bb.get("device/remote/input/SELECT_SW") == 1:
+            if bb.get("ui/cmd/auto/tensile") == 1:
+                return LogicEvent.START_AUTO_COMMAND
         return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -222,6 +233,9 @@ class LogicResetDataStrategy(Strategy):
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
         Logger.info("[Logic] Batch data has been reset.")
+        bb.set("process/auto/current_step", 0)
+        context.set_seq(0)
+        context.set_sub_seq(0)
         return LogicEvent.DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -313,9 +327,9 @@ class LogicDetermineTaskStrategy(Strategy):
         running_tray = next((p for p in batch_data.get("processData", []) if p.get('seq_status') == 2), None)
         if running_tray:
             tray_no = running_tray.get('tray_no')
-            # DB에서 해당 트레이의 완료된(status=3) 시편 수를 직접 카운트
+            # DB에서 해당 트레이의 완료된(status=10) 시편 수를 직접 카운트
             with context.db.cursor() as cur:
-                cur.execute("SELECT COUNT(*) as count FROM test_tray_items WHERE tray_no = %s AND status = 3", (tray_no,))
+                cur.execute("SELECT COUNT(*) as count FROM test_tray_items WHERE tray_no = %s AND status = 10", (tray_no,))
                 result = cur.fetchone()
                 if result:
                     current_count += result['count']
@@ -363,6 +377,7 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/step_stop_requested", True)
 
         # 1. 현재 진행 중인 시편 찾기 (RUNNING: 2)
+        # batch_test_items의 seq_status는 2가 RUNNING, 3이 DONE입니다. test_tray_items의 status와 혼동 주의.
         current_specimen = next((s for s in batch_data['processData'] if s.get('seq_status') == 2), None)
         
         # 2. 진행 중인 시편이 없으면 다음 READY(1) 시편 시작
@@ -375,7 +390,9 @@ class LogicDetermineTaskStrategy(Strategy):
                 return LogicEvent.DO_PROCESS_COMPLETE
             
             # 새 시편 시작: 상태 업데이트
-            current_specimen['seq_status'] = 2 # RUNNING
+            current_specimen['seq_status'] = 2
+            
+           # RUNNING
             bb.set("process/auto/current_specimen_no", 1) # 시편 번호 1번부터 시작
             bb.set("process/auto/batch_data", batch_data)
             
@@ -447,24 +464,29 @@ class LogicDetermineTaskStrategy(Strategy):
             tray_no = current_specimen['tray_no']
             tray_items = context.db.get_test_tray_items(tray_no)
             
-            # 1. 현재 진행 중(status=2)인 시편이 있다면 완료(3) 처리하고 스킵 (사용자 요청: Stop 후 재시작 시나리오)
-            running_item = next((item for item in tray_items if item['status'] == 2), None)
+            # 1. 현재 진행 중(status 2~6)인 시편이 있다면 완료(10) 처리하고 스킵 (사용자 요청: Stop 후 재시작 시나리오)
+            # status: 1(대기), 2(이동중), 3(측정중), 4(정렬중), 5(시험중), 6(처리중), 10(완료)
+            running_item = next((item for item in tray_items if item['status'] in [2, 3, 4, 5, 6]), None)
             if running_item:
                 r_spec_no = running_item['specimen_no']
-                context.db.update_test_tray_item(tray_no, r_spec_no, {'status': 3})
+                context.db.update_test_tray_item(tray_no, r_spec_no, {'status': 10})
                 context.db.insert_summary_log(batch_data['batch_id'], tray_no, r_spec_no, "DONE (STOPPED & SKIPPED)")
-                Logger.info(f"[Logic] Restart: Found RUNNING specimen {r_spec_no}. Marked as DONE(3) to skip (assumed scrapped).")
+                Logger.info(f"[Logic] Restart: Found RUNNING specimen {r_spec_no}. Marked as DONE(10) to skip (assumed scrapped).")
                 # DB 상태가 변경되었으므로 목록 다시 조회
                 tray_items = context.db.get_test_tray_items(tray_no)
 
-            # 2. 다음 작업할 시편(status != 3) 찾기
-            target_item = next((item for item in tray_items if item['status'] != 3), None)
+            # 2. 다음 작업할 시편(status != 10) 찾기
+            target_item = next((item for item in tray_items if item['status'] != 10), None)
             
             if target_item:
                 spec_no = target_item['specimen_no']
                 bb.set("process/auto/current_specimen_no", spec_no)
                 bb.set("process/auto/target_num", spec_no)
                 bb.set("process/auto/target_floor", tray_no)
+                bb.set("process_status/current_process_tray_info", {
+                    "tray_num": tray_no,
+                    "specimen_num": spec_no
+                })
                 
                 # # 상태를 2(RUNNING)로 변경
                 # context.db.update_test_tray_item(tray_no, spec_no, {'status': 2})
@@ -476,6 +498,7 @@ class LogicDetermineTaskStrategy(Strategy):
                     return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
                 else:
                     bb.set("process/auto/current_step", 2)
+                    context.db.update_test_tray_item(tray_no, spec_no, {'status': 2})
                     return LogicEvent.DO_PICK_SPECIMEN
             else:
                 # 해당 트레이의 모든 시편이 완료된 경우
@@ -502,6 +525,8 @@ class LogicDetermineTaskStrategy(Strategy):
         if step == 1: # QR 인식 완료 -> 시편 잡기 (2)
             Logger.info("[Logic] DetermineTask: Step 1 (QR Read) done. -> Step 2 (Pick Specimen).")
             bb.set("process/auto/current_step", 2)
+            # 이동중 (2)
+            context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 2})
             return LogicEvent.DO_PICK_SPECIMEN
 
         elif step == 2: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
@@ -516,6 +541,8 @@ class LogicDetermineTaskStrategy(Strategy):
         elif step == 3: # 두께 측정기 이동 완료 -> 두께 측정 (4)
             Logger.info("[Logic] DetermineTask: Step 3 (Move to Indicator) done. -> Step 4 (Measure Thickness).")
             bb.set("process/auto/current_step", 4)
+            # 측정중 (3)
+            context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 3})
             return LogicEvent.DO_MEASURE_THICKNESS
 
         elif step == 4: # 두께 측정 완료 -> 정렬기로 이동 (5)
@@ -532,6 +559,8 @@ class LogicDetermineTaskStrategy(Strategy):
             else:
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
             bb.set("process/auto/current_step", 5)
+            # 정렬중 (4)
+            context.db.update_test_tray_item(tray_no, specimen_no, {'status': 4})
             return LogicEvent.DO_MOVE_TO_ALIGN
 
         elif step == 5: # 정렬기로 이동 완료 -> 시편 정렬 (6)
@@ -557,11 +586,15 @@ class LogicDetermineTaskStrategy(Strategy):
         elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
             Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
             bb.set("process/auto/current_step", 9)
+            # 시험중 (5)
+            context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
             return LogicEvent.DO_START_TENSILE_TEST
 
         elif step == 9: # 인장 시험 시작 완료 -> 인장기에서 시편 수거 (10)
             Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick from Tensile Machine).")
             bb.set("process/auto/current_step", 10)
+            # 처리중 (6) - 스크랩 처리 시작
+            context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 6})
             return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
 
         elif step == 10: # 인장기 수거 완료 -> 스크랩 처리 (11)
@@ -583,6 +616,8 @@ class LogicDetermineTaskStrategy(Strategy):
 
                 # 현재 시편 완료 DB 업데이트
                 context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
+                # 완료 (10)
+                context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
                 Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB due to Step Stop.")
                 
                 # MQTT 'process_step_stopped' 이벤트 발행
@@ -598,14 +633,22 @@ class LogicDetermineTaskStrategy(Strategy):
             
             # 현재 시편 완료 기록 (3.2, 3.3)
             context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
+            # 완료 (10)
+            context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
             Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB.")
             if spec_no < 5:
                 # 다음 시편으로 루프 (동일 트레이)
                 next_spec_no = spec_no + 1
                 bb.set("process/auto/current_specimen_no", next_spec_no)
                 bb.set("process/auto/target_num", next_spec_no)
+                bb.set("process_status/current_process_tray_info", {
+                    "tray_num": tray_no,
+                    "specimen_num": next_spec_no
+                })
                 # 2번 시편부터는 QR 읽기(Step 1)를 건너뛰고 바로 시편 잡기(Step 2)로 이동
                 bb.set("process/auto/current_step", 2)
+                # 이동중 (2)
+                context.db.update_test_tray_item(tray_no, next_spec_no, {'status': 2})
                 # `batch_test_items`는 트레이(시퀀스) 단위로 상태를 관리하므로, 개별 시편 상태는 DB에 업데이트하지 않음.
                 context.db.insert_summary_log(batch_id=batch_data['batch_id'], tray_no=current_specimen['tray_no'], specimen_no=next_spec_no, work_history="START")
                 Logger.info(f"[Logic] DetermineTask: Moving to next specimen {next_spec_no} in same tray. Skipping QR read, starting from Step 2 (Pick Specimen).")

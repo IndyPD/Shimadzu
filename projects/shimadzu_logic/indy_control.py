@@ -1,6 +1,8 @@
 import threading
 import time
 import datetime
+import os
+import json
 import re
 from collections import deque
 from pkg.utils.blackboard import GlobalBlackboard
@@ -37,7 +39,7 @@ class RobotCommunication:
         ''' Indy command '''
         Logger.info(f'[Indy7] Attempting to connect to robot at {robot_ip}')
         self.indy = IndyDCP3(robot_ip, *args, **kwargs)
-        self.indy.set_speed_ratio(30) # (70) 
+        self.indy.set_speed_ratio(100) # (70) 
         # self.indy.set_auto_mode(True)
         is_auto_mode : dict = self.indy.check_auto_mode()
         if not is_auto_mode.get('on') :
@@ -87,6 +89,16 @@ class RobotCommunication:
         self.analog_max_avg = 800
         self.data_queue = deque(maxlen=10)
 
+        # [Data Recorder] 데이터 기록 관련 변수 초기화
+        self.record_dir = os.path.join(os.path.dirname(__file__), "motion_data")
+        os.makedirs(self.record_dir, exist_ok=True)
+        self.is_recording = False
+        self.trajectory_buffer = []
+        self.recording_file_path = ""
+        self.last_record_time = 0
+        self.recording_cmd_id = 0
+        self.control_data_p = [0.0] * 6  # [x, y, z, u, v, w]
+
     def start(self):
         """ Start the robot communication thread """
 
@@ -124,6 +136,75 @@ class RobotCommunication:
 
             self.indy_communication()  # Get indy data
             self.send_data_to_bb()  # Send indy data to bb
+            
+            self.process_recording() # [Data Recorder] 기록 처리
+
+    def start_recording(self, cmd_id):
+        """ 데이터 기록 시작 (JSON 저장을 위한 버퍼 초기화) """
+        if self.is_recording:
+            return
+
+        try:
+            # 폴더가 없는 경우 생성
+            os.makedirs(self.record_dir, exist_ok=True)
+
+            # CMD ID로 모션 이름 찾기
+            try:
+                cmd_name = RobotMotionCommand(cmd_id).name
+            except ValueError:
+                cmd_name = f"CMD_{cmd_id}"
+
+            # 파일명 생성 (타임스탬프 제외)
+            file_name = f"{cmd_name}.json"
+            self.recording_file_path = os.path.join(self.record_dir, file_name)
+
+            # 데이터 버퍼 초기화
+            self.trajectory_buffer = []
+            
+            self.is_recording = True
+            self.recording_cmd_id = cmd_id
+            self.last_record_time = time.time() - 0.1 # 시작 즉시 첫 데이터 기록
+            Logger.info(f"[DataRecorder] Recording started for '{cmd_name}'. Saving to: {file_name}")
+        except Exception as e:
+            Logger.error(f"[DataRecorder] Failed to start recording: {e}")
+
+    def stop_recording(self):
+        """ 데이터 기록 종료 (JSON 파일로 저장) """
+        if not self.is_recording:
+            return
+
+        try:
+            # 요청된 JSON 구조 생성
+            json_data = {
+                "CMD": self.recording_cmd_id,
+                "motion_trajectory": self.trajectory_buffer
+            }
+
+            with open(self.recording_file_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=4)
+            
+            Logger.info(f"[DataRecorder] Motion data saved to {self.recording_file_path}")
+
+        except Exception as e:
+            Logger.error(f"[DataRecorder] Failed to save JSON data: {e}")
+        finally:
+            # Reset recording state
+            self.is_recording = False
+            self.recording_cmd_id = 0
+            self.trajectory_buffer = []
+            self.recording_file_path = ""
+            Logger.info("[DataRecorder] Recording stopped.")
+
+    def process_recording(self):
+        """ 0.1초 주기로 데이터 기록 (버퍼에 추가) """
+        if self.is_recording and (time.time() - self.last_record_time >= 0.1):
+            try:
+                # control_data_p는 indy_communication에서 업데이트됨
+                # timestamp를 제외하고 6-DOF 좌표만 추가
+                self.trajectory_buffer.append(self.control_data_p)
+                self.last_record_time = time.time()
+            except Exception as e:
+                Logger.error(f"[DataRecorder] Error buffering data: {e}")
 
     def get_dio_channel(self, di, ch):
         return next((int(item['state']) for item in di if item['address'] == ch), None)
@@ -291,6 +372,20 @@ class RobotCommunication:
             if robot_pos is not None:
                 bb.set("int_var/robot/position/val", robot_pos)
 
+            # [Data Recorder] 기록 제어 로직
+            current_cmd_bb = int(bb.get("int_var/cmd/val") or 0)
+            
+            # 1. 기록 시작: 새로운 명령이 있고, 아직 기록 중이 아닐 때
+            if current_cmd_bb != 0 and not self.is_recording:
+                self.start_recording(current_cmd_bb)
+            
+            # 2. 기록 종료: 기록 중이고 DONE 신호가 왔을 때
+            if self.is_recording and motion_done is not None:
+                # DONE 조건: CMD + 10000 (일반적) 또는 CMD (사용자 정의)
+                if motion_done == (self.recording_cmd_id + 10000) or motion_done == self.recording_cmd_id:
+                    self.stop_recording()
+
+
             # Part 2: Process and decide what to write based on the CMD/ACK handshake.
             vars_to_set = []
             
@@ -336,6 +431,7 @@ class RobotCommunication:
             control_data = self.indy.get_control_data()
             program_data = self.indy.get_program_data()
             self.robot_current_pos = control_data['p'][0:3]
+            self.control_data_p = control_data['p'] # [Data Recorder] 전체 P 데이터(x,y,z,u,v,w) 저장
             self.robot_state = control_data["op_state"]
             self.is_sim_mode = control_data["sim_mode"]
             self.robot_running_hour = control_data["running_hours"]
@@ -346,6 +442,7 @@ class RobotCommunication:
             self.is_home_pos = all(self.check_home_min <= a - b <= self.check_home_max for a, b in zip(q, self.home_pos))
             self.is_packaging_pos = all(self.check_home_min <= a - b <= self.check_home_max for a, b in zip(q, self.packaging_pos))
 
+            bb.set("ui/robot/state/position",f"{self.control_data_p}")
             # Gripper state feedback from Analog Input
             get_robot_ai : dict = self.indy.get_ai()
             ai_00 : dict = get_robot_ai.get("signals")[0]

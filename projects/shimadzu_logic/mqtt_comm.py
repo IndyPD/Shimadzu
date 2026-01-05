@@ -216,10 +216,19 @@ class MqttComm:
                     elif action == "stop":
                         self.bb.set("ui/cmd/auto/tensile", 3) # 3: 즉시 정지 (Stop)
                         self.bb.set("indy_command/reset_init_var", True)
+                        self.bb.set("process/sequence/initialized", True)
                         # pass
-                    elif action == "step_stop":
-                        self.bb.set("ui/cmd/auto/tensile", 4) # 4: 현재 시편 완료 후 정지 (Step Stop)
-                        # pass
+
+                    elif action == "seqstop":
+                        current_batch_data = self.bb.get("process/auto/batch_data")
+                        current_batch_id = current_batch_data.get("batch_id") if current_batch_data else None
+                        req_batch_id = payload.get("batch_id")
+
+                        if current_batch_id and req_batch_id == current_batch_id:
+                            if self.Logger: self.Logger.info(f"[LOGIC] Sequence Stop accepted for batch {req_batch_id}.")
+                            self.bb.set("ui/cmd/auto/tensile", 4) # 4: 현재 시편 완료 후 정지 (Step Stop)
+                        else:
+                            if self.Logger: self.Logger.warn(f"[LOGIC] Sequence Stop ignored. Batch ID mismatch. Current: {current_batch_id}, Req: {req_batch_id}")
                     elif action == "reset":
                         # Command.md 4.3. Reset은 Stop 이후 공정 데이터 초기화.
                         # 사용자가 요청한대로 'data'/'reset'과 동일하게 처리.
@@ -391,11 +400,12 @@ class MqttComm:
                         "system_state": {
                             "robot": {
                                 "conntion_info": "192.168.2.20",
-                                "state": 1 if robot_comm_ok else 0,
-                                "current_pos": self.bb.get("int_var/robot/position/val"),
-                                "current_motion": self.bb.get("int_var/cmd/val"),
+                                "state": self.bb.get("indy").get("robot_state"),
+                                "comm_state" : 1 if robot_comm_ok else 0,
+                                "current_pos": self.bb.get("ui/robot/state/position"),
+                                "current_motion": self.bb.get("int_var/motion_ack/val")-500,
                                 "recover_motion": self.bb.get("robot/recover/motion/cmd"),
-                                "direct_teaching_mode": self.bb.get("robot/dt/mode"),
+                                "direct_teaching_mode": self.bb.get("ui/state/direct_state"),
                                 "program_run": program_run_status,
                                 "gripper_state": self.bb.get("robot/gripper/actual_state"),
                                 "msg": "OK" if robot_comm_ok else "Connection Failed"
@@ -433,14 +443,20 @@ class MqttComm:
                     status_msg_id = self.rules["event_ids"].get("system_status", "logic-evt-state-001")
                     self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
                         self._create_frame("logic.event", "ui", status_msg_id, system_status_payload, False)))
-    
-                    # 3. Process Status (MQTT_Protocol.md Section 4.3)
+
+                    tray_no = self.bb.get("process/auto/target_floor") or 0
+                    sepecimen_no = self.bb.get("process/auto/current_specimen_no") or 0
+                    tray_data = {
+                        "tray_num": tray_no,
+                        "specimen_num": sepecimen_no
+                    }
+                    # self.Logger.info(f"[MQTT] tray_data : {tray_data}")
                     process_status_payload = {
                         "kind": "event",
                         "evt": "process_status",
                         "batch_info": self.bb.get("process_status/batch_info"),
                         "runtime": self.bb.get("process_status/runtime"),
-                        "current_process_tray_info": self.bb.get("process_status/current_process_tray_info"),
+                        "current_process_tray_info": tray_data,
                         "system_status": self.bb.get("process_status/system_status"),
                         "tester_status": self.bb.get("process_status/tester_status"),
                         "robot_status": self.bb.get("process_status/robot_status"),

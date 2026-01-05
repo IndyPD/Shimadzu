@@ -1430,8 +1430,13 @@ class LogicContext(ContextBase):
             # [추가] 측정 공정 중 시편을 들고 있을 때 정지 명령이 들어온 경우
             if self.state == LogicState.MEASURE_SPECIMEN_THICKNESS and is_holding:
                 Logger.info("[Logic] Controlled Stop: Stop during measurement while holding specimen. Retreating from indicator.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(15)  # 측정기에서 시편 들고 후퇴하는 상태
-                self.set_sub_seq(0)
+                # 현재 위치에 따라 바로 홈 이동 여부 결정
+                if current_pos_id == 4000 :
+                    self.set_sub_seq(1)
+                else :
+                    self.set_sub_seq(0)
                 # 현재 측정 중인 포인트(1, 2, 또는 3)를 알아내어 후퇴 위치로 지정합니다.
                 measure_point = bb.get("process/auto/measure_point") or 1
                 self.recovery_pos = int(measure_point)
@@ -1440,6 +1445,7 @@ class LogicContext(ContextBase):
             # [추가] MOVE_TO_INDICATOR 상태에서 정지 시 (홈 이동 후 스크랩)
             if self.state == LogicState.MOVE_TO_INDICATOR and is_holding:
                 Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_INDICATOR. Moving to Home via THICK_GAUGE_FRONT_HOME then Scrap.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(45) # 홈 이동 후 스크랩 처리 시퀀스
                 self.set_sub_seq(0)
                 return LogicEvent.NONE
@@ -1447,6 +1453,7 @@ class LogicContext(ContextBase):
             # [수정] 측정 또는 정렬 공정 중에 정지 명령이 들어온 경우, 시편이 장비 위에 있다고 간주하고 회수 절차를 우선적으로 실행합니다.
             if (self.state == LogicState.MEASURE_SPECIMEN_THICKNESS and not is_holding) or specimen_on_indicator:
                 Logger.info("[Logic] Controlled Stop: Stop during measurement or specimen on indicator. Recovering specimen from indicator.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(10)  # 두께 측정기에서 회수하는 상태
                 self.set_sub_seq(0)
                 # 현재 측정 중인 포인트(1, 2, 또는 3)를 알아내어 회수 위치로 지정합니다.
@@ -1457,13 +1464,19 @@ class LogicContext(ContextBase):
 
             if self.state == LogicState.ALIGN_SPECIMEN and not is_holding:
                 Logger.info("[Logic] Controlled Stop: Stop during alignment. Recovering specimen from aligner.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(20)  # 정렬기에서 회수하는 상태
-                self.set_sub_seq(0)
+                # 현재 위치에 따라 바로 홈 이동 여부 결정
+                if current_pos_id == 5000 :
+                    self.set_sub_seq(8)
+                else :
+                    self.set_sub_seq(0)
                 return LogicEvent.NONE
 
             # [추가] 정렬 공정 중 시편을 들고 있을 때 정지 명령이 들어온 경우
             if self.state == LogicState.PICK_SPECIMEN_FROM_ALIGN and is_holding:
                 Logger.info("[Logic] Controlled Stop: Stop while holding specimen from aligner. Retreating.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(25) # 정렬기에서 시편 들고 후퇴
                 self.set_sub_seq(0)
                 return LogicEvent.NONE
@@ -1471,12 +1484,14 @@ class LogicContext(ContextBase):
             # Case 1: 시편이 두께 측정기에 놓여 있는 경우 (회수 필요)
             if 3001 <= current_pos_id <= 3003:
                 Logger.info("[Logic] Controlled Stop: Specimen is at indicator. Starting recovery.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(10)  # 두께 측정기에서 회수하는 상태
                 self.set_sub_seq(0)
                 self.recovery_pos = current_pos_id - 3000
             # Case 2: 시편이 정렬기에 놓여 있는 경우 (회수 필요)
             elif current_pos_id == 5001:
                 Logger.info("[Logic] Controlled Stop: Specimen is at aligner. Starting recovery.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(20)  # 정렬기에서 회수하는 상태
                 self.set_sub_seq(0)
             # Case 3: 로봇이 시편을 들고 있는 경우 (후퇴 후 스크랩 처리 필요)
@@ -1484,29 +1499,35 @@ class LogicContext(ContextBase):
                 # 로봇의 현재 위치에 따라 필요한 후퇴 동작을 결정합니다.
                 if 1011 <= current_pos_id <= 1105:
                     Logger.info("[Logic] Controlled Stop: is_holding Robot is inside rack without specimen. Opening gripper and retreating.")
+                    self.set_seq(0); self.set_sub_seq(0)
                     self.set_seq(55) # 랙에서 시편을 잡지 않고 후퇴하는 상태
                     self.set_sub_seq(0)
                 elif 2010 <= current_pos_id <= 2100: # 랙 내부
                     Logger.info("[Logic] Controlled Stop: Holding specimen inside rack. Retreating first.")
+                    self.set_seq(0); self.set_sub_seq(0)
                     self.set_seq(50) # 랙에서 후퇴하는 상태
                     self.set_sub_seq(0)
                 elif 7001 <= current_pos_id <= 7012: # 인장기 내부
                     Logger.info("[Logic] Controlled Stop: Holding specimen inside tensile machine. Retreating first.")
+                    self.set_seq(0); self.set_sub_seq(0)
                     self.set_seq(60) # 인장기에서 후퇴하는 상태
                 else: # 이미 안전한 위치(Waypoint)에 있다고 판단, 바로 스크랩 처리로 이동
                     Logger.info("[Logic] Controlled Stop: Robot is holding specimen in a safe area. Moving to scrap disposal.")
+                    self.set_seq(0); self.set_sub_seq(0)
                     self.set_seq(30)  # 스크랩 처리 상태
                     self.set_sub_seq(0)
             
             # Case 4: 로봇이 시편 잡으로 접근은 했으나 시편 그대로 두고 나오기
             elif 1011 <= current_pos_id <= 1105:
                 Logger.info("[Logic] Controlled Stop: Robot is inside rack without specimen. Opening gripper and retreating.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(55) # 랙에서 시편을 잡지 않고 후퇴하는 상태
                 self.set_sub_seq(0)
 
             # Case 5: 그 외 (시편 없음), 홈으로 바로 복귀
             else:
                 Logger.info("[Logic] Controlled Stop: No specimen to handle. Moving to home.")
+                self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(40)  # 홈으로 복귀하는 상태
                 self.set_sub_seq(0)
             return LogicEvent.NONE

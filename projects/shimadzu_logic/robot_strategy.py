@@ -180,9 +180,17 @@ class RobotReadyStrategy(Strategy):
                 self.manual_cmd_state = "idle"
 
         # 자동화 시작 명령 감지 (LogicFSM과 동일한 트리거 사용)
-        if bb.get("ui/cmd/auto/tensile") == 1:
-            Logger.info("[Robot] Automation start command detected. Transitioning to PROGRAM_AUTO_ON.")
-            return RobotEvent.DO_AUTO_MOTION_PROGRAM_AUTO_ON
+        # AUTO/MANUAL 스위치가 AUTO(1) 상태일 때만 자동화 시작 명령을 처리합니다.
+        if bb.get("device/remote/input/SELECT_SW") == 1:
+            if bb.get("ui/cmd/auto/tensile") == 1:
+                if context.is_home_pos():
+                    Logger.info("[Robot] Automation start command detected. Robot is at home position. Transitioning to PROGRAM_AUTO_ON.")
+                    return RobotEvent.DO_AUTO_MOTION_PROGRAM_AUTO_ON
+                else:
+                    Logger.error("[Robot] Automation start command rejected: Robot is not at home position.")
+                    context.violation_code |= RobotViolation.HW_NOT_READY
+                    bb.set("ui/cmd/auto/tensile", 0) # 무한 에러 방지를 위해 명령을 소비합니다.
+                    return RobotEvent.VIOLATION_DETECT
             
         return RobotEvent.NONE
     
@@ -270,7 +278,7 @@ class RobotExecuteMotionStrategy(Strategy):
         self.cmd_id = None
         self.motion_name = None
         self.start_time = time.time()
-        self.timeout = 60.0  # 각 모션에 대한 타임아웃 (60초)
+        self.timeout = 300.0  # 각 모션에 대한 타임아웃 (300초)
 
         # 블랙보드에서 직접 읽는 대신, 컨텍스트에 저장된 명령을 사용합니다.
         robot_cmd = context.current_motion_command

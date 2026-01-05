@@ -205,13 +205,8 @@
     "elapsedtime": ""
   },
   "process_status/current_process_tray_info" : {
-    "sequence_info": 0,
-    "status": 0,
-    "test_standard": "",
-    "dimensions": [
-      0,
-      0
-    ]
+    "tray_num": 0,
+    "specimen_num": 0
   },
   "process_status/system_status": "IDLE",
   "process_status/tester_status": "대기",
@@ -243,6 +238,7 @@
   "process/auto/current_step": 0,
   "process/auto/current_specimen_no": 0,
   "process/auto/specimen_on_indicator": false,
+  "process/sequence/initialized": false,
   "device/qr/result": null,
   "device/robot/comm_status": 0,
   "device/shimadzu/comm_status": 0,

@@ -80,8 +80,8 @@ def main(blocking=False):
         #     return
 
         # 메인 스레드 대기 루프: terminate_flag가 set될 때까지 대기합니다.
-        # while not terminate_flag.is_set():
-        #     time.sleep(0.5)
+        while not terminate_flag.is_set():
+            time.sleep(0.5)
 
     except Exception as e:
         Logger.error(f"[SYSTEM ERROR] Unexpected exception: {e}")

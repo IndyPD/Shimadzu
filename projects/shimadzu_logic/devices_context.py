@@ -505,14 +505,14 @@ class DeviceContext(ContextBase):
                 bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
 
             # Remote IO 통신이 복구되었을 때 (꺼졌다가 다시 켜짐)
-            if not self.remote_comm_state and (
-                self.remote_output_data[DigitalOutput.LOCAL_LAMP_R] != 1 or
-                self.remote_output_data[DigitalOutput.LOCAL_LAMP_C] != 1 or
-                self.remote_output_data[DigitalOutput.LOCAL_LAMP_L] != 1
-            ):
-                Logger.info("[device] Remote IO System Error Detected.")
-                Logger.info("[device] Remote IO connection restored (was disconnected). Restoring Lamp status (R, C, L ON).")                
-                self.lamp_on()
+            # if not self.remote_comm_state and (
+            #     self.remote_output_data[DigitalOutput.LOCAL_LAMP_R] != 1 or
+            #     self.remote_output_data[DigitalOutput.LOCAL_LAMP_C] != 1 or
+            #     self.remote_output_data[DigitalOutput.LOCAL_LAMP_L] != 1
+            # ):
+            #     Logger.info("[device] Remote IO System Error Detected.")
+            #     Logger.info("[device] Remote IO connection restored (was disconnected). Restoring Lamp status (R, C, L ON).")                
+            #     self.lamp_on()
 
             self.remote_comm_state = True
             # Logger.info(f"[device] Connect state : {self.remote_comm_state}")
