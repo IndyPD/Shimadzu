@@ -573,37 +573,59 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/current_step", 7)
             return LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN
 
-        # elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
-        #     Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
-        #     bb.set("process/auto/current_step", 8)
-        #     return LogicEvent.DO_LOAD_TENSILE_MACHINE
+        elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
+            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
+            bb.set("process/auto/current_step", 8)
+            return LogicEvent.DO_LOAD_TENSILE_MACHINE
         
-        elif step == 7: # 정렬기에서 잡기 완료 -> 스크랩 처리 (11) [임시 수정]
-            Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 11 (Dispose Scrap) [TEMP: SKIPPING TENSILE TEST].")
-            bb.set("process/auto/current_step", 11)
-            return LogicEvent.DO_DISPOSE_SCRAP
+        # elif step == 7: # 정렬기에서 잡기 완료 -> 스크랩 처리 (11) [임시 수정]
+        #     Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 11 (Dispose Scrap) [TEMP: SKIPPING TENSILE TEST].")
+        #     bb.set("process/auto/current_step", 11)
+        #     return LogicEvent.DO_DISPOSE_SCRAP
 
-        elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
+        # elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
+        #     Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
+        #     bb.set("process/auto/current_step", 9)
+        #     # 시험중 (5)
+        #     context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
+        #     return LogicEvent.DO_START_TENSILE_TEST
+        
+        elif step == 8: # 9번으로 옮기기 (인장시험 X) (정렬대기는 추후에)  (임시코드)
             Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
             bb.set("process/auto/current_step", 9)
             # 시험중 (5)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
-            return LogicEvent.DO_START_TENSILE_TEST
-
-        elif step == 9: # 인장 시험 시작 완료 -> 인장기에서 시편 수거 (10)
-            Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick from Tensile Machine).")
+            # return LogicEvent.DO_START_TENSILE_TEST
+            # [수정] 인장 시험(Step 9)을 건너뛰고 바로 다음 단계 로직을 실행하기 위해 재귀 호출
+            return self.operate(context)
+        
+        elif step == 9: # 인장 시험 시작 완료 -> 상단 시편 수거 (10)
+            Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick Upper Specimen).")
             bb.set("process/auto/current_step", 10)
+            bb.set("process/auto/tensile_pick_pos", 1) # 1: 하단
             # 처리중 (6) - 스크랩 처리 시작
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 6})
             return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
 
-        elif step == 10: # 인장기 수거 완료 -> 스크랩 처리 (11)
-            Logger.info("[Logic] DetermineTask: Step 10 (Pick from Tensile Machine) done. -> Step 11 (Dispose Scrap).")
-            bb.set("process/auto/current_step", 11)
+        elif step == 10: # 상단 수거 완료 -> 스크랩 처리 (11)
+            Logger.info("[Logic] DetermineTask: Step 10 (Pick Upper) done. -> Step 11 (Dispose Scrap).")
+            bb.set("process/auto/current_step", 13)
             return LogicEvent.DO_DISPOSE_SCRAP
 
-        elif step == 11: # 스크랩 처리 완료 -> 시편 공정 종료
-            Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. Current specimen cycle finished.")
+        # 지금은 상단 시편만 사용하므로 주석 처리
+        # elif step == 11: # 스크랩 처리 완료 -> 하단 시편 수거 (12)
+        #     Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. -> Step 12 (Pick Lower Specimen).")
+        #     bb.set("process/auto/current_step", 12)
+        #     bb.set("process/auto/tensile_pick_pos", 2) # 2: 상단
+        #     return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
+
+        # elif step == 12: # 하단 수거 완료 -> 스크랩 처리 (13)
+        #     Logger.info("[Logic] DetermineTask: Step 12 (Pick Lower) done. -> Step 13 (Dispose Scrap).")
+        #     bb.set("process/auto/current_step", 13)
+        #     return LogicEvent.DO_DISPOSE_SCRAP
+
+        elif step == 13: # 스크랩 처리 완료 -> 시편 공정 종료
+            Logger.info("[Logic] DetermineTask: Step 13 (Dispose Scrap) done. Current specimen cycle finished.")
 
             spec_no = bb.get("process/auto/current_specimen_no")
             tray_no = current_specimen['tray_no']
@@ -971,7 +993,7 @@ class LogicPickSpecimenFromTensileMachineStrategy(Strategy):
             bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
             return LogicEvent.PROCESS_STOP
 
-        num = bb.get("process/auto/current_specimen_no")
+        num = bb.get("process/auto/tensile_pick_pos") or 1
         return context.Pick_Specimen_From_Tensile_Machine(num, 0) # pos_z는 현재 사용 안함
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")

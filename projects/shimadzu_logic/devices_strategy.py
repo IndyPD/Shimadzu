@@ -654,10 +654,13 @@ class GripperReleaseStrategy(Strategy):
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # 인장기 그리퍼 풀기
-        if context.chuck_open():
+        status = context.chuck_open_non_blocking()
+        if status == "done":
             return DeviceEvent.GRIPPER_RELEASE_DONE
-        else:
+        elif status == "error":
             return DeviceEvent.GRIPPER_FAIL
+        
+        return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         cmd_data = bb.get("process/auto/device/cmd")

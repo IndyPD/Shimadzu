@@ -52,6 +52,7 @@ class DeviceContext(ContextBase):
         # 측정, 상태 확인 명령 전송 방지 변수
         self.gauge_initial_check_done = False
         self.gauge_measurement_done = False
+        self.chuck_open_start_time = 0
 
         # remote I/O 장치 인스턴스 생성
         if self.dev_remoteio_enable :
@@ -221,13 +222,16 @@ class DeviceContext(ContextBase):
         while True:
             try:
                 if bb.get("ui/cmd/do_control/trigger") == 1:
-                    data = bb.get("ui/cmd/do_control/data")
-                    if isinstance(data, dict):
-                        address = data.get("addr")
-                        val = data.get("value")
-                        Logger.info(f"[Device] DO_Control : {address} {val}")
-                        self.UI_DO_Control(int(address), int(val))
-                    
+                    if bb.get("device/remote/input/SELECT_SW") != 1:
+                        data = bb.get("ui/cmd/do_control/data")
+                        if isinstance(data, dict):
+                            address = data.get("addr")
+                            val = data.get("value")
+                            Logger.info(f"[Device] DO_Control : {address} {val}")
+                            self.UI_DO_Control(int(address), int(val))
+                    else :
+                        Logger.info(f"[Device] DO_Control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
+                        
                     # 처리 완료 후 트리거 리셋
                     bb.set("ui/cmd/do_control/trigger", 0)
             except Exception as e:
@@ -613,13 +617,14 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
+            # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0 현재 사용 X
+            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
             self.iocontroller.write_output_data(output_data)
             time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
             read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1 and
-                read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
+            # if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 0 and
+            #     read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0):
+            if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0):
                 Logger.info(f"[device] Chuck Open Command Sent Successfully.")
                 return True
             else:
@@ -630,6 +635,40 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
 
+    def chuck_open_non_blocking(self) -> str:
+        '''
+        Non-blocking chuck open with 20s delay.
+        :return: "running", "done", "error"
+        '''
+        try:
+            if not self._is_io_writable():
+                return "error"
+
+            # Start sequence
+            if self.chuck_open_start_time == 0:
+                output_data = self.remote_output_data.copy()
+                # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0 현재 사용 X
+                output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
+                self.iocontroller.write_output_data(output_data)
+                
+                self.chuck_open_start_time = time.time()
+                Logger.info(f"[device] Chuck Open Command Sent. Waiting 20s for completion.")
+                return "running"
+
+            # Check timer
+            if time.time() - self.chuck_open_start_time >= 20.0:
+                # Timer finished
+                self.chuck_open_start_time = 0
+                Logger.info(f"[device] Chuck Open 20s Wait Complete.")
+                return "done"
+            
+            return "running"
+
+        except Exception as e:
+            Logger.error(f"[device] Error in chuck_open_non_blocking: {e}\n{traceback.format_exc()}")
+            self.chuck_open_start_time = 0
+            return "error"
+
     def chuck_close(self) :
         '''
         Docstring for chuck_close       
@@ -639,13 +678,14 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
+            # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
+            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
             self.iocontroller.write_output_data(output_data)
             time.sleep(0.1)  # 신호가 반영될 시간을 약간
             read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 0 and
-                read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0):
+            # if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1 and
+            #     read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
+            if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
                 Logger.info(f"[device] Chuck Close Command Sent Successfully.")
                 return True
             else:

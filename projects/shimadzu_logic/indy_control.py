@@ -229,49 +229,53 @@ class RobotCommunication:
 
             # 프로그램이 실행 중이 아닐 때(IDLE 상태)만 수동 제어 명령을 처리합니다.
             if self.program_state == ProgramState.PROG_IDLE:
-                payload = bb.get("ui/cmd/robot_control/data")
-                if payload and isinstance(payload, dict):
-                    target = payload.get("target")
-                    action = payload.get("action")
-                    Logger.info(f"Received robot_control command via MQTT->BB: target={target}, action={action}")
+                if bb.get("device/remote/input/SELECT_SW") != 1:
+                    Logger.info("[Robot] Robot control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
+                    payload = bb.get("ui/cmd/robot_control/data")
+                    if payload and isinstance(payload, dict):
+                        target = payload.get("target")
+                        action = payload.get("action")
+                        Logger.info(f"Received robot_control command via MQTT->BB: target={target}, action={action}")
 
-                    # Gripper Control (target: gripper, action: open/close)
-                    if target == "gripper":
-                        try:
-                            if action == "open":
-                                Logger.info("Sending Gripper Open command (Endtool DO8=0, DO9=1).")
-                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
-                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
-                                time.sleep(0.5)
-                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
-                                self.indy.set_do([{'address': 9, 'state': DigitalState.ON_STATE}])
-                            elif action == "close":
-                                Logger.info("Sending Gripper Close command (Endtool DO8=1, DO9=0).")
-                                self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
-                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
-                                time.sleep(0.5)
-                                self.indy.set_do([{'address': 8, 'state': DigitalState.ON_STATE}])
-                                self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
-
-                        except Exception as e:
-                            Logger.error(f"Failed to control gripper via Endtool DO: {e}")
-
-                    # Direct Teaching Control (target: robot_direct_teaching_mode, action: enable/disable)
-                    elif target == "robot_direct_teaching_mode":
-                        if action == "enable":
+                        # Gripper Control (target: gripper, action: open/close)
+                        if target == "gripper":
                             try:
-                                self.indy.set_direct_teaching(True)
-                                bb.set("ui/state/direct_state", 1)
-                            except Exception as e:
-                                Logger.error(f"Start direct teaching program fail: {e}")
+                                if action == "open":
+                                    Logger.info("Sending Gripper Open command (Endtool DO8=0, DO9=1).")
+                                    self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                    self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
+                                    time.sleep(0.5)
+                                    self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                    self.indy.set_do([{'address': 9, 'state': DigitalState.ON_STATE}])
+                                elif action == "close":
+                                    Logger.info("Sending Gripper Close command (Endtool DO8=1, DO9=0).")
+                                    self.indy.set_do([{'address': 8, 'state': DigitalState.OFF_STATE}])
+                                    self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
+                                    time.sleep(0.5)
+                                    self.indy.set_do([{'address': 8, 'state': DigitalState.ON_STATE}])
+                                    self.indy.set_do([{'address': 9, 'state': DigitalState.OFF_STATE}])
 
-                        elif action == "disable":
-                            try:
-                                Logger.info("Stop direct teaching program (MQTT)")
-                                self.indy.set_direct_teaching(False)
-                                bb.set("ui/state/direct_state", 2)
                             except Exception as e:
-                                Logger.error(f"Stop direct teaching program fail: {e}")
+                                Logger.error(f"Failed to control gripper via Endtool DO: {e}")
+
+                        # Direct Teaching Control (target: robot_direct_teaching_mode, action: enable/disable)
+                        elif target == "robot_direct_teaching_mode":
+                            if action == "enable":
+                                try:
+                                    self.indy.set_direct_teaching(True)
+                                    bb.set("ui/state/direct_state", 1)
+                                except Exception as e:
+                                    Logger.error(f"Start direct teaching program fail: {e}")
+
+                            elif action == "disable":
+                                try:
+                                    Logger.info("Stop direct teaching program (MQTT)")
+                                    self.indy.set_direct_teaching(False)
+                                    bb.set("ui/state/direct_state", 2)
+                                except Exception as e:
+                                    Logger.error(f"Stop direct teaching program fail: {e}")
+                else :
+                    Logger.info(f"[Robot] Robot control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
             else:
                 Logger.warn(f"Robot control command ignored. Program is not in IDLE state (current: {ProgramState(self.program_state).name}).")
 
@@ -563,9 +567,11 @@ class RobotCommunication:
             # 2.2. UI에서 '재시작' 또는 '시작' 명령을 받은 경우
             elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
                 bb.set("ui/reset/program_control", True) # 명령 소비
-                if self.indy.get_motion_data().get("speed_ratio") != 100:
-                    self.indy.set_speed_ratio(70) # (70)
+                if bb.get("process/program/is_resume") and self.indy.get_motion_data().get("speed_ratio") != 100:
+                    self.indy.set_speed_ratio(100) # (70)
+                    bb.set("process/program/is_resume", False)
                     Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
+                    Logger.info(f"[Robot] is_resume flag detected. Set Speed Ratio to 100. and reset the flag.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.
         robot_speed = self.indy.get_motion_data()['speed_ratio']

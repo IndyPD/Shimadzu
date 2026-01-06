@@ -243,6 +243,7 @@ class MqttComm:
                         if hasattr(self, 'ProgramControl'):
                             if self.Logger: self.Logger.info("[LOGIC] Resume command received via MQTT.")
                             self.bb.set("ui/command/program_control", self.ProgramControl.PROG_RESUME.value)
+                            self.bb.set("process/program/is_resume", True)
             elif cmd == "binpick_control":
                 self.binpick_command = 1
             elif cmd == "system_control":

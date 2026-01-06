@@ -165,12 +165,12 @@ class QRReader:
                 self._test_success = False
             else:
                 self._test_success = True
-                # 점수(score)가 80점 이상이면 QUIT 명령을 전송하여 리더기를 멈춤
+                # 점수(score)가 40점 이상이면 QUIT 명령을 전송하여 리더기를 멈춤
                 if 'score' in parsed_dict:
                     try:
                         score_val = int(parsed_dict['score'])
-                        if score_val >= 80:
-                            if DEBUG_MODE: print(f"🎯 점수 {score_val}점 감지 (80점 이상). QUIT 명령을 전송합니다.")
+                        if score_val >= 40:
+                            if DEBUG_MODE: print(f"🎯 점수 {score_val}점 감지 (40점 이상). QUIT 명령을 전송합니다.")
                             self.quit()
                     except (ValueError, TypeError):
                         pass

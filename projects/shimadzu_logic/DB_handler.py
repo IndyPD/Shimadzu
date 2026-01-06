@@ -74,6 +74,8 @@ class DBHandler:
                 if bb.get("ui/cmd/data/reset") == 1:
                     logger.info("[DBHandler] Received data reset command. Resetting batch data.")
                     self.reset_batch_test_items_data()
+                    self.reset_batch_plan_items_data()
+                    # 리셋 후 Blackboard의 관련 값들도 초기화
                     bb.set("process/auto/target_floor", 0)
                     bb.set("process/auto/current_tray_no", 0)
                     bb.set("process/auto/current_specimen_no", 0)
@@ -264,6 +266,31 @@ class DBHandler:
             cur.execute(sql)
             logger.info(f"Reset {cur.rowcount} rows in `batch_test_items` table to initial state.")
         return True
+    
+    def reset_batch_plan_items_data(self):
+        """
+        UI의 리셋 요청에 따라 `batch_test_items`와 `test_tray_items` 테이블을 초기화합니다.
+        """
+        # 1. test_tray_items 테이블 초기화
+        self.initialize_test_tray_items()
+
+        # 2. batch_plan_items 테이블 내용 초기화
+        with self.cursor() as cur:
+            # id와 tray_no는 유지하면서 나머지 컬럼을 초기화합니다.
+            sql = """
+            UPDATE batch_plan_items
+            SET
+                seq_order = 0,
+                seq_status = 0,
+                test_method = '',
+                batch_id = '',
+                lot = '',
+                qr_no = ''
+            """
+            cur.execute(sql)
+            logger.info(f"Reset {cur.rowcount} rows in `batch_test_items` table to initial state.")
+        return True
+
 
     def get_test_method_details(self, qr_no):
         """
