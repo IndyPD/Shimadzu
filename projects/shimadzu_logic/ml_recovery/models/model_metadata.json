@@ -1,0 +1,28 @@
+{
+  "total_samples": 3016,
+  "num_states": 5,
+  "state_counts": {
+    "랙": 707,
+    "두께 측정기": 296,
+    "정렬기": 160,
+    "스크랩 처리기": 110,
+    "홈/기본 동작": 235
+  },
+  "cmd_to_name": {
+    "1": "랙",
+    "2": "두께 측정기",
+    "3": "정렬기",
+    "5": "스크랩 처리기",
+    "6": "홈/기본 동작"
+  },
+  "unique_cmds": [
+    1,
+    2,
+    3,
+    5,
+    6
+  ],
+  "model_type_desc": "Zone-based (6 zones)",
+  "model_type": "RandomForest",
+  "test_accuracy": 0.9536423841059603
+}

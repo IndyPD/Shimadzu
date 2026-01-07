@@ -154,16 +154,17 @@ class RobotCommunication:
             except ValueError:
                 cmd_name = f"CMD_{cmd_id}"
 
-            # 파일명 생성 (타임스탬프 제외)
-            file_name = f"{cmd_name}.json"
+            # 파일명 생성 (타임스탬프 추가로 누적 가능)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name = f"{cmd_name}_{timestamp}.json"
             self.recording_file_path = os.path.join(self.record_dir, file_name)
 
             # 데이터 버퍼 초기화
             self.trajectory_buffer = []
-            
+
             self.is_recording = True
             self.recording_cmd_id = cmd_id
-            self.last_record_time = time.time() - 0.1 # 시작 즉시 첫 데이터 기록
+            self.last_record_time = time.time() - 0.01 # 시작 즉시 첫 데이터 기록
             Logger.info(f"[DataRecorder] Recording started for '{cmd_name}'. Saving to: {file_name}")
         except Exception as e:
             Logger.error(f"[DataRecorder] Failed to start recording: {e}")
@@ -196,8 +197,8 @@ class RobotCommunication:
             Logger.info("[DataRecorder] Recording stopped.")
 
     def process_recording(self):
-        """ 0.1초 주기로 데이터 기록 (버퍼에 추가) """
-        if self.is_recording and (time.time() - self.last_record_time >= 0.1):
+        """ 0.01초 주기로 데이터 기록 (버퍼에 추가) """
+        if self.is_recording and (time.time() - self.last_record_time >= 0.01):
             try:
                 # control_data_p는 indy_communication에서 업데이트됨
                 # timestamp를 제외하고 6-DOF 좌표만 추가
