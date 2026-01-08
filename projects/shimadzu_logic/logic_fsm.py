@@ -66,6 +66,7 @@ class LogicFSM(FiniteStateMachine):
             LogicState.DETERMINE_TASK: {
                 LogicEvent.DO_MOVE_TO_RACK_FOR_QR: LogicState.MOVE_TO_RACK_FOR_QR,
                 LogicEvent.DO_PICK_SPECIMEN: LogicState.PICK_SPECIMEN,
+                LogicEvent.DO_MOVE_TO_RACK_FRONT_HOME: LogicState.MOVE_TO_RACK_FRONT_HOME,
                 LogicEvent.DO_MOVE_TO_INDICATOR: LogicState.MOVE_TO_INDICATOR,
                 LogicEvent.DO_MEASURE_THICKNESS: LogicState.MEASURE_SPECIMEN_THICKNESS,
                 LogicEvent.DO_MOVE_TO_ALIGN: LogicState.MOVE_TO_ALIGN,
@@ -86,6 +87,11 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.PICK_SPECIMEN: {
+                LogicEvent.DONE: LogicState.DETERMINE_TASK,
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
+                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
+            },
+            LogicState.MOVE_TO_RACK_FRONT_HOME: {
                 LogicEvent.DONE: LogicState.DETERMINE_TASK,
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
@@ -167,6 +173,7 @@ class LogicFSM(FiniteStateMachine):
 
             LogicState.MOVE_TO_RACK_FOR_QR: LogicMoveToRackForQRReadStrategy(),
             LogicState.PICK_SPECIMEN: LogicPickSpecimenStrategy(),
+            LogicState.MOVE_TO_RACK_FRONT_HOME: LogicMoveToRackFrontHomeStrategy(),
             LogicState.MOVE_TO_INDICATOR: LogicMoveToIndicatorStrategy(),
             LogicState.MEASURE_SPECIMEN_THICKNESS: LogicMeasureSpecimenThicknessStrategy(),
             LogicState.MOVE_TO_ALIGN: LogicMoveToAlignStrategy(),

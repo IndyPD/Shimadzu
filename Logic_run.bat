@@ -4,6 +4,6 @@ call C:\ProgramData\anaconda3\Scripts\activate.bat
 call conda activate NRMK
 
 echo Starting the server...
-python run.py
+python launcher.py
 
 pause

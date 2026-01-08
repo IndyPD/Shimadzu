@@ -117,36 +117,50 @@ class ErrorStrategy(Strategy):
         return self.next_event
     
     def _send_ui_error_event(self, violation_code):
-        """MQTT_Protocol.md 5번 항목에 따른 에러 이벤트 메시지 전송"""
-        error_data = None
-        
-        # 우선순위에 따라 에러 메시지 매핑 (DeviceViolation 상수 사용)
+        """mqtt_error.md에 따른 에러 이벤트 메시지 전송"""
+        # Auto/Manual 모드 감지 (DI[0] SELECT_SW)
+        select_sw = bb.get("device/remote/input/SELECT_SW")
+        status = "Auto" if select_sw == 1 else "Manual"
+
+        error_mapping = None
+
+        # DeviceViolation 코드를 mqtt_error.md의 device 에러 코드로 매핑
         if violation_code & DeviceViolation.SOL_SENSOR_ERR:
-            error_data = ("SOL_SENSOR_ERR", "솔레노이드 밸브 공압 공급 오류가 감지되었습니다.", "주 공압 공급 라인을 확인한 후 리셋 버튼을 누르세요.")
+            error_mapping = ("device", "D-001", "공압 공급 이상", "Pneumatic supply lost or insufficient")
         elif violation_code & DeviceViolation.REMOTE_IO_COMM_ERR:
-            error_data = ("REMOTE_IO_COMM_ERR", "Remote I/O 장치와의 통신이 두절되었습니다.", "Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요.")
-        elif violation_code & DeviceViolation.GAUGE_COMM_ERR:
-            error_data = ("GAUGE_COMM_ERR", "변위 측정기(Gauge)와의 통신이 두절되었습니다.", "측정기 전원 및 케이블 연결을 확인하세요.")
+            error_mapping = ("device", "D-002", "센서 Remote IO 연결 실패", "Sensor remote IO connection failed")
+        elif violation_code & DeviceViolation.REMOTE_IO_DEVICE_ERR:
+            error_mapping = ("device", "D-003", "Remote IO 통신 실패", "Remote IO connected but communication failed")
         elif violation_code & DeviceViolation.QR_COMM_ERR:
-            error_data = ("QR_COMM_ERR", "QR 리더기와의 통신이 두절되었습니다.", "QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요.")
-        elif violation_code & DeviceViolation.SMZ_COMM_ERR:
-            error_data = ("SMZ_COMM_ERR", "시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다.", "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요.")
-        
-        if error_data:
-            code, msg, action = error_data
+            error_mapping = ("device", "D-004", "QR 리더 통신 실패", "QR reader communication lost")
+        elif violation_code & DeviceViolation.GAUGE_COMM_ERR:
+            error_mapping = ("device", "D-006", "측정기 연결 실패", "Measurement device not connected")
+        elif violation_code & DeviceViolation.GAUGE_DEVICE_ERROR:
+            error_mapping = ("device", "D-007", "측정기 측정 실패", "Measurement device read failed")
+        elif violation_code & DeviceViolation.ISO_EMERGENCY_BUTTON:
+            error_mapping = ("device", "D-012", "비상정지 버튼 작동", "Emergency stop button activated")
+
+        # Shimadzu 에러는 T 카테고리로 전송
+        if violation_code & DeviceViolation.SMZ_COMM_ERR:
+            error_mapping = ("shimadzu", "T-001", "시마즈 장비 통신 끊김", "Shimadzu device communication lost")
+        elif violation_code & DeviceViolation.SMZ_DEVICE_ERR:
+            error_mapping = ("shimadzu", "T-002", "시마즈 장비 데이터 송수신 오류", "Shimadzu device command/response error")
+
+        if error_mapping:
+            category, code, message, detail = error_mapping
             payload = {
                 "kind": "event",
-                "evt": "system_error_event",
-                "error_source": "device",
-                "error_code": code,
-                "error_message": msg,
-                "severity": "critical",
-                "recommended_action": action
+                "evt": "error",
+                "status": status,
+                "category": category,
+                "code": code,
+                "message": message,
+                "detail": detail
             }
-            # GlobalBlackboard를 통해 MqttComm으로 이벤트 전달 (키는 MqttComm 구현에 따름)
+            # GlobalBlackboard를 통해 MqttComm으로 이벤트 전달
             bb.set("logic/send_event", payload)
-            Logger.info(f"[device] UI Error Event Queued: {code}")
-            Logger.info(f"[device] UI Error Event Message: {payload}")
+            Logger.info(f"[device] Error Event Queued: {category}/{code} (status: {status})")
+            Logger.info(f"[device] Error Event Payload: {payload}")
 
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         Logger.info(f"[device] exit ErrorStrategy with event: {event}")
@@ -314,6 +328,74 @@ class ReadyStrategy(Strategy):
             # 명령 실행 후 초기화
             bb.set("manual/device/tester", 0)
 
+        manual_smz_cmd = bb.get("manual/device/shimadzu")
+        if manual_smz_cmd and manual_smz_cmd > 0:
+            Logger.info(f"[device] Manual Shimadzu Command Executed: {manual_smz_cmd}")
+
+            # TODO 테스트를 위해 임시로 DB에서 필요한 데이터 읽어오기
+            try:
+                # DB에서 배치 데이터 가져오기
+                batch_data = context.db.get_batch_data()
+
+                if batch_data and batch_data.get("processData"):
+                    # 첫 번째 프로세스 데이터 사용 (테스트용)
+                    first_process = batch_data["processData"][0]
+
+                    # Blackboard에 필요한 값들 설정
+                    batch_id = first_process.get("batch_id", "")
+                    lot_name = first_process.get("lot", "")
+                    qr_no = first_process.get("qr_no", "")
+                    tray_no = first_process.get("tray_no", 1)
+                    test_method = first_process.get("test_method", "")
+
+                    bb.set("process_status/batch_id", batch_id)
+                    bb.set("process_status/lot_name", lot_name)
+                    bb.set("process_status/qr_no", qr_no)
+                    bb.set("process/auto/target_floor", tray_no)
+                    bb.set("process/auto/current_specimen_no", 1)  # 테스트용 기본값
+                    bb.set("process_status/test_method", test_method)
+
+                    Logger.info(f"[device] Loaded test data from DB: batch_id={batch_id}, lot={lot_name}, qr_no={qr_no}, tray_no={tray_no}")
+
+                    # QR 레시피 정보 가져오기 (smz_ask_register에서 사용)
+                    if qr_no:
+                        qr_recipe = context.db.get_qr_recipe(qr_no)
+                        if qr_recipe:
+                            Logger.info(f"[device] Loaded QR recipe from DB: {qr_recipe}")
+                else:
+                    Logger.info("[device] No batch data found in DB for manual test")
+
+            except Exception as e:
+                Logger.error(f"[device] Failed to load test data from DB: {e}")
+
+            # 수동 명령 실행
+            if manual_smz_cmd == 1:
+                # START_MEASUREMENT - lotname 필요
+                lot_name = bb.get("process_status/lot_name", "")
+                context.smz_start_measurement(lot_name)
+            elif manual_smz_cmd == 2:
+                context.smz_stop_measurement()
+            elif manual_smz_cmd == 3:
+                context.smz_ask_sys_status()
+            elif manual_smz_cmd == 4:
+                context.smz_are_you_there()
+            elif manual_smz_cmd == 5:
+                context.smz_ask_preload()
+            elif manual_smz_cmd == 6:
+                # ASK_REGISTER - regist_data 필요
+                qr_no = bb.get("process_status/qr_no", "")
+                batch_id = bb.get("process_status/batch_id", "")
+                regist_data = {
+                    "qr_no": qr_no,
+                    "batch_id": batch_id
+                }
+                context.smz_ask_register(regist_data)
+
+
+            # 명령 실행 후 초기화
+            bb.set("manual/device/shimadzu", 0)
+
+
         if bb.get("ui/cmd/auto/tensile") == 1:
             return DeviceEvent.START_COMMAND
         
@@ -354,6 +436,14 @@ class WaitCommandStrategy(Strategy):
                 return DeviceEvent.DO_GRIPPER_GRIP
             elif cmd == DeviceCommand.TENSILE_GRIPPER_OFF:
                 return DeviceEvent.DO_GRIPPER_RELEASE
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_1_ON:
+                return DeviceEvent.DO_GRIPPER_1_GRIP
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_1_OFF:
+                return DeviceEvent.DO_GRIPPER_1_RELEASE
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_2_ON:
+                return DeviceEvent.DO_GRIPPER_2_GRIP
+            elif cmd == DeviceCommand.TENSILE_GRIPPER_2_OFF:
+                return DeviceEvent.DO_GRIPPER_2_RELEASE
             elif cmd == DeviceCommand.EXT_FORWARD:
                 return DeviceEvent.DO_EXTENSOMETER_FORWARD
             elif cmd == DeviceCommand.EXT_BACKWARD:
@@ -362,6 +452,8 @@ class WaitCommandStrategy(Strategy):
                 return DeviceEvent.DO_TENSILE_TEST
             elif cmd == DeviceCommand.REGISTER_METHOD:
                 return DeviceEvent.DO_REGISTER_METHOD
+            elif cmd == DeviceCommand.ASK_PRELOAD:
+                return DeviceEvent.DO_ASK_PRELOAD
 
         return DeviceEvent.NONE
     
@@ -407,6 +499,9 @@ class MeasureThicknessStrategy(Strategy):
         self.get_thickness = None
         self.start_time = None
         self.retry_count = 0
+        self.step_start_time = time.time()
+        self.indicator_up_retry_count = 0  # indicator_stand_up 재시도 카운터
+        self.indicator_down_retry_count = 0  # indicator_stand_down 재시도 카운터
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # TODO 무게 측정 장비 제어 명령 추가 및 변경
@@ -414,14 +509,24 @@ class MeasureThicknessStrategy(Strategy):
         if self.measure_seq == 0:
             Logger.info("[device][Measure] Seq 0: Moving indicator stand up.")
             if not context.indicator_stand_up():
-                Logger.error("[device][Measure] Failed to send indicator_stand_up command.")
-                cmd_data = bb.get("process/auto/device/cmd")
-                if isinstance(cmd_data, dict):
-                    cmd_data["is_done"] = True
-                    cmd_data["state"] = "error"
-                    bb.set("process/auto/device/cmd", cmd_data)
-                return DeviceEvent.GAUGE_MEASURE_FAIL
-            self.measure_seq = 1
+                self.indicator_up_retry_count += 1
+                Logger.info(f"[device][Measure] Failed to send indicator_stand_up command. Retry {self.indicator_up_retry_count}/5")
+
+                if self.indicator_up_retry_count >= 5:
+                    Logger.error(f"[device][Measure] indicator_stand_up failed after 5 retries. Giving up.")
+                    cmd_data = bb.get("process/auto/device/cmd")
+                    if isinstance(cmd_data, dict):
+                        cmd_data["is_done"] = True
+                        cmd_data["state"] = "error"
+                        bb.set("process/auto/device/cmd", cmd_data)
+                    return DeviceEvent.GAUGE_MEASURE_FAIL
+                else:
+                    time.sleep(0.2)  # 재시도 전 대기
+                    return DeviceEvent.NONE  # 재시도를 위해 NONE 반환
+            else:
+                # 성공 시 재시도 카운터 초기화 및 다음 시퀀스로 이동
+                self.indicator_up_retry_count = 0
+                self.measure_seq = 1
         
         if self.measure_seq == 1:
             is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
@@ -431,9 +536,9 @@ class MeasureThicknessStrategy(Strategy):
                 self.start_time = datetime.now()
                 self.measure_seq = 2
         
-        # Seq 2 : 정확한 측정을 위한 5초 대기, ex (self.current_time-self.start_time).totalseconds()> 5이면 다음으로
+        # Seq 2 : 정확한 측정을 위한 1초 대기, ex (self.current_time-self.start_time).totalseconds()> 1이면 다음으로
         if self.measure_seq == 2:
-            if self.start_time and (datetime.now() - self.start_time).total_seconds() > 5.0:
+            if self.start_time and (datetime.now() - self.start_time).total_seconds() > 1:
                 Logger.info("[device][Measure] Seq 2: Wait time finished. Measuring thickness.")
                 self.measure_seq = 3
 
@@ -458,14 +563,24 @@ class MeasureThicknessStrategy(Strategy):
         if self.measure_seq == 4:
             Logger.info("[device][Measure] Seq 4: Moving indicator stand down.")
             if not context.indicator_stand_down():
-                Logger.error("[device][Measure] Failed to send indicator_stand_down command.")
-                cmd_data = bb.get("process/auto/device/cmd")
-                if isinstance(cmd_data, dict):
-                    cmd_data["is_done"] = True
-                    cmd_data["state"] = "error"
-                    bb.set("process/auto/device/cmd", cmd_data)
-                return DeviceEvent.GAUGE_MEASURE_FAIL
-            self.measure_seq = 5
+                self.indicator_down_retry_count += 1
+                Logger.info(f"[device][Measure] Failed to send indicator_stand_down command. Retry {self.indicator_down_retry_count}/5")
+
+                if self.indicator_down_retry_count >= 5:
+                    Logger.error(f"[device][Measure] indicator_stand_down failed after 5 retries. Giving up.")
+                    cmd_data = bb.get("process/auto/device/cmd")
+                    if isinstance(cmd_data, dict):
+                        cmd_data["is_done"] = True
+                        cmd_data["state"] = "error"
+                        bb.set("process/auto/device/cmd", cmd_data)
+                    return DeviceEvent.GAUGE_MEASURE_FAIL
+                else:
+                    time.sleep(0.2)  # 재시도 전 대기
+                    return DeviceEvent.NONE  # 재시도를 위해 NONE 반환
+            else:
+                # 성공 시 재시도 카운터 초기화 및 다음 시퀀스로 이동
+                self.indicator_down_retry_count = 0
+                self.measure_seq = 5
 
         if self.measure_seq == 5:
             is_up = bb.get("device/remote/input/INDICATOR_GUIDE_UP")
@@ -560,13 +675,22 @@ class GripperGripStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter GripperGripStrategy")
         Logger.info("[device] Device: Gripping Specimen (Tensile).")
+        self.retry_count = 0  # 재시도 카운터
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # 인장기 그리퍼 잡기
         if context.chuck_close():
             return DeviceEvent.GRIPPER_GRIP_DONE
         else:
-            return DeviceEvent.GRIPPER_FAIL
+            self.retry_count += 1
+            Logger.info(f"[device] Failed to close chuck. Retry {self.retry_count}/5")
+
+            if self.retry_count >= 5:
+                Logger.error(f"[device] chuck_close failed after 5 retries. Giving up.")
+                return DeviceEvent.GRIPPER_FAIL
+            else:
+                time.sleep(0.2)  # 재시도 전 대기
+                return DeviceEvent.NONE  # 재시도를 위해 NONE 반환
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         cmd_data = bb.get("process/auto/device/cmd")
@@ -594,11 +718,56 @@ class ExtensometerForwardStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter ExtensometerForwardStrategy")
         Logger.info("[device] Device: Moving Extensometer Forward.")
+        self.start_time = time.time()
+        self.timeout = 10.0 # 10초 타임아웃
+        self.retry_count = 0  # 재시도 카운터
+        self.command_failed = False
+        self.command_sent = False  # 명령 전송 여부 플래그
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        return DeviceEvent.EXTENSOMETER_FORWARD_DONE
+        # 명령이 아직 전송되지 않았거나 재시도 중인 경우
+        if not self.command_sent:
+            if not context.EXT_move_forword():
+                self.retry_count += 1
+                Logger.info(f"[device] Failed to send EXT_move_forword command. Retry {self.retry_count}/5")
+
+                if self.retry_count >= 5:
+                    Logger.error(f"[device] EXT_move_forword failed after 5 retries. Giving up.")
+                    self.command_failed = True
+                    return DeviceEvent.EXTENSOMETER_FAIL
+                else:
+                    time.sleep(0.2)  # 재시도 전 대기
+                    return DeviceEvent.NONE  # 재시도를 위해 NONE 반환
+            else:
+                # 명령 전송 성공
+                self.command_sent = True
+                self.retry_count = 0
+                Logger.info("[device] EXT_move_forword command sent successfully.")
+
+        # 명령 전송 실패로 인한 에러
+        if self.command_failed:
+            return DeviceEvent.EXTENSOMETER_FAIL
+
+        # 타임아웃 확인
+        if time.time() - self.start_time > self.timeout:
+            Logger.error("[device] Extensometer forward movement timed out.")
+            context.EXT_stop() # 타임아웃 시 정지
+            return DeviceEvent.EXTENSOMETER_FAIL
+
+        # 전진 완료 확인
+        if context.EXT_move_check(direction=1):
+            Logger.info("[device] Extensometer forward movement complete.")
+            return DeviceEvent.EXTENSOMETER_FORWARD_DONE
+        
+        return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.EXTENSOMETER_FORWARD_DONE
+            cmd_data["is_done"] = True
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit ExtensometerForwardStrategy with event: {event}")
 
 class StartTensileTestStrategy(Strategy):
@@ -610,11 +779,9 @@ class StartTensileTestStrategy(Strategy):
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # Logic FSM에서 전달된 파라미터(lotname 등)를 사용해야 하지만,
         # 현재 구조에서는 cmd dict에서 가져와야 함.
-        # 여기서는 임시로 lotname을 사용.
-        lotname = "DEFAULT_LOT"
-        cmd_data = bb.get("process/auto/device/cmd")
 
         # Shimadzu에 시험 시작 명령 전송
+        lotname = bb.get("process_status/lot_name")
         result = context.smz_start_measurement(lotname=lotname)
         
         # 응답 확인
@@ -639,11 +806,56 @@ class ExtensometerBackwardStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter ExtensometerBackwardStrategy")
         Logger.info("[device] Device: Moving Extensometer Backward.")
+        self.start_time = time.time()
+        self.timeout = 10.0 # 10초 타임아웃
+        self.retry_count = 0  # 재시도 카운터
+        self.command_failed = False
+        self.command_sent = False  # 명령 전송 여부 플래그
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
+        # 명령이 아직 전송되지 않았거나 재시도 중인 경우
+        if not self.command_sent:
+            if not context.EXT_move_backward():
+                self.retry_count += 1
+                Logger.info(f"[device] Failed to send EXT_move_backward command. Retry {self.retry_count}/5")
+
+                if self.retry_count >= 5:
+                    Logger.error(f"[device] EXT_move_backward failed after 5 retries. Giving up.")
+                    self.command_failed = True
+                    return DeviceEvent.EXTENSOMETER_FAIL
+                else:
+                    time.sleep(0.2)  # 재시도 전 대기
+                    return DeviceEvent.NONE  # 재시도를 위해 NONE 반환
+            else:
+                # 명령 전송 성공
+                self.command_sent = True
+                self.retry_count = 0
+                Logger.info("[device] EXT_move_backward command sent successfully.")
+
+        # 명령 전송 실패로 인한 에러
+        if self.command_failed:
+            return DeviceEvent.EXTENSOMETER_FAIL
+
+        # 타임아웃 확인
+        if time.time() - self.start_time > self.timeout:
+            Logger.error("[device] Extensometer backward movement timed out.")
+            context.EXT_stop() # 타임아웃 시 정지
+            return DeviceEvent.EXTENSOMETER_FAIL
+
+        # 후진 완료 확인
+        if context.EXT_move_check(direction=2):
+            Logger.info("[device] Extensometer backward movement complete.")
+            return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
+        
+        return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.EXTENSOMETER_BACKWARD_DONE
+            cmd_data["is_done"] = True
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit ExtensometerBackwardStrategy with event: {event}")
 
 class GripperReleaseStrategy(Strategy):
@@ -651,6 +863,8 @@ class GripperReleaseStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter GripperReleaseStrategy")
         Logger.info("[device] Device: Releasing Gripper (Tensile).")
+        self.retry_count = 0  # 재시도 카운터
+        self.error_count = 0  # 에러 카운트
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # 인장기 그리퍼 풀기
@@ -658,8 +872,16 @@ class GripperReleaseStrategy(Strategy):
         if status == "done":
             return DeviceEvent.GRIPPER_RELEASE_DONE
         elif status == "error":
-            return DeviceEvent.GRIPPER_FAIL
-        
+            self.error_count += 1
+            Logger.info(f"[device] Failed to open chuck. Error count {self.error_count}/5")
+
+            if self.error_count >= 5:
+                Logger.error(f"[device] chuck_open_non_blocking failed after 5 errors. Giving up.")
+                return DeviceEvent.GRIPPER_FAIL
+            else:
+                time.sleep(0.2)  # 재시도 전 대기
+                return DeviceEvent.NONE  # 재시도 계속
+
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
@@ -687,10 +909,10 @@ class RegisterMethodStrategy(Strategy):
             Logger.error("[device] RegisterMethodStrategy: No 'params' found in command data.")
             return DeviceEvent.REGISTER_METHOD_FAIL
         
-        # smz_register_method는 **params를 인자로 받으므로 그대로 전달
-        result = context.smz_register_method(**params)
+        # smz_ask_register 호출 (params 딕셔너리 전달)
+        result = context.smz_ask_register(params)
 
-        if result and result.get('status') == 'OK':
+        if result:
             Logger.info(f"[device] Shimadzu method registered successfully for: {params.get('tpname')}")
             return DeviceEvent.REGISTER_METHOD_DONE
         else:
@@ -705,3 +927,115 @@ class RegisterMethodStrategy(Strategy):
             self.cmd_data["result"] = "OK" if is_success else f"Failed: {event.name}"
             bb.set("process/auto/device/cmd", self.cmd_data)
         Logger.info(f"[device] exit RegisterMethodStrategy with event: {event}")
+
+class Gripper1GripStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter Gripper1GripStrategy")
+        Logger.info("[device] Device: Gripping Specimen (Tensile Upper Chuck).")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        # 상단 그리퍼(GRIPPER_1) 닫기
+        if context.chuck_1_close():
+            return DeviceEvent.GRIPPER_1_GRIP_DONE
+        else:
+            return DeviceEvent.GRIPPER_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.GRIPPER_1_GRIP_DONE
+            cmd_data["is_done"] = is_success
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
+        Logger.info(f"[device] exit Gripper1GripStrategy with event: {event}")
+
+class Gripper1ReleaseStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter Gripper1ReleaseStrategy")
+        Logger.info("[device] Device: Releasing Gripper (Tensile Upper Chuck).")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        # 상단 그리퍼(GRIPPER_1) 열기
+        if context.chuck_1_open():
+            return DeviceEvent.GRIPPER_1_RELEASE_DONE
+        else:
+            return DeviceEvent.GRIPPER_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.GRIPPER_1_RELEASE_DONE
+            cmd_data["is_done"] = is_success
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
+        Logger.info(f"[device] exit Gripper1ReleaseStrategy with event: {event}")
+
+class Gripper2GripStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter Gripper2GripStrategy")
+        Logger.info("[device] Device: Gripping Specimen (Tensile Lower Chuck).")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        # 하단 그리퍼(GRIPPER_2) 닫기
+        if context.chuck_2_close():
+            return DeviceEvent.GRIPPER_2_GRIP_DONE
+        else:
+            return DeviceEvent.GRIPPER_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.GRIPPER_2_GRIP_DONE
+            cmd_data["is_done"] = is_success
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
+        Logger.info(f"[device] exit Gripper2GripStrategy with event: {event}")
+
+class Gripper2ReleaseStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter Gripper2ReleaseStrategy")
+        Logger.info("[device] Device: Releasing Gripper (Tensile Lower Chuck).")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        # 하단 그리퍼(GRIPPER_2) 열기
+        if context.chuck_2_open():
+            return DeviceEvent.GRIPPER_2_RELEASE_DONE
+        else:
+            return DeviceEvent.GRIPPER_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.GRIPPER_2_RELEASE_DONE
+            cmd_data["is_done"] = is_success
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
+        Logger.info(f"[device] exit Gripper2ReleaseStrategy with event: {event}")
+
+class AskPreloadStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter AskPreloadStrategy")
+        Logger.info("[device] Device: Asking Preload Status.")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        result = context.smz_ask_preload()
+        if result:
+            Logger.info(f"[device] Shimadzu ask preload success: {result}")
+            return DeviceEvent.ASK_PRELOAD_DONE
+        else:
+            Logger.error(f"[device] Failed to ask preload.")
+            return DeviceEvent.ASK_PRELOAD_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        cmd_data = bb.get("process/auto/device/cmd")
+        if isinstance(cmd_data, dict):
+            is_success = event == DeviceEvent.ASK_PRELOAD_DONE
+            cmd_data["is_done"] = True
+            cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", cmd_data)
+        Logger.info(f"[device] exit AskPreloadStrategy with event: {event}")

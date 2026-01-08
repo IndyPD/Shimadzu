@@ -86,7 +86,12 @@ class ModelTrainer:
             model_type = "RandomForest"
 
         # 평가
-        y_pred = self.model.predict(X_test)
+        if model_type == "LightGBM":
+            # LightGBM Booster는 확률을 반환하므로 argmax로 클래스 추출
+            y_pred_proba = self.model.predict(X_test)
+            y_pred = np.argmax(y_pred_proba, axis=1)
+        else:
+            y_pred = self.model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
 
         Logger.info(f"[ML Trainer] {model_type} Test Accuracy: {accuracy * 100:.2f}%")

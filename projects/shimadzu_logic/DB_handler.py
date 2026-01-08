@@ -3,7 +3,15 @@ from contextlib import contextmanager
 import logging
 import threading
 import time
-from pkg.utils.blackboard import GlobalBlackboard
+import sys
+import os
+
+try:
+    from pkg.utils.blackboard import GlobalBlackboard
+except ImportError:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+    from pkg.utils.blackboard import GlobalBlackboard
+
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -16,17 +24,20 @@ class DBHandler:
     해당 테이블에 접근하던 메서드들이 삭제되었습니다.
     이제 이 클래스는 배치 정보, 레시피, 이력 로그 등 영구 데이터만 처리합니다.
     """
-    def __init__(self, host, user, password, db_name):
+    def __init__(self, host, user, password, db_name, enable_monitor=True):
         self.host = host
         self.user = user
         self.password = password
         self.db_name = db_name
         self.conn = None
+        self.enable_monitor = enable_monitor
 
         # UI 명령 처리를 위한 스레드 시작
         self.running = True
-        self.command_thread = threading.Thread(target=self._thread_command_monitor, daemon=True)
-        self.command_thread.start()
+        self.command_thread = None
+        if self.enable_monitor:
+            self.command_thread = threading.Thread(target=self._thread_command_monitor, daemon=True)
+            self.command_thread.start()
 
     def connect(self):
         """데이터베이스에 연결합니다."""
@@ -49,7 +60,7 @@ class DBHandler:
     def disconnect(self):
         """데이터베이스 연결을 닫습니다."""
         self.running = False
-        if hasattr(self, 'command_thread') and self.command_thread.is_alive():
+        if self.command_thread and self.command_thread.is_alive():
             self.command_thread.join(timeout=1)
             logger.info("DB command monitor thread stopped.")
 
@@ -143,6 +154,32 @@ class DBHandler:
             cur.execute(update_sql)
             logger.info(f"Updated `test_tray_items` based on `batch_test_items`. Rows affected: {cur.rowcount}")
 
+            # 5. 배치 정보를 블랙보드에 업데이트
+            # batch_test_items에서 첫 번째 항목의 정보를 가져와서 블랙보드에 설정
+            cur.execute("""
+                SELECT batch_id, lot, test_method, qr_no
+                FROM batch_test_items
+                WHERE seq_order > 0
+                ORDER BY seq_order ASC
+                LIMIT 1
+            """)
+            batch_info = cur.fetchone()
+
+            if batch_info:
+                batch_id, lot_name, test_method, qr_no = batch_info
+                bb.set("process_status/batch_id", batch_id if batch_id else "")
+                bb.set("process_status/lot_name", lot_name if lot_name else "")
+                bb.set("process_status/test_method", test_method if test_method else "")
+                bb.set("process_status/qr_no", qr_no if qr_no else "")
+                logger.info(f"Updated blackboard with batch info: batch_id={batch_id}, lot={lot_name}, test_method={test_method}, qr_no={qr_no}")
+            else:
+                # 배치 정보가 없는 경우 초기화
+                bb.set("process_status/batch_id", "")
+                bb.set("process_status/lot_name", "")
+                bb.set("process_status/test_method", "")
+                bb.set("process_status/qr_no", "")
+                logger.warning("No batch items found. Cleared blackboard batch info.")
+
             return cur.rowcount
 
     def initialize_test_tray_items(self):
@@ -205,14 +242,15 @@ class DBHandler:
         가공하여 Blackboard에 저장한 후 결과를 반환합니다.
         """
         with self.cursor() as cur:
-            # seq_order > 0 인 것만 유효한 공정으로 간주
-            cur.execute("SELECT * FROM batch_test_items WHERE seq_order > 0 ORDER BY seq_order ASC")
+            # seq_order와 seq_status가 0이 아닌 유효한 공정 데이터만 조회
+            cur.execute("SELECT * FROM batch_test_items WHERE seq_order != 0 AND seq_status != 0 ORDER BY seq_order ASC")
             process_data = cur.fetchall()
 
         if not process_data:
             logger.warning("No valid batch data found in `batch_test_items` (seq_order > 0).")
             bb.set("process/auto/batch_data", None)
             return None
+        logger.info(f"Read Data from `batch_test_items`: {process_data}")
 
         # 첫 번째 항목에서 배치 정보 추출
         first_item = process_data[0]
@@ -229,6 +267,7 @@ class DBHandler:
         # Blackboard에 저장
         bb.set("process/auto/batch_data", batch_info)
         logger.info(f"Batch data for '{batch_id}' loaded and set to blackboard.")
+        logger.info(f"Batch Info: {batch_info}")
         
         return batch_info
 
@@ -340,3 +379,80 @@ class DBHandler:
 # - log_io_change()
 # - get_system_status()
 # - update_system_status()
+
+if __name__ == '__main__':
+    import os
+    import json
+    
+    # 로깅 설정 (콘솔 출력)
+    logging.basicConfig(level=logging.INFO)
+
+    # 설정 파일 로드 시도
+    config_path = os.path.join(os.path.dirname(__file__), 'configs', 'configs.json')
+    db_config = {}
+    if os.path.exists(config_path):
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            db_config = {
+                'host': config.get('db_host', 'localhost'),
+                'user': config.get('db_user', 'root'),
+                'password': config.get('db_password', ''),
+                'db_name': config.get('db_name', 'shimadzu_db')
+            }
+    else:
+        print(f"Config file not found at {config_path}. Using defaults.")
+        db_config = {
+            'host': 'localhost',
+            'user': 'root',
+            'password': '',
+            'db_name': 'shimadzu_db'
+        }
+
+    print(f"Connecting to DB with: {db_config}")
+    db = DBHandler(**db_config, enable_monitor=False)
+    
+    if db.connect():
+        try:
+            while True:
+                print("\n--- DB Handler Test Menu ---")
+                print("1. get_test_tray_items (Input: tray_no)")
+                print("2. get_batch_data (No input)")
+                print("3. get_test_method_details (Input: qr_no/test_method)")
+                print("4. get_qr_recipe (Input: qr_no)")
+                print("q. Quit")
+                
+                choice = input("Select function: ").strip()
+                
+                if choice == '1':
+                    try:
+                        tray_no = int(input("Enter tray_no: "))
+                        items = db.get_test_tray_items(tray_no)
+                        print(f"Result: {items}")
+                    except ValueError:
+                        print("Invalid input for tray_no")
+                elif choice == '2':
+                    data = db.get_batch_data()
+                    
+                    print(f"Result: {data}")
+                    
+                elif choice == '3':
+                    qr_no = input("Enter qr_no (or test_method name): ")
+                    details = db.get_test_method_details(qr_no)
+
+                    print(f"Result: {details}")
+                    mname = details['test_method'] if details else 'N/A'
+                    print(f"Test Method: {mname}")
+                elif choice == '4':
+                    qr_no = input("Enter qr_no: ")
+                    recipe = db.get_qr_recipe(qr_no)
+                    print(f"Result: {recipe}")
+                elif choice.lower() == 'q':
+                    break
+                else:
+                    print("Invalid selection")
+        except KeyboardInterrupt:
+            print("\nInterrupted")
+        finally:
+            db.disconnect()
+    else:
+        print("Failed to connect to database.")

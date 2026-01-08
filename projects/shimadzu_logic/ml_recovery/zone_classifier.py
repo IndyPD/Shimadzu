@@ -26,7 +26,7 @@ class WorkZone(IntEnum):
 class ZoneClassifier:
     """CMD ID를 Zone으로 매핑하는 분류기"""
 
-    # CMD ID 범위 기반 Zone 매핑 (Command.md 기반)
+    # CMD ID 범위 기반 Zone 매핑 (Command.md 기반 + motion_data 확인)
     ZONE_MAPPING = {
         # 랙 관련 (1000~2100)
         WorkZone.RACK: [
@@ -48,11 +48,11 @@ class ZoneClassifier:
             (6000, 6000),   # ALIGNER_RETURN
         ],
 
-        # 인장 시험기 (7000~8000)
+        # 인장 시험기 (7000~8000) - TENSILE 관련 추가됨
         WorkZone.TENSILE_TESTER: [
-            (7000, 7002),   # TENSILE_FRONT_MOVE, PLACE
-            (7011, 7012),   # TENSILE_PICK
-            (8000, 8000),   # TENSILE_RETURN
+            (7000, 7002),   # TENSILE_FRONT_MOVE, PLACE, 샘플 배치
+            (7011, 7013),   # TENSILE_PICK, 샘플 회수
+            (8000, 8001),   # TENSILE_RETURN
         ],
 
         # 스크랩 처리기 (7020~7022)

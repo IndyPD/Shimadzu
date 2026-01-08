@@ -155,7 +155,7 @@ class RobotCommunication:
                 cmd_name = f"CMD_{cmd_id}"
 
             # 파일명 생성 (타임스탬프 추가로 누적 가능)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{cmd_name}_{timestamp}.json"
             self.recording_file_path = os.path.join(self.record_dir, file_name)
 
@@ -376,6 +376,11 @@ class RobotCommunication:
             robot_pos = self.get_intvar_address(int_var, int(self.config["int_var/robot/position/addr"]))
             if robot_pos is not None:
                 bb.set("int_var/robot/position/val", robot_pos)
+
+            # [추가] 로봇 컨트롤러의 grip_state 읽기 (백업용)
+            grip_state = self.get_intvar_address(int_var, int(self.config["int_var/grip_state/addr"]))
+            if grip_state is not None:
+                bb.set("int_var/grip_state/val", grip_state)
 
             # [Data Recorder] 기록 제어 로직
             current_cmd_bb = int(bb.get("int_var/cmd/val") or 0)

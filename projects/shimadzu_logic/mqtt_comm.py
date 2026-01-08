@@ -200,6 +200,76 @@ class MqttComm:
     # Logic 역할 함수 (ACK 및 상태 보고)
     # ==========================================================================
 
+    def send_error_event(self, category, code, message, status="Auto", detail=None):
+        """
+        에러 이벤트를 MQTT로 전송합니다. (mqtt_error.md 준수)
+
+        Args:
+            category (str): 에러 카테고리 ("device" | "shimadzu" | "robot")
+            code (str): 에러 코드 (예: "D-001", "T-001", "R-001")
+            message (str): 에러 메시지 (한글)
+            status (str): 현재 상태 ("Auto" | "Manual"), 기본값은 "Auto"
+            detail (str, optional): 에러 상세 설명 (영문)
+
+        Example:
+            mqtt.send_error_event("device", "D-001", "공압 공급 이상", "Auto", "Pneumatic supply lost")
+            mqtt.send_error_event("robot", "R-002", "로봇 그리퍼 파지 실패", "Manual")
+        """
+        if self.role == 'logic':
+            msg_id = f"logic-evt-error-{uuid4().hex[:6]}"
+
+            error_payload = {
+                "kind": "event",
+                "evt": "error",
+                "status": status,
+                "category": category,
+                "code": code,
+                "message": message
+            }
+
+            if detail:
+                error_payload["detail"] = detail
+
+            frame = self._create_frame("logic.event", "ui", msg_id, error_payload, False)
+            self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(frame))
+
+            if self.Logger:
+                self.Logger.error(f">>> [SND ERROR] {category}/{code}: {message} | MsgID: {msg_id}")
+
+    def send_error_via_blackboard(self, category, code, message, status="Auto", detail=None):
+        """
+        Blackboard를 통해 에러 이벤트를 전송합니다.
+        _status_publishing_loop에서 자동으로 처리됩니다.
+
+        Args:
+            category (str): 에러 카테고리 ("device" | "shimadzu" | "robot")
+            code (str): 에러 코드 (예: "D-001", "T-001", "R-001")
+            message (str): 에러 메시지 (한글)
+            status (str): 현재 상태 ("Auto" | "Manual"), 기본값은 "Auto"
+            detail (str, optional): 에러 상세 설명 (영문)
+
+        Example:
+            mqtt.send_error_via_blackboard("device", "D-012", "비상정지 버튼 작동", "Manual")
+        """
+        if self.role == 'logic' and self.bb:
+            error_payload = {
+                "kind": "event",
+                "evt": "error",
+                "status": status,
+                "category": category,
+                "code": code,
+                "message": message
+            }
+
+            if detail:
+                error_payload["detail"] = detail
+
+            # Blackboard에 설정하면 _status_publishing_loop에서 자동 전송
+            self.bb.set("logic/send_event", error_payload)
+
+            if self.Logger:
+                self.Logger.error(f"[ERROR SET] {category}/{code}: {message}")
+
     def _handle_ui_command(self, header:dict, payload:dict):
         if self.role == 'logic':
             cmd = payload.get("cmd")

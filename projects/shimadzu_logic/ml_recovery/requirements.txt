@@ -1,13 +1,13 @@
 # ML Recovery System Dependencies
 
-# 필수 패키지
+# Required packages
 numpy>=1.20.0
 scikit-learn>=1.0.0
 
-# 권장 패키지 (더 높은 성능)
+# Recommended packages (for better performance)
 lightgbm>=3.3.0
 
-# 개발 도구 (선택사항)
-jupyter>=1.0.0
+# Development tools (optional)
+# jupyter>=1.0.0
 matplotlib>=3.5.0
 pandas>=1.3.0

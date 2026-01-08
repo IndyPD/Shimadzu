@@ -3,9 +3,10 @@
   "robot_ip": "192.168.2.20",
   "remote_io": "192.168.2.40",
   "mqtt_ip": "127.0.0.1",
-  "shimadzu_ip": "127.0.0.1",
+  "shimadzu_ip": "192.168.2.162",
   "shimadzu_port": 5000,
-  
+  "bin_picking_ip": "192.168.2.16",
+  "bin_picking_port": 5003,
   "db_host": "localhost",
   "db_user": "root",
   "db_password": "root",

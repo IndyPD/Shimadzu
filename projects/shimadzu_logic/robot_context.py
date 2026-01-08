@@ -289,8 +289,8 @@ class RobotContext(ContextBase):
         elif motion_name == MotionCommand.LOAD_TENSILE_MACHINE:
             return RobotMotionCommand.TENSILE_SAMPLE_PLACE_POS_DOWN
         elif motion_name == MotionCommand.PICK_FROM_TENSILE_MACHINE:
-            if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_UP
-            if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_DOWN
+            if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_UP
+            if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_DOWN
 
         # ACT06: Scrap Disposer
         elif motion_name == MotionCommand.PLACE_IN_SCRAP_DISPOSER:

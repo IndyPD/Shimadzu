@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Tuple, Optional, Dict
 import logging
 
-from .zone_classifier import ZoneClassifier, WorkZone
+from zone_classifier import ZoneClassifier, WorkZone
 
 Logger = logging.getLogger(__name__)
 
@@ -104,21 +104,36 @@ class ZonePredictor:
 
             # 예측
             X = np.array([position], dtype=np.float32)
-            pred_zone_id = int(self.model.predict(X)[0])
+
+            # 모델 타입에 따라 예측 방식 변경
+            model_type = self.metadata.get('model_type', 'Unknown')
+
+            if model_type == "LightGBM":
+                # LightGBM Booster는 확률을 반환
+                pred_proba = self.model.predict(X)[0]  # (num_classes,) 배열
+                pred_zone_id = int(np.argmax(pred_proba))
+                # 0-based를 1-based로 변환 (zone_id_mapping 사용)
+                zone_id_mapping = self.metadata.get('zone_id_mapping', {})
+                # JSON에서 로드하면 키가 문자열일 수 있음
+                pred_zone_id = zone_id_mapping.get(str(pred_zone_id), zone_id_mapping.get(pred_zone_id, pred_zone_id + 1))
+                confidence = float(np.max(pred_proba)) if return_confidence else None
+            else:
+                # RandomForest는 클래스를 직접 반환
+                pred_zone_id = int(self.model.predict(X)[0])
+                # 신뢰도 계산
+                confidence = None
+                if return_confidence:
+                    try:
+                        if hasattr(self.model, 'predict_proba'):
+                            proba = self.model.predict_proba(X)[0]
+                            confidence = float(np.max(proba))
+                        else:
+                            confidence = 0.95
+                    except:
+                        confidence = 0.95
+
             pred_zone = WorkZone(pred_zone_id)
             zone_name = ZoneClassifier.get_zone_name(pred_zone)
-
-            # 신뢰도 계산
-            confidence = None
-            if return_confidence:
-                try:
-                    if hasattr(self.model, 'predict_proba'):
-                        proba = self.model.predict_proba(X)[0]
-                        confidence = float(np.max(proba))
-                    else:
-                        confidence = 0.95
-                except:
-                    confidence = 0.95
 
             Logger.info(f"[Zone Predictor] Predicted: {zone_name} ({pred_zone.name}) with {confidence*100:.1f}% confidence")
 
@@ -183,7 +198,7 @@ if __name__ == "__main__":
 
     if predictor.load_model():
         # 테스트 예측
-        test_position = [430.64, -426.75, 461.00, 90.26, -179.47, 0.35]
+        test_position = [-213.72, -179.88, 702.74, -54.72, 88.20131, 123.596]
         result = predictor.predict_with_recovery_action(test_position)
 
         print(f"\n=== Zone Prediction Result ===")

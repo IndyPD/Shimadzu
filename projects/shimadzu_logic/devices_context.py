@@ -1,3 +1,4 @@
+from datetime import timedelta
 from .constants import *
 import os
 from pkg.fsm.shared import *
@@ -42,8 +43,10 @@ class DeviceContext(ContextBase):
 
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
-        self.dev_smz_enable = False 
+        self.dev_smz_enable = True 
         self.dev_qr_enable = True
+
+        self.dev_smz_check_time = datetime.now()
         
         # MitutoyoGauge 장치 인스턴스 생성
         if self.dev_gauge_enable :
@@ -86,11 +89,17 @@ class DeviceContext(ContextBase):
         if self.dev_smz_enable :
             self.shimadzu_client = ShimadzuClient(host=config.get("shimadzu_ip"),
                                                 port=config.get("shimadzu_port"))
-            self.shimadzu_client.connect()
+            result = self.shimadzu_client.connect()
 
-            result = self.shimadzu_client.send_init()
+            # result = self.shimadzu_client.send_init()
             Logger.info(f"[ShimadzuClient] Init Response: {result}")
             time.sleep(0.5)
+            result = self.shimadzu_client.send_are_you_there()
+            if result is not None:
+                Logger.info(f"[ShimadzuClient] Connected to Shimadzu Device Successfully.")
+            else:
+                Logger.error(f"[ShimadzuClient] Failed to connect to Shimadzu Device.")
+
 
         # self.shimadzu_test()
         # Logger.info(f"[ShimadzuClient] AreYouThere Response: {result}")
@@ -109,8 +118,8 @@ class DeviceContext(ContextBase):
         self.th_UI_DO_handler.start()
 
         # 주기적으로 타워 램프 상태를 제어하는 스레드 추가
-        # self.th_tower_lamp_controller = Thread(target=self._thread_tower_lamp_controller, daemon=True)
-        # self.th_tower_lamp_controller.start()
+        self.th_tower_lamp_controller = Thread(target=self._thread_tower_lamp_controller, daemon=True)
+        self.th_tower_lamp_controller.start()
 
         # 주기적으로 통신 상태를 블랙보드에 업데이트하는 스레드 추가
         self.th_comm_status_updater = Thread(target=self._thread_comm_status_updater, daemon=True)
@@ -234,6 +243,7 @@ class DeviceContext(ContextBase):
                         
                     # 처리 완료 후 트리거 리셋
                     bb.set("ui/cmd/do_control/trigger", 0)
+                
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_UI_DO_handler: {e}\n{traceback.format_exc()}")
             time.sleep(0.1)
@@ -249,41 +259,46 @@ class DeviceContext(ContextBase):
         while True:
             try:
                 # 현재 FSM 상태를 블랙보드에서 가져옵니다.
-                logic_fsm_state = bb.get("logic/fsm/strategy").get("state")
-                device_fsm_state = bb.get("device/fsm/strategy").get("state")
-                robot_fsm_state = bb.get("robot/fsm/strategy").get("state")
 
-                # 상태 결정
-                is_error = "ERROR" in (logic_fsm_state or "") or \
-                           "ERROR" in (device_fsm_state or "") or \
-                           "ERROR" in (robot_fsm_state or "")
-                
-                is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
+                logic_fsm = bb.get("logic/fsm/strategy")
+                device_fsm = bb.get("device/fsm/strategy")
+                robot_fsm = bb.get("robot/fsm/strategy")
 
-                # I/O 쓰기 중 충돌을 방지하기 위해 lock을 사용합니다.
-                with self._io_lock:
-                    output_data = self.remote_output_data.copy()
-                    blink_state = not blink_state
+                if type(logic_fsm) == dict and type(device_fsm) == dict and type(robot_fsm) == dict:
+                    logic_fsm_state = logic_fsm.get("state")
+                    device_fsm_state = device_fsm.get("state")
+                    robot_fsm_state = robot_fsm.get("state")
+                    # 상태 결정
+                    is_error = "ERROR" in (logic_fsm_state or "") or \
+                            "ERROR" in (device_fsm_state or "") or \
+                            "ERROR" in (robot_fsm_state or "")
+                    
+                    is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
-                    if is_error:
-                        # 빨간색 점멸, 나머지 꺼짐
-                        output_data[DigitalOutput.TOWER_LAMP_RED] = 1 if blink_state else 0
-                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
-                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
-                    elif is_idle:
-                        # 노란색 점멸, 나머지 꺼짐
-                        output_data[DigitalOutput.TOWER_LAMP_RED] = 0
-                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
-                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 1 if blink_state else 0
-                    else: # 공정 중
-                        # 녹색 켜짐, 나머지 꺼짐
-                        output_data[DigitalOutput.TOWER_LAMP_RED] = 0
-                        output_data[DigitalOutput.TOWER_LAMP_GREEN] = 1
-                        output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+                    # I/O 쓰기 중 충돌을 방지하기 위해 lock을 사용합니다.
+                    with self._io_lock:
+                        output_data = self.remote_output_data.copy()
+                        blink_state = not blink_state
 
-                    if self.dev_remoteio_enable and hasattr(self, 'iocontroller'):
-                        self.iocontroller.write_output_data(output_data)
-                        self.remote_output_data = output_data
+                        if is_error:
+                            # 빨간색 점멸, 나머지 꺼짐
+                            output_data[DigitalOutput.TOWER_LAMP_RED] = 1 if blink_state else 0
+                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
+                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+                        elif is_idle:
+                            # 노란색 점멸, 나머지 꺼짐
+                            output_data[DigitalOutput.TOWER_LAMP_RED] = 0
+                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
+                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 1 if blink_state else 0
+                        else: # 공정 중
+                            # 녹색 켜짐, 나머지 꺼짐
+                            output_data[DigitalOutput.TOWER_LAMP_RED] = 0
+                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 1
+                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+
+                        if self.dev_remoteio_enable and hasattr(self, 'iocontroller'):
+                            self.iocontroller.write_output_data(output_data)
+                            self.remote_output_data = output_data
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_tower_lamp_controller: {e}")
             
@@ -322,14 +337,13 @@ class DeviceContext(ContextBase):
                         self.qr_error_count += 1
 
                 # Shimadzu
-                if self.dev_smz_enable:
-                    # are_you_there는 dict를 반환하므로, 응답이 있는지 여부로 판단
-                    smz_status = self.smz_are_you_there() is not None
-                    bb.set("device/shimadzu/comm_status", 1 if smz_status else 0)
-                    if smz_status:
-                        smz_run_state = self.smz_ask_sys_status()
-                        if smz_run_state:
-                            bb.set("device/shimadzu/run_state", smz_run_state)
+                if self.dev_smz_enable :
+                    smz_run_state = self.smz_ask_sys_status()
+                    bb.set("device/shimadzu/comm_status", 1 if smz_run_state else 0)
+                    # if smz_run_state:
+                    #     bb.set("device/shimadzu/run_state", smz_run_state)
+                # else :
+                #     bb.set("device/shimadzu/comm_status", 1)
                 
                 # Robot과 Vision은 각자의 Context에서 처리될 것으로 예상됩니다.
 
@@ -338,7 +352,6 @@ class DeviceContext(ContextBase):
             
             time.sleep(1.0) # 1초 간격으로 업데이트
         Logger.info(f"[device] _thread_comm_status_updater stopped")
-
 
     def check_violation(self) -> int:
         self.violation_code = 0
@@ -357,18 +370,26 @@ class DeviceContext(ContextBase):
                 self.violation_code |= DeviceViolation.QR_COMM_ERR
 
             # 2. Shimadzu 통신 및 장치 상태 확인
-            if self.dev_smz_enable:
-                if not self.smz_are_you_there():
-                    Logger.info(f"[device] Check violation : Shimadzu Communication Error Detected")
-                    self.violation_code |= DeviceViolation.SMZ_COMM_ERR
-                else:
-                    smz_state = self.smz_ask_sys_status()
+            if self.dev_smz_enable and datetime.now() - self.dev_smz_check_time > timedelta(seconds=5) :
+                self.dev_smz_check_time =  datetime.now()
+                # if not self.smz_are_you_there():
+                #     Logger.info(f"[device] Check violation : Shimadzu Communication Error Detected")
+                #     self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                # else:
+                    
+                smz_state = self.smz_ask_sys_status()
+                try :
                     if smz_state is False:
                         Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
                         self.violation_code |= DeviceViolation.SMZ_COMM_ERR
-                    elif smz_state.get("RUN") == "E":
-                        Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
-                        self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
+                    elif smz_state is not None :
+                        if smz_state.get("RUN") == "E":
+                            Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                            self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
+                except Exception as e:
+                    Logger.error(f"[device] SMZ Ask system status result : {smz_state}")
+                    Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
+                    self.violation_code |= DeviceViolation.SMZ_COMM_ERR
             
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
@@ -389,6 +410,7 @@ class DeviceContext(ContextBase):
         except Exception as e:
             Logger.error(f"[device] Error in check_violation: {e}\n{traceback.format_exc()}")
             reraise(e)
+    
     def read_IO_status(self):
         '''
         Read Remote I/O value\n
@@ -399,7 +421,6 @@ class DeviceContext(ContextBase):
         try:
             with self._io_lock:
                 self.remote_input_data = self.iocontroller.read_input_data()
-                time.sleep(0.5)
                 self.remote_output_data = self.iocontroller.read_output_data()
             
             # 데이터 읽기 실패 또는 데이터 길이 미달 시 예외 처리
@@ -527,7 +548,7 @@ class DeviceContext(ContextBase):
             self.remote_comm_state = False
             bb.set("device/remote/comm_status", 0)
             self.remote_io_error_count += 1
-            Logger.warn(f"[device] Remote IO read error count: {self.remote_io_error_count}")
+            Logger.info(f"[device] Remote IO read error count: {self.remote_io_error_count}")
 
     def UI_DO_Control(self, address: int, value: int) -> bool:
         '''
@@ -647,7 +668,7 @@ class DeviceContext(ContextBase):
             # Start sequence
             if self.chuck_open_start_time == 0:
                 output_data = self.remote_output_data.copy()
-                # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0 현재 사용 X
+                output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0  # 현재 사용 
                 output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
                 self.iocontroller.write_output_data(output_data)
                 
@@ -678,16 +699,18 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             output_data = self.remote_output_data.copy()
-            # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
+            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1 # 현재는 동시에 관리
             output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
             self.iocontroller.write_output_data(output_data)
             time.sleep(0.1)  # 신호가 반영될 시간을 약간
             read_data = self.iocontroller.read_output_data()
-            # if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1 and
-            #     read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
-            if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
+            if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1 and
+                read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
                 Logger.info(f"[device] Chuck Close Command Sent Successfully.")
                 return True
+            # if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
+            #     Logger.info(f"[device] Chuck Close Command Sent Successfully.")
+            #     return True
             else:
                 Logger.error(f"[device] Chuck Close Command Failed. read_data: {read_data}")
                 return False
@@ -709,9 +732,105 @@ class DeviceContext(ContextBase):
                 return True
             else :
                 return False
-        
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_check: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return False
+
+    def chuck_1_close(self) :
+        '''
+        상단 그리퍼(GRIPPER_1) 닫기
+        :return: sucess True, fail False
+        '''
+        try :
+            if not self._is_io_writable():
+                return False
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1:
+                Logger.info(f"[device] Chuck 1 (Upper) Close Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Chuck 1 (Upper) Close Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in chuck_1_close: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return False
+
+    def chuck_2_close(self) :
+        '''
+        하단 그리퍼(GRIPPER_2) 닫기
+        :return: sucess True, fail False
+        '''
+        try :
+            if not self._is_io_writable():
+                return False
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1:
+                Logger.info(f"[device] Chuck 2 (Lower) Close Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Chuck 2 (Lower) Close Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in chuck_2_close: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return False
+
+    def chuck_1_open(self) :
+        '''
+        상단 그리퍼(GRIPPER_1) 열기
+        :return: sucess True, fail False
+        '''
+        try :
+            if not self._is_io_writable():
+                return False
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 0:
+                Logger.info(f"[device] Chuck 1 (Upper) Open Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Chuck 1 (Upper) Open Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in chuck_1_open: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return False
+
+    def chuck_2_open(self) :
+        '''
+        하단 그리퍼(GRIPPER_2) 열기
+        :return: sucess True, fail False
+        '''
+        try :
+            if not self._is_io_writable():
+                return False
+            output_data = self.remote_output_data.copy()
+            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
+            self.iocontroller.write_output_data(output_data)
+            time.sleep(0.1)
+            read_data = self.iocontroller.read_output_data()
+            if read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0:
+                Logger.info(f"[device] Chuck 2 (Lower) Open Command Sent Successfully.")
+                return True
+            else:
+                Logger.error(f"[device] Chuck 2 (Lower) Open Command Failed. read_data: {read_data}")
+                return False
+        except Exception as e:
+            Logger.error(f"[device] Error in chuck_2_open: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
@@ -724,12 +843,16 @@ class DeviceContext(ContextBase):
         try :
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.EXT_FW] = 1
-            output_data[DigitalOutput.EXT_BW] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
+            
+            with self._io_lock:
+                output_data = self.remote_output_data.copy()
+                output_data[DigitalOutput.EXT_FW] = 1
+                output_data[DigitalOutput.EXT_BW] = 0
+                self.iocontroller.write_output_data(output_data)
+            
+            time.sleep(1)  # 신호가 반영될 시간을 약간 줌
+            with self._io_lock:
+                read_data = self.iocontroller.read_output_data()
             if (read_data[DigitalOutput.EXT_FW] == 1 and
                 read_data[DigitalOutput.EXT_BW] == 0):
                 Logger.info(f"[device] EXT Move Forward Command Sent Successfully.")
@@ -750,12 +873,16 @@ class DeviceContext(ContextBase):
         try :
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.EXT_FW] = 0
-            output_data[DigitalOutput.EXT_BW] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
+            
+            with self._io_lock:
+                output_data = self.remote_output_data.copy()
+                output_data[DigitalOutput.EXT_FW] = 0
+                output_data[DigitalOutput.EXT_BW] = 1
+                self.iocontroller.write_output_data(output_data)
+            
+            time.sleep(1)  # 신호가 반영될 시간을 약간 줌
+            with self._io_lock:
+                read_data = self.iocontroller.read_output_data()
             if (read_data[DigitalOutput.EXT_FW] == 0 and
                 read_data[DigitalOutput.EXT_BW] == 1):
                 Logger.info(f"[device] EXT Move Backward Command Sent Successfully.")
@@ -775,16 +902,17 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
-            read_data = self.iocontroller.read_input_data()
+            with self._io_lock:
+                read_data = self.iocontroller.read_input_data()
             if direction == 1 :
                 if read_data[DigitalInput.EXT_FW_SENSOR] == 1 and read_data[DigitalInput.EXT_BW_SENSOR] == 0 :
-                    self.EXT_stop()
+                    # self.EXT_stop()
                     return True
                 else :
                     return False
             elif direction == 2 :
                 if read_data[DigitalInput.EXT_FW_SENSOR] == 0 and read_data[DigitalInput.EXT_BW_SENSOR] == 1 :
-                    self.EXT_stop()
+                    # self.EXT_stop()
                     return True
                 else :
                     return False
@@ -806,12 +934,16 @@ class DeviceContext(ContextBase):
         try :
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.EXT_FW] = 0
-            output_data[DigitalOutput.EXT_BW] = 0
-            self.iocontroller.write_output_data(output_data)
+            
+            with self._io_lock:
+                output_data = self.remote_output_data.copy()
+                output_data[DigitalOutput.EXT_FW] = 0
+                output_data[DigitalOutput.EXT_BW] = 0
+                self.iocontroller.write_output_data(output_data)
+            
             time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
+            with self._io_lock:
+                read_data = self.iocontroller.read_output_data()
             if (read_data[DigitalOutput.EXT_FW] == 0 and
                 read_data[DigitalOutput.EXT_BW] == 0):
                 Logger.info(f"[device] EXT Stop Command Sent Successfully.")
@@ -1044,6 +1176,7 @@ class DeviceContext(ContextBase):
             if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
                 read_data[DigitalOutput.INDICATOR_DOWN] == 1):
                 Logger.info(f"[device] Indicator Stand Down Command Sent Successfully.")
+                time.sleep(1)
                 return True
             else:
                 Logger.error(f"[device] Indicator Stand Down Command Failed. read_data: {read_data}")
@@ -1154,119 +1287,233 @@ class DeviceContext(ContextBase):
             return False
 
     # shimadzu client 래핑 함수들
-    def smz_ask_register(self, regist_data: dict, **params) -> Optional[Dict[str, Any]]:
+    def smz_ask_register(self, regist_data: dict, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         '''
-        Docstring for smz_ask_register
-        
+        Shimadzu 서버에 시험 등록 요청을 전송하고 응답을 기다립니다.
+
         :param regist_data: test data
         :type regist_data: dict
-        :return: sucess True, fail False
-        :rtype: boolean
+        :param timeout: 응답 대기 시간 (초, 기본값 5초)
+        :type timeout: float
+        :return: 성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        :rtype: Optional[Dict[str, Any]]
         '''
         try:
+            batch_data = bb.get("process/auto/batch_data")
+            if batch_data:
+                current_qr_no = regist_data.get("qr_no")
+                if current_qr_no:
+                    process_data = batch_data.get("processData", [])
+                    target_item = next((item for item in process_data if item.get("qr_no") == current_qr_no), None)
+                    
+                    if target_item:
+                        try:
+                            db_result = self.db.get_test_method_details(current_qr_no)
+                            if db_result:
+                                Logger.info(f"[device] Fetched method items from DB for {current_qr_no}")
+                                regist_data.update(db_result)
+                        except Exception as e:
+                            Logger.error(f"[device] Failed to fetch batch method items from DB: {e}")
+
             bb.set("device/shimadzu/ask_register/params", regist_data)
-            tpname = regist_data.get("tpname")
-            type_p = regist_data.get("type_p")
-            size1 = regist_data.get("size1")
-            size2 = regist_data.get("size2")
-            test_rate_type = regist_data.get("test_rate_type")
-            test_rate = regist_data.get("test_rate")
-            detect_yp = regist_data.get("detect_yp")
-            detect_ys = regist_data.get("detect_ys")
-            detect_elastic = regist_data.get("detect_elastic")
-            detect_lyp = regist_data.get("detect_lyp")
-            detect_ypel = regist_data.get("detect_ypel")
-            detect_uel = regist_data.get("detect_uel")
-            detect_ts = regist_data.get("detect_ts")
-            detect_el = regist_data.get("detect_el")
-            detect_nv = regist_data.get("detect_nv")
-            ys_para = regist_data.get("ys_para")
-            nv_type = regist_data.get("nv_type")
-            nv_para1 = regist_data.get("nv_para1")
-            nv_para2 = regist_data.get("nv_para2")
-            lotname = regist_data.get("lotname")
-            
-            result = self.shimadzu_client.send_ask_register(tpname=tpname,
-                                                            type_p=type_p,
+            batch_id = bb.get("process_status/batch_info")
+            specimen_no = bb.get("process/auto/current_specimen_no")
+            try_no = bb.get("process/auto/target_floor")
+
+            mtname = db_result.get("test_method")
+            # batch ID + tray_no + speimen_no ex) B-20260108-001-t10-s03
+            tpname = f"{batch_id}-t{try_no:02d}-s{specimen_no:02d}"
+            size1 = db_result.get("size1")
+            size2 = db_result.get("size2")
+            gl = db_result.get("gl")
+            # thickness = bb.get(""specimen/thickness_avg")
+            chuckl = db_result.get("chuckl")
+            last_tray_no = bb.get("process_status/last_tray_no")
+            if last_tray_no != 0 and try_no == last_tray_no:
+                if specimen_no == 5:
+                    isfinal = 1  # 전체 시험중 마지막 시험인 경우     
+            else:
+                isfinal = 0  # 마지막 시험이 아닌 경우
+
+            Logger.info(f"[device] Sending ASK_REGISTER to Shimadzu (MTNAME: {mtname}, TPNAME: {tpname}, SIZE1: {size1}, SIZE2: {size2}, GL: {gl}, ChuckL: {chuckl}, ISFinal: {isfinal}, timeout: {timeout}s)")
+
+            result = self.shimadzu_client.send_ask_register(mtname=mtname,
+                                                            tpname=tpname,
                                                             size1=size1,
                                                             size2=size2,
-                                                            test_rate_type=test_rate_type,
-                                                            test_rate=test_rate,
-                                                            detect_yp=detect_yp,
-                                                            detect_ys=detect_ys,
-                                                            detect_elastic=detect_elastic,
-                                                            detect_lyp=detect_lyp,
-                                                            detect_ypel=detect_ypel,
-                                                            detect_uel=detect_uel,
-                                                            detect_ts=detect_ts,
-                                                            detect_el=detect_el,
-                                                            detect_nv=detect_nv,
-                                                            ys_para=ys_para,
-                                                            nv_type=nv_type,
-                                                            nv_para1=nv_para1,
-                                                            nv_para2=nv_para2,
-                                                            lotname=lotname)
+                                                            gl=gl,
+                                                            chuckl=chuckl,
+                                                            isfinal=isfinal,
+                                                            timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] ASK_REGISTER timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] ASK_REGISTER response received: {result}")
             return result
-        
+
         except Exception as e:
             Logger.error(f"[device] Error in smz_ask_register: {e}\n{traceback.format_exc()}")
             reraise(e)
-            return False
+            return None
     
-    def smz_start_measurement(self, lotname: str) -> Optional[Dict[str, Any]]:
+    def smz_start_measurement(self, lotname: str, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         '''
-        Docstring for smz_start_measurement
+        Shimadzu 서버에 측정 시작 명령을 전송하고 응답을 기다립니다.
+
         :param lotname : UI 또는 DB에서 받은 데이터
         :type lotname : str
-        :return: sucess True, fail False
+        :param timeout: 응답 대기 시간 (초, 기본값 5초)
+        :type timeout: float
+        :return: 성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        :rtype: Optional[Dict[str, Any]]
         '''
         try:
-            result = self.shimadzu_client.send_start_run(lotname=lotname)
+            Logger.info(f"[device] Sending START_RUN to Shimadzu (LOTNAME: {lotname}, timeout: {timeout}s)")
+            
+            result = self.shimadzu_client.send_start_run(lotname=lotname, timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] START_RUN timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] START_RUN response received: {result}")
             return result
+
         except Exception as e:
             Logger.error(f"[device] Error in smz_start_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
-            return False
+            return None
     
-    def smz_stop_measurement(self) -> Optional[Dict[str, Any]]:
+    def smz_stop_measurement(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         '''
-        Docstring for smz_stop_measurement
-        :return: sucess True, fail False
+        Shimadzu 서버에 측정 정지 명령을 전송하고 응답을 기다립니다.
+
+        :param timeout: 응답 대기 시간 (초, 기본값 5초)
+        :type timeout: float
+        :return: 성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        :rtype: Optional[Dict[str, Any]]
         '''
         try:
-            result = self.shimadzu_client.send_stop_ana()
+            Logger.info(f"[device] Sending STOP_ANA to Shimadzu (emergency stop, timeout: {timeout}s)")
+
+            result = self.shimadzu_client.send_stop_ana(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] STOP_ANA timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] STOP_ANA response received: {result}")
             return result
+
         except Exception as e:
             Logger.error(f"[device] Error in smz_stop_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
-            return False
+            return None
     
-    def smz_are_you_there(self) -> Optional[Dict[str, Any]]:
+    def smz_are_you_there(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         '''
-        Docstring for smz_are_you_there
-        :return: sucess True, fail False
+        Shimadzu 서버에 접속 확인 요청을 보내고 응답을 기다립니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초, 기본값 1초)
+
+        Returns:
+            성공 시 응답 데이터 {"command": "I_AM_HERE", "params": {...}}
+            타임아웃 또는 실패 시 None
         '''
         try:
-            result = self.shimadzu_client.send_are_you_there()
+            # 연결 상태 확인
+            is_connected = self.shimadzu_client.is_connected if self.shimadzu_client else False
+            Logger.info(f"[device] Shimadzu connection status: {is_connected}")
+            Logger.info(f"[device] Sending ARE_YOU_THERE to Shimadzu (timeout: {timeout}s)")
+
+            result = self.shimadzu_client.send_are_you_there(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] ARE_YOU_THERE timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] ARE_YOU_THERE response received: {result}")
             return result
+
         except Exception as e:
             Logger.error(f"[device] Error in smz_are_you_there: {e}\n{traceback.format_exc()}")
             reraise(e)
-            return False
+            return None
 
-    def smz_ask_sys_status(self) -> Optional[Dict[str, Any]]:
+    def smz_ask_sys_status(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         '''
-        Docstring for smz_ask_sys_status
-        :return: sucess True, fail False
+        Shimadzu 서버에 시스템 상태 확인 요청을 보내고 응답을 기다립니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초, 기본값 1초)
+
+        Returns:
+            성공 시 응답 데이터 {"command": "SYS_STATUS", "params": {...}}
+            타임아웃 또는 실패 시 None
         '''
         try:
-            result = self.shimadzu_client.send_ask_sys_status()
+            # Logger.info(f"[device] Sending ASK_SYS_STATUS to Shimadzu (timeout: {timeout}s)")
+
+            result = self.shimadzu_client.send_ask_sys_status(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] ASK_SYS_STATUS timeout after {timeout}s - No response from Shimadzu")
+                return None
+            #{'command': 'SYS_STATUS', 
+            # 'params': {
+            # 'MODE': 'A', 'RUN': 'N', 'LOAD': '000.0000', 'TEMP': '025.0'}}
+            parsed_params = result.get("params")
+            mode = parsed_params.get("MODE", "")
+            run = parsed_params.get("RUN", "N")
+            load = float(parsed_params.get("LOAD", "0.0"))
+            temp = float(parsed_params.get("TEMP", "0.0"))
+
+            bb.set("device/shimadzu/run_state", {
+                "MODE": mode,
+                "RUN": run,
+                "LOAD": str(load),
+                "TEMP": str(temp)
+            })
+            
+            # Logger.info(f"[device] ASK_SYS_STATUS response received: {result}")
             return result
+
         except Exception as e:
             Logger.error(f"[device] Error in smz_ask_sys_status: {e}\n{traceback.format_exc()}")
             reraise(e)
-            return False
+            return None
 
+    def smz_ask_preload(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        '''
+        Shimadzu 서버에 프리로드 상태 확인 요청을 보내고 응답을 기다립니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초, 기본값 1초)
+
+        Returns:
+            성공 시 응답 데이터 {"command": "PRELOAD_STATUS", "params": {...}}
+            타임아웃 또는 실패 시 None
+        '''
+        try:
+            Logger.info(f"[device] Sending ASK_PRELOAD to Shimadzu (timeout: {timeout}s)")
+            # TODO 명령 확인 필요
+            result = self.shimadzu_client.send_ask_preload(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] ASK_PRELOAD timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] ASK_PRELOAD response received: {result}")
+            return result
+
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_ask_preload: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return None
+    
     def reconnect_remote_io(self) -> bool:
         """Remote I/O 재연결을 시도합니다."""
         Logger.info("[device] Attempting to reconnect to Remote IO...")

@@ -278,7 +278,6 @@ class RobotExecuteMotionStrategy(Strategy):
         self.cmd_id = None
         self.motion_name = None
         self.start_time = time.time()
-        self.timeout = 300.0  # 각 모션에 대한 타임아웃 (300초)
 
         # 블랙보드에서 직접 읽는 대신, 컨텍스트에 저장된 명령을 사용합니다.
         robot_cmd = context.current_motion_command
@@ -291,6 +290,23 @@ class RobotExecuteMotionStrategy(Strategy):
             return
 
         self.motion_name = robot_cmd.get("process")
+
+        # [수정] 모션별 타임아웃 설정
+        # 그리퍼 open/close는 빠르게 완료되어야 하므로 짧은 타임아웃
+        gripper_commands = [
+            MotionCommand.GRIPPER_OPEN_AT_INDICATOR,
+            MotionCommand.GRIPPER_OPEN_AT_ALIGN,
+            MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE,
+            MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER,
+            MotionCommand.GRIPPER_CLOSE_FOR_RACK,
+            MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR,
+            MotionCommand.GRIPPER_CLOSE_FOR_ALIGN,
+            MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE
+        ]
+        if self.motion_name in gripper_commands:
+            self.timeout = 10.0  # 그리퍼 명령은 10초 타임아웃
+        else:
+            self.timeout = 300.0  # 다른 모션은 300초 타임아웃
         floor = robot_cmd.get("target_floor")
         num = robot_cmd.get("target_num")
         pos = robot_cmd.get("position")
@@ -361,6 +377,19 @@ class RobotExecuteMotionStrategy(Strategy):
 
         if motion_done_val == expected_done_val:
             Logger.info(f"[Robot] '{self.motion_name}' 모션 (CMD: {self.cmd_id}) 완료.")
+
+            # [추가] 그리퍼 close 명령인 경우, 잠시 대기 후 AI 전압을 한 번 더 확인
+            # (indy_communication()이 업데이트하는 시간을 고려)
+            gripper_close_commands = [
+                MotionCommand.GRIPPER_CLOSE_FOR_RACK,
+                MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR,
+                MotionCommand.GRIPPER_CLOSE_FOR_ALIGN,
+                MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE
+            ]
+            if self.motion_name in gripper_close_commands:
+                time.sleep(0.2)  # AI 전압 업데이트 대기
+                Logger.info(f"[Robot] Gripper close command completed. Checking actual_state...")
+
             return RobotEvent.MOTION_DONE
 
         return RobotEvent.NONE
@@ -370,7 +399,24 @@ class RobotExecuteMotionStrategy(Strategy):
         # Logic FSM이 결과를 확인할 수 있도록, 컨텍스트에 저장된 명령의 상태를 업데이트하여 블랙보드에 다시 씁니다.
         current_cmd = context.current_motion_command
         if current_cmd:
-            if event == RobotEvent.MOTION_DONE:
+            motion_process = current_cmd.get("process")
+            gripper_close_commands = [
+                MotionCommand.GRIPPER_CLOSE_FOR_RACK,
+                MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR,
+                MotionCommand.GRIPPER_CLOSE_FOR_ALIGN,
+                MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE
+            ]
+
+            # [수정] 그리퍼 close 명령은 DONE/FAIL 이벤트와 관계없이 actual_state로 판단
+            if motion_process in gripper_close_commands:
+                gripper_state = bb.get("robot/gripper/actual_state")
+                if gripper_state == 2:  # 2: 닫힘 (물체를 잡고 있음)
+                    Logger.info(f"[Robot] Gripper close verified: object is held (state={gripper_state})")
+                    current_cmd["state"] = "done"
+                else:
+                    Logger.error(f"[Robot] Gripper close failed: object not held (state={gripper_state})")
+                    current_cmd["state"] = "error"
+            elif event == RobotEvent.MOTION_DONE:
                 current_cmd["state"] = "done"
             else:
                 current_cmd["state"] = "error"
@@ -384,7 +430,7 @@ class RobotExecuteMotionStrategy(Strategy):
             else:
                 Logger.warn(f"[Robot] A new command is on the blackboard. Not overwriting with result of '{current_cmd.get('process')}'.")
                 Logger.warn(f"[Robot] Existing command: {existing_cmd}")
-            
+
 
         # 다음 모션을 위해 명령 변수 초기화
         context.robot_motion_control(0)  # CMD를 0으로 설정

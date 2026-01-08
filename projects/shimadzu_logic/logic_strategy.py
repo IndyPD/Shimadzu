@@ -88,6 +88,16 @@ class LogicErrorStrategy(Strategy):
             Logger.info("[Logic] Resetting auto-start command due to critical violation.")
             bb.set("ui/cmd/auto/tensile", 0)
 
+            # 공정 진행 중 에러 발생 시 현재 시편 상태를 7(에러/충돌)로 업데이트
+            try:
+                tray_no = bb.get("process/auto/target_floor")
+                specimen_no = bb.get("process/auto/current_specimen_no")
+                if tray_no and specimen_no:
+                    Logger.info(f"[Logic] Error occurred during process. Updating Tray {tray_no}, Specimen {specimen_no} status to 7 (ERROR).")
+                    context.db.update_test_tray_item(tray_no, specimen_no, {'status': 7})
+            except Exception as e:
+                Logger.error(f"[Logic] Failed to update specimen status on error: {e}")
+
         # MQTT 'process_failed' 이벤트 발행
         batch_id = "N/A"
         batch_data = bb.get("process/auto/batch_data")
@@ -336,6 +346,22 @@ class LogicDetermineTaskStrategy(Strategy):
         system_status = bb.get("process_status/system_status")
         bb.set("process_status/batch_info", {"batch_id": batch_id, "status": system_status})
 
+        # 공정 마지막 시편 정보 확인
+        # DB batch_plan_items의 seq_order의 최대값을 찾아서 마지막 트레이 번호를 확인합니다.
+        with context.db.cursor() as cur:
+            cur.execute("""
+                SELECT tray_no
+                FROM batch_plan_items
+                WHERE seq_order = (SELECT MAX(seq_order) FROM batch_plan_items WHERE seq_order > 0)
+                LIMIT 1
+            """)
+            last_tray_result = cur.fetchone()
+            if last_tray_result:
+                last_tray_no = last_tray_result['tray_no']
+                bb.set("process_status/last_tray_no", last_tray_no)
+
+
+
         # 경과 시간 업데이트
         start_time_obj = bb.get("process_status/runtime_start_obj")
         if start_time_obj:
@@ -465,8 +491,8 @@ class LogicDetermineTaskStrategy(Strategy):
             tray_items = context.db.get_test_tray_items(tray_no)
             
             # 1. 현재 진행 중(status 2~6)인 시편이 있다면 완료(10) 처리하고 스킵 (사용자 요청: Stop 후 재시작 시나리오)
-            # status: 1(대기), 2(이동중), 3(측정중), 4(정렬중), 5(시험중), 6(처리중), 10(완료)
-            running_item = next((item for item in tray_items if item['status'] in [2, 3, 4, 5, 6]), None)
+            # status: 1(대기), 2(이동중), 3(측정중), 4(정렬중), 5(시험중), 6(처리중), 7(충돌), 10(완료)
+            running_item = next((item for item in tray_items if item['status'] in [2, 3, 4, 5, 6, 7]), None)
             if running_item:
                 r_spec_no = running_item['specimen_no']
                 context.db.update_test_tray_item(tray_no, r_spec_no, {'status': 10})
@@ -528,24 +554,28 @@ class LogicDetermineTaskStrategy(Strategy):
             # 이동중 (2)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 2})
             return LogicEvent.DO_PICK_SPECIMEN
-
-        elif step == 2: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
-            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Indicator).")
+        elif step == 2: # 시편 잡기 완료 -> 홈 위치로 이동 (3)
+            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Rack Front Home).")
             bb.set("process/auto/current_step", 3)
+            return LogicEvent.DO_MOVE_TO_RACK_FRONT_HOME
+            
+        elif step == 3: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
+            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Indicator).")
+            bb.set("process/auto/current_step", 4)
             bb.set("specimen/thickness_1",0)
             bb.set("specimen/thickness_2",0)
             bb.set("specimen/thickness_3",0)
             bb.set("specimen/thickness_avg",0)
             return LogicEvent.DO_MOVE_TO_INDICATOR
 
-        elif step == 3: # 두께 측정기 이동 완료 -> 두께 측정 (4)
-            Logger.info("[Logic] DetermineTask: Step 3 (Move to Indicator) done. -> Step 4 (Measure Thickness).")
-            bb.set("process/auto/current_step", 4)
+        elif step == 4: # 두께 측정기 이동 완료 -> 두께 측정 (4)
+            Logger.info("[Logic] DetermineTask: Step 4 (Move to Indicator) done. -> Step 5 (Measure Thickness).")
+            bb.set("process/auto/current_step", 5)
             # 측정중 (3)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 3})
             return LogicEvent.DO_MEASURE_THICKNESS
 
-        elif step == 4: # 두께 측정 완료 -> 정렬기로 이동 (5)
+        elif step == 5: # 두께 측정 완료 -> 정렬기로 이동 (5)
             Logger.info("[Logic] DetermineTask: Step 4 (Measure Thickness) done. -> Step 5 (Move to Aligner).")
             # 측정된 두께를 test_tray_items에 업데이트
             tray_no = current_specimen['tray_no']
@@ -558,30 +588,26 @@ class LogicDetermineTaskStrategy(Strategy):
                 context.db.update_test_tray_item(tray_no, specimen_no, {'dimension': float(dimension)})
             else:
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
-            bb.set("process/auto/current_step", 5)
+            bb.set("process/auto/current_step", 6)
             # 정렬중 (4)
             context.db.update_test_tray_item(tray_no, specimen_no, {'status': 4})
             return LogicEvent.DO_MOVE_TO_ALIGN
 
-        elif step == 5: # 정렬기로 이동 완료 -> 시편 정렬 (6)
+        elif step == 6: # 정렬기로 이동 완료 -> 시편 정렬 (6)
             Logger.info("[Logic] DetermineTask: Step 5 (Move to Aligner) done. -> Step 6 (Align Specimen).")
-            bb.set("process/auto/current_step", 6)
+            bb.set("process/auto/current_step", 7)
             return LogicEvent.DO_ALIGN_SPECIMEN
 
-        elif step == 6: # 시편 정렬 완료 -> 정렬기에서 시편 잡기 (7)
+        elif step == 7: # 시편 정렬 완료 -> 정렬기에서 시편 잡기 (7)
             Logger.info("[Logic] DetermineTask: Step 6 (Align Specimen) done. -> Step 7 (Pick from Aligner).")
-            bb.set("process/auto/current_step", 7)
+            bb.set("process/auto/current_step", 8)
             return LogicEvent.DO_PICK_SPECIMEN_FROM_ALIGN
 
-        elif step == 7: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
+        elif step == 8: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
             Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
-            bb.set("process/auto/current_step", 8)
+            bb.set("process/auto/current_step", 9)
             return LogicEvent.DO_LOAD_TENSILE_MACHINE
-        
-        # elif step == 7: # 정렬기에서 잡기 완료 -> 스크랩 처리 (11) [임시 수정]
-        #     Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 11 (Dispose Scrap) [TEMP: SKIPPING TENSILE TEST].")
-        #     bb.set("process/auto/current_step", 11)
-        #     return LogicEvent.DO_DISPOSE_SCRAP
+    
 
         # elif step == 8: # 인장기 장착 완료 -> 인장 시험 시작 (9)
         #     Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
@@ -590,24 +616,24 @@ class LogicDetermineTaskStrategy(Strategy):
         #     context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
         #     return LogicEvent.DO_START_TENSILE_TEST
         
-        elif step == 8: # 9번으로 옮기기 (인장시험 X) (정렬대기는 추후에)  (임시코드)
+        elif step == 9: # 9번으로 옮기기 (인장시험 X) (정렬대기는 추후에)  (임시코드)
             Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
-            bb.set("process/auto/current_step", 9)
+            bb.set("process/auto/current_step", 10)
             # 시험중 (5)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
             # return LogicEvent.DO_START_TENSILE_TEST
             # [수정] 인장 시험(Step 9)을 건너뛰고 바로 다음 단계 로직을 실행하기 위해 재귀 호출
             return self.operate(context)
         
-        elif step == 9: # 인장 시험 시작 완료 -> 상단 시편 수거 (10)
+        elif step == 10: # 인장 시험 시작 완료 -> 상단 시편 수거 (10)
             Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick Upper Specimen).")
-            bb.set("process/auto/current_step", 10)
+            bb.set("process/auto/current_step", 11)
             bb.set("process/auto/tensile_pick_pos", 1) # 1: 하단
             # 처리중 (6) - 스크랩 처리 시작
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 6})
             return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
 
-        elif step == 10: # 상단 수거 완료 -> 스크랩 처리 (11)
+        elif step == 11: # 상단 수거 완료 -> 스크랩 처리 (11)
             Logger.info("[Logic] DetermineTask: Step 10 (Pick Upper) done. -> Step 11 (Dispose Scrap).")
             bb.set("process/auto/current_step", 13)
             return LogicEvent.DO_DISPOSE_SCRAP
@@ -686,6 +712,26 @@ class LogicDetermineTaskStrategy(Strategy):
 
         Logger.error(f"[Logic] DetermineTask: Reached an unknown step ({step}). This should not happen.")
         return LogicEvent.VIOLATION_DETECT
+
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicMoveToRackFrontHomeStrategy(Strategy):
+    def prepare(self, context: LogicContext, **kwargs):
+        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[Logic] Moving to rack front home.")
+        context._seq = 0
+        self.is_stopping = False
+
+    def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
+        # Stop check logic is handled inside move_to_rack_front_home if needed, or here.
+        # For consistency with other strategies:
+        return context.move_to_rack_front_home()
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")

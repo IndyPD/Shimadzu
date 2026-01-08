@@ -52,11 +52,16 @@ class DeviceFsm(FiniteStateMachine):
                 DeviceEvent.DO_ALIGNER_ACTION: DeviceState.ALIGNER_ACTION,
                 DeviceEvent.DO_GRIPPER_GRIP: DeviceState.GRIPPER_GRIP,
                 DeviceEvent.DO_GRIPPER_RELEASE: DeviceState.GRIPPER_RELEASE,
+                DeviceEvent.DO_GRIPPER_1_GRIP: DeviceState.GRIPPER_1_GRIP,
+                DeviceEvent.DO_GRIPPER_1_RELEASE: DeviceState.GRIPPER_1_RELEASE,
+                DeviceEvent.DO_GRIPPER_2_GRIP: DeviceState.GRIPPER_2_GRIP,
+                DeviceEvent.DO_GRIPPER_2_RELEASE: DeviceState.GRIPPER_2_RELEASE,
                 DeviceEvent.DO_EXTENSOMETER_FORWARD: DeviceState.EXTENSOMETER_FORWARD,
                 DeviceEvent.DO_EXTENSOMETER_BACKWARD: DeviceState.EXTENSOMETER_BACKWARD,
                 DeviceEvent.DO_TENSILE_TEST: DeviceState.START_TENSILE_TEST,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
                 DeviceEvent.DO_REGISTER_METHOD: DeviceState.REGISTER_METHOD,
+                DeviceEvent.DO_ASK_PRELOAD: DeviceState.ASK_PRELOAD,
             },
             DeviceState.READ_QR: {
                 DeviceEvent.QR_READ_DONE: DeviceState.WAIT_COMMAND, # 완료 -> 명령 대기
@@ -117,6 +122,31 @@ class DeviceFsm(FiniteStateMachine):
                 DeviceEvent.REGISTER_METHOD_DONE: DeviceState.WAIT_COMMAND,
                 DeviceEvent.REGISTER_METHOD_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_1_GRIP: {
+                DeviceEvent.GRIPPER_1_GRIP_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_1_RELEASE: {
+                DeviceEvent.GRIPPER_1_RELEASE_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_2_GRIP: {
+                DeviceEvent.GRIPPER_2_GRIP_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.GRIPPER_2_RELEASE: {
+                DeviceEvent.GRIPPER_2_RELEASE_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.GRIPPER_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
+            DeviceState.ASK_PRELOAD: {
+                DeviceEvent.ASK_PRELOAD_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.ASK_PRELOAD_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             }
         }
 
@@ -142,4 +172,9 @@ class DeviceFsm(FiniteStateMachine):
             DeviceState.EXTENSOMETER_BACKWARD: ExtensometerBackwardStrategy(),
             DeviceState.GRIPPER_RELEASE: GripperReleaseStrategy(),
             DeviceState.REGISTER_METHOD: RegisterMethodStrategy(),
+            DeviceState.GRIPPER_1_GRIP: Gripper1GripStrategy(),
+            DeviceState.GRIPPER_1_RELEASE: Gripper1ReleaseStrategy(),
+            DeviceState.GRIPPER_2_GRIP: Gripper2GripStrategy(),
+            DeviceState.GRIPPER_2_RELEASE: Gripper2ReleaseStrategy(),
+            DeviceState.ASK_PRELOAD: AskPreloadStrategy(),
         }

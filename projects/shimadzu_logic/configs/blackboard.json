@@ -1,7 +1,7 @@
 {
-  "robot/fsm/strategy" : "",
-  "device/fsm/strategy" : "",
-  "logic/fsm/strategy" : "",
+  "robot/fsm/strategy" : {"state": "", "strategy": ""},
+  "device/fsm/strategy" : {"state": "", "strategy": ""},
+  "logic/fsm/strategy" : {"state": "", "strategy": ""},
 
   "robot/gripper/actual_state" : 0,
 
@@ -148,6 +148,7 @@
   "sys/gauge/comm/state": 0,
   "manual/device/tester": 0,
   "manual/robot/tester": 0,
+  "manual/device/shimadzu": 0,
 
   "device/indicator/stand/state" : "",
   "device/align/state" : "",
@@ -225,6 +226,12 @@
   },
   "process_status/aligner_status": "대기",
   "process/auto/step_stop_requested" : 0,
+  "process_status/last_tray_no" : 0,
+  "process_status/lot_name" : "",
+  "process_status/batch_id" : "",
+  "process_status/test_method" : "",
+  "process_status/qr_no" : "",
+  
   
   "process/program/is_resume" : false,
   "process/auto/robot/cmd": null,
@@ -249,10 +256,13 @@
   "device/vision/comm_status": 0,
   "process/auto/tensile_pick_pos" : 1,
   "device/shimadzu/run_state" : {
-    "RUN": "N"
+    "MODE": "",
+    "RUN": "N",
+    "LOAD": "000.0000",
+    "TEMP": "0.0"
   },
   "logic/fsm/current_process": "idle",
-
+  "logic/gripper_failure_location": "",
 
   "process_status": {
     "batch_info": {

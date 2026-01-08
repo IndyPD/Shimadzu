@@ -59,6 +59,7 @@ class LogicState(OpState):
     PROCESS_COMPLETE                    = 23            # 18. 공정 완료
     AUTO_RECOVER                        = 24            # 자동 복구
     RESET_DATA                          = 26            # 19. 데이터 리셋
+    MOVE_TO_RACK_FRONT_HOME             = 27            # 랙 앞 홈으로 이동
     
 
     
@@ -107,6 +108,7 @@ class LogicEvent(OpEvent):
     DO_PROCESS_COMPLETE                 = 39            # 공정 완료 실행
     DO_DATA_RESET                       = 40            # 데이터 리셋 실행
     DO_AUTO_RECOVER                     = 41            # 자동 복구 실행
+    DO_MOVE_TO_RACK_FRONT_HOME          = 42            # 랙 앞 홈으로 이동 실행
     
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
@@ -146,6 +148,11 @@ class DeviceState(OpState):
     EXTENSOMETER_BACKWARD               = 22            # 신율계 후진
     START_TENSILE_TEST                  = 23            # 인장시험 시작
     REGISTER_METHOD                     = 24            # 시험법 등록
+    GRIPPER_1_GRIP                      = 25            # 상단 그리퍼 잡기
+    GRIPPER_1_RELEASE                   = 26            # 상단 그리퍼 풀기
+    GRIPPER_2_GRIP                      = 27            # 하단 그리퍼 잡기
+    GRIPPER_2_RELEASE                   = 28            # 하단 그리퍼 풀기
+    ASK_PRELOAD                         = 29            # 프리로드 확인
 
 
 
@@ -201,6 +208,20 @@ class DeviceEvent(OpEvent):
     DO_REGISTER_METHOD                  = 41            # 시험법 등록 실행
     REGISTER_METHOD_DONE                = 42            # 시험법 등록 완료
     REGISTER_METHOD_FAIL                = 43            # 시험법 등록 실패
+
+    # 개별 그리퍼 제어 이벤트
+    DO_GRIPPER_1_GRIP                   = 44            # 상단 그리퍼 잡기 실행
+    DO_GRIPPER_1_RELEASE                = 45            # 상단 그리퍼 풀기 실행
+    DO_GRIPPER_2_GRIP                   = 46            # 하단 그리퍼 잡기 실행
+    DO_GRIPPER_2_RELEASE                = 47            # 하단 그리퍼 풀기 실행
+    GRIPPER_1_GRIP_DONE                 = 48            # 상단 그리퍼 잡기 완료
+    GRIPPER_1_RELEASE_DONE              = 49            # 상단 그리퍼 풀기 완료
+    GRIPPER_2_GRIP_DONE                 = 50            # 하단 그리퍼 잡기 완료
+    GRIPPER_2_RELEASE_DONE              = 51            # 하단 그리퍼 풀기 완료
+    
+    DO_ASK_PRELOAD                      = 52            # 프리로드 확인 실행
+    ASK_PRELOAD_DONE                    = 53            # 프리로드 확인 완료
+    ASK_PRELOAD_FAIL                    = 54            # 프리로드 확인 실패
 
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
@@ -539,6 +560,10 @@ class DeviceCommand(str, Enum):
     ALIGN_SPECIMEN                      = "align_specimen"
     TENSILE_GRIPPER_ON                  = "tensile_gripper_on"
     TENSILE_GRIPPER_OFF                 = "tensile_gripper_off"
+    TENSILE_GRIPPER_1_ON                = "tensile_gripper_1_on"      # 상단 그리퍼 닫기
+    TENSILE_GRIPPER_1_OFF               = "tensile_gripper_1_off"     # 상단 그리퍼 열기
+    TENSILE_GRIPPER_2_ON                = "tensile_gripper_2_on"      # 하단 그리퍼 닫기
+    TENSILE_GRIPPER_2_OFF               = "tensile_gripper_2_off"     # 하단 그리퍼 열기
     EXT_FORWARD                         = "ext_forward"
     EXT_BACKWARD                        = "ext_backward"
     START_TENSILE_TEST                  = "start_tensile_test"
@@ -547,3 +572,4 @@ class DeviceCommand(str, Enum):
     RESUME_TENSILE_TEST                 = "resume_tensile_test"
     QR_READ                             = "qr_read"
     REGISTER_METHOD                     = "register_method"
+    ASK_PRELOAD                         = "ask_preload"

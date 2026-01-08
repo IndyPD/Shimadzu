@@ -42,18 +42,19 @@ pip install lightgbm numpy scikit-learn
 
 ```bash
 # 프로젝트 루트에서 실행
-cd /Users/kite/Desktop/neuromeka/Projects/SHIMADZU/Shimadzu
+cd c:\Users\S\Documents\GitHub\Shimadzu
 
-# 모델 학습
+# Zone 기반 모델 학습 (TENSILE 포함, v2 - 권장)
+python -m projects.shimadzu_logic.ml_recovery.train_zone_model_v2
+
+# 또는 기존 Zone 모델 학습
+python -m projects.shimadzu_logic.ml_recovery.train_zone_model
+
+# 또는 세부 상태 모델 학습 (64개 상태)
 python -m projects.shimadzu_logic.ml_recovery.train_model
 ```
 
-또는:
-
-```bash
-cd projects/shimadzu_logic
-python -m ml_recovery.train_model
-```
+**권장**: `train_zone_model_v2.py` 사용 - TENSILE 데이터 포함, 519개 파일 활용
 
 ### 3. 학습 결과 확인
 
