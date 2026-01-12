@@ -43,7 +43,7 @@ class DeviceContext(ContextBase):
 
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
-        self.dev_smz_enable = True 
+        self.dev_smz_enable =  False
         self.dev_qr_enable = True
 
         self.dev_smz_check_time = datetime.now()
@@ -63,8 +63,36 @@ class DeviceContext(ContextBase):
             self.iocontroller = AutonicsEIPClient()
             # self.th_IO_reader = self.iocontroller.connect()
             time.sleep(0.5)
-            self.remote_input_data = self.iocontroller.current_di_value
-            self.remote_output_data = self.iocontroller.current_do_value
+            self.remote_input_data = self.iocontroller.current_di_value if len(self.iocontroller.current_di_value) == 48 else [0] * 48
+
+            # 초기 DO 상태 읽기 및 블랙보드 초기화
+            self.remote_output_data = self.iocontroller.current_do_value if len(self.iocontroller.current_do_value) == 32 else [0] * 32
+            if len(self.remote_output_data) == 32:
+                bb.set("device/remote/output/entire", self.remote_output_data)
+                bb.set("device/remote/output/TOWER_LAMP_RED", self.remote_output_data[DigitalOutput.TOWER_LAMP_RED])
+                bb.set("device/remote/output/TOWER_LAMP_GREEN", self.remote_output_data[DigitalOutput.TOWER_LAMP_GREEN])
+                bb.set("device/remote/output/TOWER_LAMP_YELLOW", self.remote_output_data[DigitalOutput.TOWER_LAMP_YELLOW])
+                bb.set("device/remote/output/TOWER_BUZZER", self.remote_output_data[DigitalOutput.TOWER_BUZZER])
+                bb.set("device/remote/output/BCR_TGR", self.remote_output_data[DigitalOutput.BCR_TGR])
+                bb.set("device/remote/output/LOCAL_LAMP_R", self.remote_output_data[DigitalOutput.LOCAL_LAMP_R])
+                bb.set("device/remote/output/RESET_SW_LAMP", self.remote_output_data[DigitalOutput.RESET_SW_LAMP])
+                bb.set("device/remote/output/DOOR_4_LAMP", self.remote_output_data[DigitalOutput.DOOR_4_LAMP])
+                bb.set("device/remote/output/INDICATOR_UP", self.remote_output_data[DigitalOutput.INDICATOR_UP])
+                bb.set("device/remote/output/INDICATOR_DOWN", self.remote_output_data[DigitalOutput.INDICATOR_DOWN])
+                bb.set("device/remote/output/ALIGN_1_PUSH", self.remote_output_data[DigitalOutput.ALIGN_1_PUSH])
+                bb.set("device/remote/output/ALIGN_1_PULL", self.remote_output_data[DigitalOutput.ALIGN_1_PULL])
+                bb.set("device/remote/output/ALIGN_2_PUSH", self.remote_output_data[DigitalOutput.ALIGN_2_PUSH])
+                bb.set("device/remote/output/ALIGN_2_PULL", self.remote_output_data[DigitalOutput.ALIGN_2_PULL])
+                bb.set("device/remote/output/ALIGN_3_PUSH", self.remote_output_data[DigitalOutput.ALIGN_3_PUSH])
+                bb.set("device/remote/output/ALIGN_3_PULL", self.remote_output_data[DigitalOutput.ALIGN_3_PULL])
+                bb.set("device/remote/output/GRIPPER_1_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_1_UNCLAMP])
+                bb.set("device/remote/output/LOCAL_LAMP_L", self.remote_output_data[DigitalOutput.LOCAL_LAMP_L])
+                bb.set("device/remote/output/GRIPPER_2_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_2_UNCLAMP])
+                bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
+                bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
+                bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
+            else:
+                self.remote_output_data = [0] * 32
         else :
             self.remote_input_data = [0] * 48
             self.remote_output_data = [0] * 32
@@ -107,6 +135,9 @@ class DeviceContext(ContextBase):
 
         self.violation_code = 0x00
 
+        # DO write 카운터
+        self._do_write_counter = 0
+
         # read_IO_status 주기적 스레드 추가 self.th_IO_reader를 while문에서 사용
         self.flag_IO_reader = Flagger()
         self.delay_IO_reader = FlagDelay(0.1)  # 0.1초 간격으로 I/O 상태 읽기
@@ -132,6 +163,7 @@ class DeviceContext(ContextBase):
         try :
             # TODO remote io 연결확인 후
             self.read_IO_status() # 초기 설정을 위해 현재 I/O 상태를 동기적으로 읽어옴
+            time.sleep(2)
             if self.remote_input_data[DigitalInput.SOL_SENSOR] == 1:
                 Logger.info(f"[device] SOL_SENSOR is ON. Performing initial device setup.")
 
@@ -222,7 +254,7 @@ class DeviceContext(ContextBase):
         while self.th_IO_reader :
             self.read_IO_status()
             # self.delay_IO_reader.sleep() # 0.1초 주기로 실행
-            time.sleep(0.1)
+            time.sleep(0.5)
 
     def _thread_UI_DO_handler(self):
         """
@@ -275,30 +307,25 @@ class DeviceContext(ContextBase):
                     
                     is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
-                    # I/O 쓰기 중 충돌을 방지하기 위해 lock을 사용합니다.
-                    with self._io_lock:
-                        output_data = self.remote_output_data.copy()
-                        blink_state = not blink_state
+                    # 블랙보드에만 쓰기 (검증 불필요)
+                    blink_state = not blink_state
 
-                        if is_error:
-                            # 빨간색 점멸, 나머지 꺼짐
-                            output_data[DigitalOutput.TOWER_LAMP_RED] = 1 if blink_state else 0
-                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
-                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
-                        elif is_idle:
-                            # 노란색 점멸, 나머지 꺼짐
-                            output_data[DigitalOutput.TOWER_LAMP_RED] = 0
-                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 0
-                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 1 if blink_state else 0
-                        else: # 공정 중
-                            # 녹색 켜짐, 나머지 꺼짐
-                            output_data[DigitalOutput.TOWER_LAMP_RED] = 0
-                            output_data[DigitalOutput.TOWER_LAMP_GREEN] = 1
-                            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = 0
+                    if is_error:
+                        # 빨간색 점멸, 나머지 꺼짐
+                        bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
+                        bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
+                        bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+                    elif is_idle:
+                        # 노란색 점멸, 나머지 꺼짐
+                        bb.set("device/remote/output/TOWER_LAMP_RED", 0)
+                        bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
+                        bb.set("device/remote/output/TOWER_LAMP_YELLOW", 1 if blink_state else 0)
+                    else: # 공정 중
+                        # 녹색 켜짐, 나머지 꺼짐
+                        bb.set("device/remote/output/TOWER_LAMP_RED", 0)
+                        bb.set("device/remote/output/TOWER_LAMP_GREEN", 1)
+                        bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
 
-                        if self.dev_remoteio_enable and hasattr(self, 'iocontroller'):
-                            self.iocontroller.write_output_data(output_data)
-                            self.remote_output_data = output_data
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_tower_lamp_controller: {e}")
             
@@ -309,14 +336,18 @@ class DeviceContext(ContextBase):
         주기적으로 각 장치의 통신 상태를 확인하고 블랙보드에 업데이트합니다.
         """
         Logger.info(f"[device] _thread_comm_status_updater started")
+        # log_counter = 0
         while True:
+            # st_time = datetime.now()
             try:
+                
                 # Remote I/O
                 if self.dev_remoteio_enable:
                     # read_IO_status()가 self.remote_comm_state를 업데이트합니다.
                     pass
 
                 # Gauge
+                # t1 = datetime.now()
                 if self.dev_gauge_enable:
                     gauge_status = self.get_dial_gauge_status()
                     if gauge_status:
@@ -325,7 +356,7 @@ class DeviceContext(ContextBase):
                     else:
                         bb.set("device/gauge/comm_status", 0)
                         self.gauge_error_count += 1
-
+                # t2 = datetime.now()
                 # QR Reader
                 if self.dev_qr_enable:
                     qr_status = self.qr_reader.is_connected
@@ -335,7 +366,7 @@ class DeviceContext(ContextBase):
                     else:
                         bb.set("device/qr/comm_status", 0)
                         self.qr_error_count += 1
-
+                # t3 = datetime.now()
                 # Shimadzu
                 if self.dev_smz_enable :
                     smz_run_state = self.smz_ask_sys_status()
@@ -347,10 +378,20 @@ class DeviceContext(ContextBase):
                 
                 # Robot과 Vision은 각자의 Context에서 처리될 것으로 예상됩니다.
 
+                # t4 =  datetime.now()
+
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_comm_status_updater: {e}\n{traceback.format_exc()}")
             
             time.sleep(1.0) # 1초 간격으로 업데이트
+            # ed_time = datetime.now()
+            # t_gauge = (t2 - t1).total_seconds()
+            # t_QR =  (t3 - t2).total_seconds()
+            # t_smz = (t4 - t3).total_seconds()
+            # log_counter += 1
+            # if log_counter >= 5:
+            #     Logger.info(f"[device]Comm avg taktime (5s): {(ed_time-st_time).total_seconds()-1}, gauge : {t_gauge}, QR : {t_QR}, Shimadzu : {t_smz} (Loops: {log_counter})")
+            #     log_counter = 0
         Logger.info(f"[device] _thread_comm_status_updater stopped")
 
     def check_violation(self) -> int:
@@ -414,14 +455,52 @@ class DeviceContext(ContextBase):
     def read_IO_status(self):
         '''
         Read Remote I/O value\n
+        블랙보드에서 DO 값을 읽어서 매번 write\n
         set blackborad
         '''
         if not hasattr(self, 'iocontroller') or self.iocontroller is None:
             return
         try:
-            with self._io_lock:
-                self.remote_input_data = self.iocontroller.read_input_data()
-                self.remote_output_data = self.iocontroller.read_output_data()
+            # with self._io_lock:
+                # 1. DI 읽기
+            self.remote_input_data = self.iocontroller.read_input_data()
+
+            # DI 읽기 후 0.05초 지연 (타이밍 안정화)
+            time.sleep(0.05)
+
+           # with self._io_lock:
+                # 2. 블랙보드에서 DO 데이터 읽기 (각 함수들이 업데이트한 값)
+            output_data = [0] * 32
+            output_data[DigitalOutput.TOWER_LAMP_RED] = bb.get("device/remote/output/TOWER_LAMP_RED") or 0
+            output_data[DigitalOutput.TOWER_LAMP_GREEN] = bb.get("device/remote/output/TOWER_LAMP_GREEN") or 0
+            output_data[DigitalOutput.TOWER_LAMP_YELLOW] = bb.get("device/remote/output/TOWER_LAMP_YELLOW") or 0
+            output_data[DigitalOutput.TOWER_BUZZER] = bb.get("device/remote/output/TOWER_BUZZER") or 0
+            output_data[DigitalOutput.BCR_TGR] = bb.get("device/remote/output/BCR_TGR") or 0
+            output_data[DigitalOutput.LOCAL_LAMP_R] = bb.get("device/remote/output/LOCAL_LAMP_R") or 0
+            output_data[DigitalOutput.RESET_SW_LAMP] = bb.get("device/remote/output/RESET_SW_LAMP") or 0
+            output_data[DigitalOutput.DOOR_4_LAMP] = bb.get("device/remote/output/DOOR_4_LAMP") or 0
+            output_data[DigitalOutput.INDICATOR_UP] = bb.get("device/remote/output/INDICATOR_UP") or 0
+            output_data[DigitalOutput.INDICATOR_DOWN] = bb.get("device/remote/output/INDICATOR_DOWN") or 0
+            output_data[DigitalOutput.ALIGN_1_PUSH] = bb.get("device/remote/output/ALIGN_1_PUSH") or 0
+            output_data[DigitalOutput.ALIGN_1_PULL] = bb.get("device/remote/output/ALIGN_1_PULL") or 0
+            output_data[DigitalOutput.ALIGN_2_PUSH] = bb.get("device/remote/output/ALIGN_2_PUSH") or 0
+            output_data[DigitalOutput.ALIGN_2_PULL] = bb.get("device/remote/output/ALIGN_2_PULL") or 0
+            output_data[DigitalOutput.ALIGN_3_PUSH] = bb.get("device/remote/output/ALIGN_3_PUSH") or 0
+            output_data[DigitalOutput.ALIGN_3_PULL] = bb.get("device/remote/output/ALIGN_3_PULL") or 0
+            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = bb.get("device/remote/output/GRIPPER_1_UNCLAMP") or 0
+            output_data[DigitalOutput.LOCAL_LAMP_L] = bb.get("device/remote/output/LOCAL_LAMP_L") or 0
+            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = bb.get("device/remote/output/GRIPPER_2_UNCLAMP") or 0
+            output_data[DigitalOutput.LOCAL_LAMP_C] = bb.get("device/remote/output/LOCAL_LAMP_C") or 0
+            output_data[DigitalOutput.EXT_FW] = bb.get("device/remote/output/EXT_FW") or 0
+            output_data[DigitalOutput.EXT_BW] = bb.get("device/remote/output/EXT_BW") or 0
+
+            # 3. DO 매번 쓰기 (블랙보드 내용을 하드웨어에 반영)
+            if self.remote_output_data != output_data :
+                self.iocontroller.write_output_data(output_data)
+                self.remote_output_data = output_data
+
+            # 4. 카운터 증가
+            self._do_write_counter += 1
             
             # 데이터 읽기 실패 또는 데이터 길이 미달 시 예외 처리
             # DI는 48개, DO는 32개의 배열 길이를 기대합니다.
@@ -500,34 +579,31 @@ class DeviceContext(ContextBase):
                 bb.set("device/align/state","pull")
 
 
-            
-
-
-            if len(self.remote_output_data) == 32 :
-                bb.set("device/remote/output/entire", self.remote_output_data)
-                # Output 데이터 bb set DigitalOutput 기반            
-                bb.set("device/remote/output/TOWER_LAMP_RED", self.remote_output_data[DigitalOutput.TOWER_LAMP_RED])
-                bb.set("device/remote/output/TOWER_LAMP_GREEN", self.remote_output_data[DigitalOutput.TOWER_LAMP_GREEN])
-                bb.set("device/remote/output/TOWER_LAMP_YELLOW", self.remote_output_data[DigitalOutput.TOWER_LAMP_YELLOW])
-                bb.set("device/remote/output/TOWER_BUZZER", self.remote_output_data[DigitalOutput.TOWER_BUZZER])
-                bb.set("device/remote/output/BCR_TGR", self.remote_output_data[DigitalOutput.BCR_TGR])
-                bb.set("device/remote/output/LOCAL_LAMP_R", self.remote_output_data[DigitalOutput.LOCAL_LAMP_R])
-                bb.set("device/remote/output/RESET_SW_LAMP", self.remote_output_data[DigitalOutput.RESET_SW_LAMP])
-                bb.set("device/remote/output/DOOR_4_LAMP", self.remote_output_data[DigitalOutput.DOOR_4_LAMP])
-                bb.set("device/remote/output/INDICATOR_UP", self.remote_output_data[DigitalOutput.INDICATOR_UP])
-                bb.set("device/remote/output/INDICATOR_DOWN", self.remote_output_data[DigitalOutput.INDICATOR_DOWN])
-                bb.set("device/remote/output/ALIGN_1_PUSH", self.remote_output_data[DigitalOutput.ALIGN_1_PUSH])
-                bb.set("device/remote/output/ALIGN_1_PULL", self.remote_output_data[DigitalOutput.ALIGN_1_PULL])
-                bb.set("device/remote/output/ALIGN_2_PUSH", self.remote_output_data[DigitalOutput.ALIGN_2_PUSH])
-                bb.set("device/remote/output/ALIGN_2_PULL", self.remote_output_data[DigitalOutput.ALIGN_2_PULL])
-                bb.set("device/remote/output/ALIGN_3_PUSH", self.remote_output_data[DigitalOutput.ALIGN_3_PUSH])
-                bb.set("device/remote/output/ALIGN_3_PULL", self.remote_output_data[DigitalOutput.ALIGN_3_PULL])
-                bb.set("device/remote/output/GRIPPER_1_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_1_UNCLAMP])
-                bb.set("device/remote/output/LOCAL_LAMP_L", self.remote_output_data[DigitalOutput.LOCAL_LAMP_L])
-                bb.set("device/remote/output/GRIPPER_2_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_2_UNCLAMP])
-                bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
-                bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
-                bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
+            # if len(self.remote_output_data) == 32 :
+            #     bb.set("device/remote/output/entire", self.remote_output_data)
+            #     # Output 데이터 bb set DigitalOutput 기반            
+            #     bb.set("device/remote/output/TOWER_LAMP_RED", self.remote_output_data[DigitalOutput.TOWER_LAMP_RED])
+            #     bb.set("device/remote/output/TOWER_LAMP_GREEN", self.remote_output_data[DigitalOutput.TOWER_LAMP_GREEN])
+            #     bb.set("device/remote/output/TOWER_LAMP_YELLOW", self.remote_output_data[DigitalOutput.TOWER_LAMP_YELLOW])
+            #     bb.set("device/remote/output/TOWER_BUZZER", self.remote_output_data[DigitalOutput.TOWER_BUZZER])
+            #     bb.set("device/remote/output/BCR_TGR", self.remote_output_data[DigitalOutput.BCR_TGR])
+            #     bb.set("device/remote/output/LOCAL_LAMP_R", self.remote_output_data[DigitalOutput.LOCAL_LAMP_R])
+            #     bb.set("device/remote/output/RESET_SW_LAMP", self.remote_output_data[DigitalOutput.RESET_SW_LAMP])
+            #     bb.set("device/remote/output/DOOR_4_LAMP", self.remote_output_data[DigitalOutput.DOOR_4_LAMP])
+            #     bb.set("device/remote/output/INDICATOR_UP", self.remote_output_data[DigitalOutput.INDICATOR_UP])
+            #     bb.set("device/remote/output/INDICATOR_DOWN", self.remote_output_data[DigitalOutput.INDICATOR_DOWN])
+            #     bb.set("device/remote/output/ALIGN_1_PUSH", self.remote_output_data[DigitalOutput.ALIGN_1_PUSH])
+            #     bb.set("device/remote/output/ALIGN_1_PULL", self.remote_output_data[DigitalOutput.ALIGN_1_PULL])
+            #     bb.set("device/remote/output/ALIGN_2_PUSH", self.remote_output_data[DigitalOutput.ALIGN_2_PUSH])
+            #     bb.set("device/remote/output/ALIGN_2_PULL", self.remote_output_data[DigitalOutput.ALIGN_2_PULL])
+            #     bb.set("device/remote/output/ALIGN_3_PUSH", self.remote_output_data[DigitalOutput.ALIGN_3_PUSH])
+            #     bb.set("device/remote/output/ALIGN_3_PULL", self.remote_output_data[DigitalOutput.ALIGN_3_PULL])
+            #     bb.set("device/remote/output/GRIPPER_1_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_1_UNCLAMP])
+            #     bb.set("device/remote/output/LOCAL_LAMP_L", self.remote_output_data[DigitalOutput.LOCAL_LAMP_L])
+            #     bb.set("device/remote/output/GRIPPER_2_UNCLAMP", self.remote_output_data[DigitalOutput.GRIPPER_2_UNCLAMP])
+            #     bb.set("device/remote/output/LOCAL_LAMP_C", self.remote_output_data[DigitalOutput.LOCAL_LAMP_C])
+            #     bb.set("device/remote/output/EXT_FW", self.remote_output_data[DigitalOutput.EXT_FW])
+            #     bb.set("device/remote/output/EXT_BW", self.remote_output_data[DigitalOutput.EXT_BW])
 
             # Remote IO 통신이 복구되었을 때 (꺼졌다가 다시 켜짐)
             # if not self.remote_comm_state and (
@@ -560,97 +636,107 @@ class DeviceContext(ContextBase):
         try:
             if not self._is_io_writable():
                 return False
-            with self._io_lock:
-                output_data = self.remote_output_data.copy()
-                output_data[address] = value
-                self.iocontroller.write_output_data(output_data)
-            Logger.info(f"[device] UI_DO_Control: DO {address} set to {value}")
+
+            # 블랙보드 키 생성 (address를 DO 이름으로 변환)
+            do_names = {
+                DigitalOutput.TOWER_LAMP_RED: "TOWER_LAMP_RED",
+                DigitalOutput.TOWER_LAMP_GREEN: "TOWER_LAMP_GREEN",
+                DigitalOutput.TOWER_LAMP_YELLOW: "TOWER_LAMP_YELLOW",
+                DigitalOutput.TOWER_BUZZER: "TOWER_BUZZER",
+                DigitalOutput.BCR_TGR: "BCR_TGR",
+                DigitalOutput.LOCAL_LAMP_R: "LOCAL_LAMP_R",
+                DigitalOutput.RESET_SW_LAMP: "RESET_SW_LAMP",
+                DigitalOutput.DOOR_4_LAMP: "DOOR_4_LAMP",
+                DigitalOutput.INDICATOR_UP: "INDICATOR_UP",
+                DigitalOutput.INDICATOR_DOWN: "INDICATOR_DOWN",
+                DigitalOutput.ALIGN_1_PUSH: "ALIGN_1_PUSH",
+                DigitalOutput.ALIGN_1_PULL: "ALIGN_1_PULL",
+                DigitalOutput.ALIGN_2_PUSH: "ALIGN_2_PUSH",
+                DigitalOutput.ALIGN_2_PULL: "ALIGN_2_PULL",
+                DigitalOutput.ALIGN_3_PUSH: "ALIGN_3_PUSH",
+                DigitalOutput.ALIGN_3_PULL: "ALIGN_3_PULL",
+                DigitalOutput.GRIPPER_1_UNCLAMP: "GRIPPER_1_UNCLAMP",
+                DigitalOutput.LOCAL_LAMP_L: "LOCAL_LAMP_L",
+                DigitalOutput.GRIPPER_2_UNCLAMP: "GRIPPER_2_UNCLAMP",
+                DigitalOutput.LOCAL_LAMP_C: "LOCAL_LAMP_C",
+                DigitalOutput.EXT_FW: "EXT_FW",
+                DigitalOutput.EXT_BW: "EXT_BW",
+            }
+
+            if address in do_names:
+                bb.set(f"device/remote/output/{do_names[address]}", value)
+                Logger.info(f"[device] UI_DO_Control: DO {address} ({do_names[address]}) set to {value}")
+            else:
+                Logger.error(f"[device] UI_DO_Control: Unknown DO address {address}")
+                return False
+
             return True
+
         except Exception as e:
             Logger.error(f"[device] Error in UI_DO_Control: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
     # TODO Lamp C, L, R 제어 함수 만들기
-    def lamp_on(self) :
+    def lamp_on(self) -> bool:
         '''
-        Docstring for lamp_on
-        :return: sucess True, fail False
+        램프 켜기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
 
-            output_data[DigitalOutput.LOCAL_LAMP_C] = 1
-            output_data[DigitalOutput.LOCAL_LAMP_L] = 1
-            output_data[DigitalOutput.LOCAL_LAMP_R] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.LOCAL_LAMP_C] == 1 and
-                read_data[DigitalOutput.LOCAL_LAMP_L] == 1 and
-                read_data[DigitalOutput.LOCAL_LAMP_R] == 1):
-                Logger.info(f"[device] Lamp On Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Lamp On Command Failed. read_data: {read_data}")
-                return False
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/LOCAL_LAMP_C", 1)
+            bb.set("device/remote/output/LOCAL_LAMP_L", 1)
+            bb.set("device/remote/output/LOCAL_LAMP_R", 1)
+
+            Logger.info(f"[device] Lamp On Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in lamp_on: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
-    
-    def lamp_off(self) :
+
+    def lamp_off(self) -> bool:
         '''
-        Docstring for lamp_on
-        :return: sucess True, fail False
+        램프 끄기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.LOCAL_LAMP_C] = 0
-            output_data[DigitalOutput.LOCAL_LAMP_L] = 0
-            output_data[DigitalOutput.LOCAL_LAMP_R] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.LOCAL_LAMP_C] == 0 and
-                read_data[DigitalOutput.LOCAL_LAMP_L] == 0 and
-                read_data[DigitalOutput.LOCAL_LAMP_R] == 0):
-                Logger.info(f"[device] Lamp Off Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Lamp Off Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/LOCAL_LAMP_C", 0)
+            bb.set("device/remote/output/LOCAL_LAMP_L", 0)
+            bb.set("device/remote/output/LOCAL_LAMP_R", 0)
+
+            Logger.info(f"[device] Lamp Off Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in lamp_off: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
     # 인장기 그리퍼 열기/닫기 확인 함수들
-    def chuck_open(self) :
+    def chuck_open(self) -> bool:
         '''
-        Docstring for chuck_open
-        :return: sucess True, fail False
+        그리퍼 열기 - 블랙보드 기반 (검증 불필요, 수동 동작)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            # output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0 현재 사용 X
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
-            # if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 0 and
-            #     read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0):
-            if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0):
-                Logger.info(f"[device] Chuck Open Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Chuck Open Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 0)
+
+            Logger.info(f"[device] Chuck Open Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_open: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -658,7 +744,7 @@ class DeviceContext(ContextBase):
 
     def chuck_open_non_blocking(self) -> str:
         '''
-        Non-blocking chuck open with 20s delay.
+        Non-blocking chuck open with 20s delay - 블랙보드 기반
         :return: "running", "done", "error"
         '''
         try:
@@ -667,13 +753,12 @@ class DeviceContext(ContextBase):
 
             # Start sequence
             if self.chuck_open_start_time == 0:
-                output_data = self.remote_output_data.copy()
-                output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0  # 현재 사용 
-                output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
-                self.iocontroller.write_output_data(output_data)
-                
+                # 블랙보드에만 쓰기
+                bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 0)
+                bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 0)
+
                 self.chuck_open_start_time = time.time()
-                Logger.info(f"[device] Chuck Open Command Sent. Waiting 20s for completion.")
+                Logger.info(f"[device] Chuck Open Command Queued. Waiting 20s for completion.")
                 return "running"
 
             # Check timer
@@ -682,7 +767,7 @@ class DeviceContext(ContextBase):
                 self.chuck_open_start_time = 0
                 Logger.info(f"[device] Chuck Open 20s Wait Complete.")
                 return "done"
-            
+
             return "running"
 
         except Exception as e:
@@ -690,30 +775,35 @@ class DeviceContext(ContextBase):
             self.chuck_open_start_time = 0
             return "error"
 
-    def chuck_close(self) :
+    def chuck_close(self) -> bool:
         '''
-        Docstring for chuck_close       
-        :return: sucess True, fail False
+        그리퍼 닫기 - 블랙보드 기반 (검증 필요: 카운터 2회 증가 또는 0.15초 대기)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1 # 현재는 동시에 관리
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1 and
-                read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
-                Logger.info(f"[device] Chuck Close Command Sent Successfully.")
-                return True
-            # if (read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1):
-            #     Logger.info(f"[device] Chuck Close Command Sent Successfully.")
-            #     return True
-            else:
-                Logger.error(f"[device] Chuck Close Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에 쓰기
+            bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 1)
+           
+
+            # 카운터 증가 2회 또는 0.15초 중 하나 만족 시 성공
+            start_counter = self._do_write_counter
+            start_time = time.time()
+            timeout = 0.15
+
+            while True:
+                counter_diff = self._do_write_counter - start_counter
+                elapsed_time = time.time() - start_time
+
+                # 카운터 2회 증가 또는 0.15초 경과 시 성공
+                if counter_diff >= 2 or elapsed_time >= timeout:
+                    Logger.info(f"[device] Chuck Close Command Completed (counter: {counter_diff}, time: {elapsed_time:.3f}s).")
+                    return True
+        
+                time.sleep(0.01)  # CPU 사용률 낮추기
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_close: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -725,10 +815,11 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
-            read_data = self.iocontroller.read_input_data()
+            # read_data = self.iocontroller.read_input_data()
+            read_data = self.remote_input_data.copy()
             if (read_data[DigitalInput.GRIPPER_1_CLAMP] == 1 and
                 read_data[DigitalInput.GRIPPER_2_CLAMP] == 1) :
-                self.chuck_close()
+                # self.chuck_close()
                 return True
             else :
                 return False
@@ -738,97 +829,81 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
 
-    def chuck_1_close(self) :
+    def chuck_1_close(self) -> bool:
         '''
-        상단 그리퍼(GRIPPER_1) 닫기
-        :return: sucess True, fail False
+        상단 그리퍼(GRIPPER_1) 닫기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 1:
-                Logger.info(f"[device] Chuck 1 (Upper) Close Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Chuck 1 (Upper) Close Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 1)
+
+            Logger.info(f"[device] Chuck 1 (Upper) Close Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_1_close: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
-    def chuck_2_close(self) :
+    def chuck_2_close(self) -> bool:
         '''
-        하단 그리퍼(GRIPPER_2) 닫기
-        :return: sucess True, fail False
+        하단 그리퍼(GRIPPER_2) 닫기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 1:
-                Logger.info(f"[device] Chuck 2 (Lower) Close Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Chuck 2 (Lower) Close Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 1)
+
+            Logger.info(f"[device] Chuck 2 (Lower) Close Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_2_close: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
-    def chuck_1_open(self) :
+    def chuck_1_open(self) -> bool:
         '''
-        상단 그리퍼(GRIPPER_1) 열기
-        :return: sucess True, fail False
+        상단 그리퍼(GRIPPER_1) 열기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_1_UNCLAMP] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if read_data[DigitalOutput.GRIPPER_1_UNCLAMP] == 0:
-                Logger.info(f"[device] Chuck 1 (Upper) Open Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Chuck 1 (Upper) Open Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 0)
+
+            Logger.info(f"[device] Chuck 1 (Upper) Open Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_1_open: {e}\n{traceback.format_exc()}")
             reraise(e)
             return False
 
-    def chuck_2_open(self) :
+    def chuck_2_open(self) -> bool:
         '''
-        하단 그리퍼(GRIPPER_2) 열기
-        :return: sucess True, fail False
+        하단 그리퍼(GRIPPER_2) 열기 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
-        try :
+        try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.GRIPPER_2_UNCLAMP] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if read_data[DigitalOutput.GRIPPER_2_UNCLAMP] == 0:
-                Logger.info(f"[device] Chuck 2 (Lower) Open Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Chuck 2 (Lower) Open Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 0)
+
+            Logger.info(f"[device] Chuck 2 (Lower) Open Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in chuck_2_open: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -844,22 +919,12 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             
-            with self._io_lock:
-                output_data = self.remote_output_data.copy()
-                output_data[DigitalOutput.EXT_FW] = 1
-                output_data[DigitalOutput.EXT_BW] = 0
-                self.iocontroller.write_output_data(output_data)
-            
-            time.sleep(1)  # 신호가 반영될 시간을 약간 줌
-            with self._io_lock:
-                read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.EXT_FW] == 1 and
-                read_data[DigitalOutput.EXT_BW] == 0):
-                Logger.info(f"[device] EXT Move Forward Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] EXT Move Forward Command Failed. read_data: {read_data}")
-                return False
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/EXT_FW", 1)
+            bb.set("device/remote/output/EXT_BW", 0)
+
+            Logger.info(f"[device] EXT Move Forward Command Queued.")
+            return True
         except Exception as e:
             Logger.error(f"[device] Error in EXT_move_forword: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -874,22 +939,12 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             
-            with self._io_lock:
-                output_data = self.remote_output_data.copy()
-                output_data[DigitalOutput.EXT_FW] = 0
-                output_data[DigitalOutput.EXT_BW] = 1
-                self.iocontroller.write_output_data(output_data)
-            
-            time.sleep(1)  # 신호가 반영될 시간을 약간 줌
-            with self._io_lock:
-                read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.EXT_FW] == 0 and
-                read_data[DigitalOutput.EXT_BW] == 1):
-                Logger.info(f"[device] EXT Move Backward Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] EXT Move Backward Command Failed. read_data: {read_data}")
-                return False
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/EXT_FW", 0)
+            bb.set("device/remote/output/EXT_BW", 1)
+
+            Logger.info(f"[device] EXT Move Backward Command Queued.")
+            return True
         except Exception as e:
             Logger.error(f"[device] Error in EXT_move_backward: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -902,8 +957,8 @@ class DeviceContext(ContextBase):
         :return: sucess True, fail False
         '''
         try :
-            with self._io_lock:
-                read_data = self.iocontroller.read_input_data()
+            #with self._io_lock:
+            read_data = self.remote_input_data.copy()
             if direction == 1 :
                 if read_data[DigitalInput.EXT_FW_SENSOR] == 1 and read_data[DigitalInput.EXT_BW_SENSOR] == 0 :
                     # self.EXT_stop()
@@ -935,22 +990,12 @@ class DeviceContext(ContextBase):
             if not self._is_io_writable():
                 return False
             
-            with self._io_lock:
-                output_data = self.remote_output_data.copy()
-                output_data[DigitalOutput.EXT_FW] = 0
-                output_data[DigitalOutput.EXT_BW] = 0
-                self.iocontroller.write_output_data(output_data)
-            
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            with self._io_lock:
-                read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.EXT_FW] == 0 and
-                read_data[DigitalOutput.EXT_BW] == 0):
-                Logger.info(f"[device] EXT Stop Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] EXT Stop Command Failed. read_data: {read_data}")
-                return False
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/EXT_FW", 0)
+            bb.set("device/remote/output/EXT_BW", 0)
+
+            Logger.info(f"[device] EXT Stop Command Queued.")
+            return True
         except Exception as e:
             Logger.error(f"[device] Error in EXT_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -959,50 +1004,57 @@ class DeviceContext(ContextBase):
     # Alignment Push/Pull 신호 제어 함수들
     def align_push(self) -> bool:
         '''
-        Docstring for align_push
-        
-        :return: sucess True, fail False
+        정렬기 Push - 블랙보드 기반 + DI 확인
+        1번 먼저 동작 확인 후, 2,3번 동시
+        :return: success True, fail False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            # 1st 1번
-            output_data[DigitalOutput.ALIGN_1_PUSH] = 1
-            output_data[DigitalOutput.ALIGN_1_PULL] = 0
-            
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 1 and
-                read_data[DigitalOutput.ALIGN_1_PULL] == 0):
-                Logger.info(f"[device] Align #1 Push Command Sent Successfully.")
-                time.sleep(1)
-                
-            else:
-                Logger.error(f"[device] Align #1 Push Command Failed. read_data: {read_data}")
-                return False
-            # 2nd 2,3 번 움직이기
-            output_data[DigitalOutput.ALIGN_2_PUSH] = 1
-            output_data[DigitalOutput.ALIGN_2_PULL] = 0
-            output_data[DigitalOutput.ALIGN_3_PUSH] = 1
-            output_data[DigitalOutput.ALIGN_3_PULL] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
 
-            if (read_data[DigitalOutput.ALIGN_2_PUSH] == 1 and
-                read_data[DigitalOutput.ALIGN_2_PULL] == 0 and
-                read_data[DigitalOutput.ALIGN_3_PUSH] == 1 and
-                read_data[DigitalOutput.ALIGN_3_PULL] == 0):
-                Logger.info(f"[device] Align #2, #3 Push Command Sent Successfully.")
-                
-            else:
-                Logger.error(f"[device] Align #2, #3 Push Command Failed. read_data: {read_data}")
-                return False
-            
+            # 1st: 1번만 Push
+            bb.set("device/remote/output/ALIGN_1_PUSH", 1)
+            bb.set("device/remote/output/ALIGN_1_PULL", 0)
+            bb.set("device/remote/output/ALIGN_2_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_2_PULL", 0)
+            bb.set("device/remote/output/ALIGN_3_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_3_PULL", 0)
+
+            Logger.info(f"[device] Align #1 Push Command Queued (BB: ALIGN_1_PUSH=1, others=0).")
+
+            # DI 확인: ALIGN_1이 실제로 PUSH 위치로 이동했는지 확인 (최대 3초 대기)
+            timeout = 3.0
+            start_time = time.time()
+            align1_confirmed = False
+
+            while time.time() - start_time < timeout:
+                # 블랙보드에서 DI 값 확인
+                align1_push_di = bb.get("device/remote/input/ALIGN_1_PUSH") or 0
+                align1_pull_di = bb.get("device/remote/input/ALIGN_1_PULL") or 0
+
+                if (align1_push_di == 1 and align1_pull_di == 0):
+                    align1_confirmed = True
+                    Logger.info(f"[device] Align #1 Push Position Confirmed (DI verified via BB).")
+                    break
+                time.sleep(0.05)  # 50ms 간격으로 체크
+
+            if not align1_confirmed:
+                Logger.info(f"[device] Align #1 Push Position NOT confirmed within {timeout}s, proceeding anyway.")
+
+            # 최소 대기 시간 보장 (DI 확인이 빨리 끝나도 최소 1초는 대기)
+            elapsed = time.time() - start_time
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+
+            # 2nd: 2,3번 Push (1번은 그대로 유지)
+            bb.set("device/remote/output/ALIGN_2_PUSH", 1)
+            bb.set("device/remote/output/ALIGN_2_PULL", 0)
+            bb.set("device/remote/output/ALIGN_3_PUSH", 1)
+            bb.set("device/remote/output/ALIGN_3_PULL", 0)
+
+            Logger.info(f"[device] Align #2, #3 Push Command Queued (BB: ALIGN_1,2,3_PUSH=1).")
             return True
-        
+
         except Exception as e:
             Logger.error(f"[device] Error in align_push: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1010,49 +1062,57 @@ class DeviceContext(ContextBase):
         
     def align_pull(self) -> bool:
         '''
-        Docstring for align_pull
-        :return: sucess True, fail False
+        정렬기 Pull - 블랙보드 기반 + DI 확인
+        1번 먼저 동작 확인 후, 2,3번 동시
+        :return: success True, fail False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            # 1st 1번
-            output_data[DigitalOutput.ALIGN_1_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_1_PULL] = 1
-            
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_1_PULL] == 1):
-                Logger.info(f"[device] Align #1 Pull Command Sent Successfully.")
-                time.sleep(1)
-                
-            else:
-                Logger.error(f"[device] Align #1 Pull Command Failed. read_data: {read_data}")
-                return False
-            
-            # 2nd 2,3 번 움직이기
-            output_data[DigitalOutput.ALIGN_2_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_2_PULL] = 1
-            output_data[DigitalOutput.ALIGN_3_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_3_PULL] = 1
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)  # 신호가 반영될 시간을 약간 줌
-            read_data = self.iocontroller.read_output_data()
 
-            if (read_data[DigitalOutput.ALIGN_2_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_2_PULL] == 1 and
-                read_data[DigitalOutput.ALIGN_3_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_3_PULL] == 1):
-                Logger.info(f"[device] Align #2, #3 Pull Command Sent Successfully.")
-                
-            else:
-                Logger.error(f"[device] Align #2, #3 Pull Command Failed. read_data: {read_data}")
-                return False
-            
+            # 1st: 1번만 Pull
+            bb.set("device/remote/output/ALIGN_1_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_1_PULL", 1)
+            bb.set("device/remote/output/ALIGN_2_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_2_PULL", 0)
+            bb.set("device/remote/output/ALIGN_3_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_3_PULL", 0)
+
+            Logger.info(f"[device] Align #1 Pull Command Queued (BB: ALIGN_1_PULL=1, others=0).")
+
+            # DI 확인: ALIGN_1이 실제로 PULL 위치로 이동했는지 확인 (최대 3초 대기)
+            timeout = 3.0
+            start_time = time.time()
+            align1_confirmed = False
+
+            while time.time() - start_time < timeout:
+                # 블랙보드에서 DI 값 확인
+                align1_push_di = bb.get("device/remote/input/ALIGN_1_PUSH") or 0
+                align1_pull_di = bb.get("device/remote/input/ALIGN_1_PULL") or 0
+
+                if (align1_push_di == 0 and align1_pull_di == 1):
+                    align1_confirmed = True
+                    Logger.info(f"[device] Align #1 Pull Position Confirmed (DI verified via BB).")
+                    break
+                time.sleep(0.05)  # 50ms 간격으로 체크
+
+            if not align1_confirmed:
+                Logger.info(f"[device] Align #1 Pull Position NOT confirmed within {timeout}s, proceeding anyway.")
+
+            # 최소 대기 시간 보장 (DI 확인이 빨리 끝나도 최소 1초는 대기)
+            elapsed = time.time() - start_time
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+
+            # 2nd: 2,3번 Pull (1번은 그대로 유지)
+            bb.set("device/remote/output/ALIGN_2_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_2_PULL", 1)
+            bb.set("device/remote/output/ALIGN_3_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_3_PULL", 1)
+
+            Logger.info(f"[device] Align #2, #3 Pull Command Queued (BB: ALIGN_1,2,3_PULL=1).")
             return True
+
         except Exception as e:
             Logger.error(f"[device] Error in align_pull: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1060,34 +1120,24 @@ class DeviceContext(ContextBase):
     
     def align_stop(self) -> bool:
         '''
-        Docstring for align_stop
-        
-        :return: sucess True, fail False
+        정렬기 정지 - 블랙보드 기반 (검증 불필요)
+        :return: success True, fail False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.ALIGN_1_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_1_PULL] = 0
-            output_data[DigitalOutput.ALIGN_2_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_2_PULL] = 0
-            output_data[DigitalOutput.ALIGN_3_PUSH] = 0
-            output_data[DigitalOutput.ALIGN_3_PULL] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.ALIGN_1_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_1_PULL] == 0 and
-                read_data[DigitalOutput.ALIGN_2_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_2_PULL] == 0 and
-                read_data[DigitalOutput.ALIGN_3_PUSH] == 0 and
-                read_data[DigitalOutput.ALIGN_3_PULL] == 0):
-                Logger.info(f"[device] Align Stop Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Align Stop Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/ALIGN_1_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_1_PULL", 0)
+            bb.set("device/remote/output/ALIGN_2_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_2_PULL", 0)
+            bb.set("device/remote/output/ALIGN_3_PUSH", 0)
+            bb.set("device/remote/output/ALIGN_3_PULL", 0)
+
+            Logger.info(f"[device] Align Stop Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in align_stop: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1095,13 +1145,14 @@ class DeviceContext(ContextBase):
 
     def align_check(self, direction : int) -> bool:
         '''
-        Docstring for align_check
-        Based on input_data 
+        정렬기 위치 확인 - 캐시된 입력 데이터 사용
         : param: direction : 1 for push, 2 for pull
         : return: sucess True, fail False
         '''
         try :
-            read_data = self.iocontroller.read_input_data()
+            # 캐시된 입력 데이터 사용 (read_IO_status()에서 0.1초마다 갱신)
+            read_data = self.remote_input_data
+
             if direction == 1 :
                 if (read_data[DigitalInput.ALIGN_1_PUSH] == 1 and
                     read_data[DigitalInput.ALIGN_1_PULL] == 0 and
@@ -1124,6 +1175,7 @@ class DeviceContext(ContextBase):
                     return False
             else :
                 Logger.info(f"[device] align_check: Invalid direction {direction}")
+                return False
         except Exception as e:
             Logger.error(f"[device] Error in align_check: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1131,25 +1183,20 @@ class DeviceContext(ContextBase):
     
     def indicator_stand_up(self) -> bool:
         '''
-        인디게이터 가이드를 위로 이동시킵니다.
+        인디게이터 가이드를 위로 이동 - 블랙보드 기반 (검증 불필요)
         :return: 성공 시 True, 실패 시 False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.INDICATOR_UP] = 1
-            output_data[DigitalOutput.INDICATOR_DOWN] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.INDICATOR_UP] == 1 and
-                read_data[DigitalOutput.INDICATOR_DOWN] == 0):
-                Logger.info(f"[device] Indicator Stand Up Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Indicator Stand Up Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/INDICATOR_UP", 1)
+            bb.set("device/remote/output/INDICATOR_DOWN", 0)
+
+            Logger.info(f"[device] Indicator Stand Up Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in indicator_stand_up: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1157,30 +1204,20 @@ class DeviceContext(ContextBase):
 
     def indicator_stand_down(self) -> bool:
         '''
-        인디게이터 가이드를 아래로 이동시킵니다.
+        인디게이터 가이드를 아래로 이동 - 블랙보드 기반 (검증 불필요)
         :return: 성공 시 True, 실패 시 False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            Logger.info(f"[device] Indicator Stand Down Command Sent.")
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.INDICATOR_UP] = 0
-            output_data[DigitalOutput.INDICATOR_DOWN] = 1
-            self.iocontroller.write_output_data(output_data)
-            Logger.info(f"[device] Remote IO Indicator Stand Down Command Sent Successfully.")
-            time.sleep(0.1)
-            Logger.info(f"[device] Remote IO Indicator Stand read State")
-            read_data = self.iocontroller.read_output_data()
-            Logger.info(f"[device] Remote IO Indicator Stand read State: {read_data}")
-            if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
-                read_data[DigitalOutput.INDICATOR_DOWN] == 1):
-                Logger.info(f"[device] Indicator Stand Down Command Sent Successfully.")
-                time.sleep(1)
-                return True
-            else:
-                Logger.error(f"[device] Indicator Stand Down Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/INDICATOR_UP", 0)
+            bb.set("device/remote/output/INDICATOR_DOWN", 1)
+
+            Logger.info(f"[device] Indicator Stand Down Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in indicator_stand_down: {e}\n{traceback.format_exc()}")
             reraise(e)
@@ -1188,25 +1225,20 @@ class DeviceContext(ContextBase):
 
     def indicator_stand_stop(self) -> bool:
         '''
-        인디게이터 가이드 이동을 정지합니다.
+        인디게이터 가이드 정지 - 블랙보드 기반 (검증 불필요)
         :return: 성공 시 True, 실패 시 False
         '''
         try:
             if not self._is_io_writable():
                 return False
-            output_data = self.remote_output_data.copy()
-            output_data[DigitalOutput.INDICATOR_UP] = 0
-            output_data[DigitalOutput.INDICATOR_DOWN] = 0
-            self.iocontroller.write_output_data(output_data)
-            time.sleep(0.1)
-            read_data = self.iocontroller.read_output_data()
-            if (read_data[DigitalOutput.INDICATOR_UP] == 0 and
-                read_data[DigitalOutput.INDICATOR_DOWN] == 0):
-                Logger.info(f"[device] Indicator Stand Stop Command Sent Successfully.")
-                return True
-            else:
-                Logger.error(f"[device] Indicator Stand Stop Command Failed. read_data: {read_data}")
-                return False
+
+            # 블랙보드에만 쓰기
+            bb.set("device/remote/output/INDICATOR_UP", 0)
+            bb.set("device/remote/output/INDICATOR_DOWN", 0)
+
+            Logger.info(f"[device] Indicator Stand Stop Command Queued.")
+            return True
+
         except Exception as e:
             Logger.error(f"[device] Error in indicator_stand_stop: {e}\n{traceback.format_exc()}")
             reraise(e)

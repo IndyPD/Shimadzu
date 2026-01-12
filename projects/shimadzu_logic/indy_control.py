@@ -70,6 +70,7 @@ class RobotCommunication:
         self.indy.set_int_variable([
             {'addr': int(self.config["int_var/cmd/addr"]), 'value': 0},
             {'addr': int(self.config["int_var/grip_state/addr"]), 'value': 0},
+            {'addr': int(self.config["int_var/grip_retry/addr"]), 'value': 0},
         ])
         # CMD_Init은 bool 변수이므로 별도로 초기화합니다.
         self.indy.set_bool_variable([
@@ -129,8 +130,13 @@ class RobotCommunication:
 
     def run(self):
         """ Thread's target function """
+        # log_start_time = time.time()
+        # total_taktime = 0.0
+        # loop_count = 0
+
         while self.running:
             time.sleep(0.001)
+            # st_time = datetime.now()
             self.receive_data_from_bb()  # Get bb data, process bb data
             self.handle_int_variable()  # Get bb data, process bb data
 
@@ -138,6 +144,18 @@ class RobotCommunication:
             self.send_data_to_bb()  # Send indy data to bb
             
             self.process_recording() # [Data Recorder] 기록 처리
+            # ed_time = datetime.now()
+            
+            # taktime = (ed_time - st_time).total_seconds()
+            # total_taktime += taktime
+            # loop_count += 1
+
+            # if time.time() - log_start_time >= 5.0:
+            #     avg_taktime = total_taktime / loop_count if loop_count > 0 else 0
+            #     Logger.info(f"[Indy] Comm avg taktime (5s) : {avg_taktime:.6f} (Loops: {loop_count})")
+            #     log_start_time = time.time()
+            #     total_taktime = 0.0
+            #     loop_count = 0
 
     def start_recording(self, cmd_id):
         """ 데이터 기록 시작 (JSON 저장을 위한 버퍼 초기화) """
@@ -228,11 +246,20 @@ class RobotCommunication:
         if bb.get("ui/cmd/robot_control/trigger"):
             bb.set("ui/cmd/robot_control/trigger", 0) # Consume trigger
 
+            payload = bb.get("ui/cmd/robot_control/data")
+            
+            # [추가] Gripper Retry 명령 처리 (프로그램 상태와 무관하게 처리)
+            if payload and isinstance(payload, dict):
+                if payload.get("target") == "gripper" and payload.get("action") == "retry":
+                    Logger.info(f"Received robot_control command via MQTT->BB: target=gripper, action=retry")
+                    bb.set("int_var/grip_retry/val", 1)
+                    return
+
             # 프로그램이 실행 중이 아닐 때(IDLE 상태)만 수동 제어 명령을 처리합니다.
             if self.program_state == ProgramState.PROG_IDLE:
                 if bb.get("device/remote/input/SELECT_SW") != 1:
                     Logger.info("[Robot] Robot control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
-                    payload = bb.get("ui/cmd/robot_control/data")
+                    # payload = bb.get("ui/cmd/robot_control/data")
                     if payload and isinstance(payload, dict):
                         target = payload.get("target")
                         action = payload.get("action")
@@ -275,6 +302,15 @@ class RobotCommunication:
                                     bb.set("ui/state/direct_state", 2)
                                 except Exception as e:
                                     Logger.error(f"Stop direct teaching program fail: {e}")
+
+                        # Robot Home Move
+                        elif target == "robot_home":
+                            if action == "enable":
+                                try:
+                                    Logger.info("Moving to Home Position.")
+                                    self.indy.movej(self.home_pos, teaching_mode=True, vel_ratio=100)
+                                except Exception as e:
+                                    Logger.error(f"Fail to execute move command: {e}")
                 else :
                     Logger.info(f"[Robot] Robot control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
             else:
@@ -380,7 +416,106 @@ class RobotCommunication:
             # [추가] 로봇 컨트롤러의 grip_state 읽기 (백업용)
             grip_state = self.get_intvar_address(int_var, int(self.config["int_var/grip_state/addr"]))
             if grip_state is not None:
+                prev_grip_state = bb.get("int_var/grip_state/val") or 0
                 bb.set("int_var/grip_state/val", grip_state)
+
+                # 그리퍼 상태 변화 감지 및 에러 처리 (3=완전닫힘/시편없음, 4=파지기준부적합)
+                if grip_state in [3, 4] and prev_grip_state != grip_state:
+                    error_message = "그리퍼 완전 닫힘 (시편 없음)" if grip_state == 3 else "그리퍼 파지 실패 (파지 기준 부적합)"
+                    error_detail = f"Gripper state changed from {prev_grip_state} to {grip_state}"
+
+                    # MQTT 에러 이벤트 전송
+                    error_payload = {
+                        "kind": "event",
+                        "evt": "error",
+                        "status": "Auto",
+                        "category": "robot",
+                        "code": "R-002",
+                        "message": error_message,
+                        "detail": error_detail
+                    }
+                    bb.set("logic/send_event", error_payload)
+                    Logger.error(f"[Gripper] {error_message}: grip_state={grip_state}")
+
+            # [추가] 로봇 컨트롤러의 grip_retry 읽기
+            grip_retry = self.get_intvar_address(int_var, int(self.config["int_var/grip_retry/addr"]))
+            if grip_retry is not None:
+                # Conty에서 읽은 이전 값 추적 (내부 상태 추적용)
+                prev_grip_retry_conty = bb.get("robot/gripper/retry_prev") or 0
+
+                # 재시도 시작 감지 (0에서 1로 변경)
+                if prev_grip_retry_conty == 0 and grip_retry == 1:
+                    # 재시도 카운트 초기화
+                    retry_count = bb.get("robot/gripper/retry_count") or 0
+                    bb.set("robot/gripper/retry_count", retry_count + 1)
+                    bb.set("robot/gripper/retry_start_time", time.time())
+                    Logger.info(f"[Gripper] 재시도 시작 (횟수: {retry_count + 1}/5)")
+
+                # 재시도 후 grip_retry가 1에서 0으로 변경되면 재시도 완료 (Conty 기준)
+                if prev_grip_retry_conty == 1 and grip_retry == 0:
+                    # grip_state 확인하여 성공/실패 판단
+                    current_grip_state = bb.get("int_var/grip_state/val") or 0
+                    if current_grip_state in [0, 1, 2]:
+                        # 재시도 성공 (정상 상태)
+                        Logger.info(f"[Gripper] 재시도 성공: grip_state={current_grip_state}")
+                        # 재시도 성공 플래그 설정 및 카운트 초기화
+                        bb.set("robot/gripper/retry_success", True)
+                        bb.set("robot/gripper/retry_count", 0)
+                        bb.set("robot/gripper/retry_start_time", None)
+                    else:
+                        # 재시도 실패 (여전히 에러 상태)
+                        retry_count = bb.get("robot/gripper/retry_count") or 0
+                        Logger.error(f"[Gripper] 재시도 실패: grip_state={current_grip_state} (시도 {retry_count}/5)")
+
+                        # 최대 재시도 횟수 초과 확인 (5회)
+                        if retry_count >= 5:
+                            Logger.error(f"[Gripper] 최대 재시도 횟수 초과 (5회)")
+
+                            # MQTT 에러 이벤트 전송 (팝업 띄우기)
+                            error_payload = {
+                                "kind": "event",
+                                "evt": "error",
+                                "status": "Auto",
+                                "category": "robot",
+                                "code": "R-003",
+                                "message": "그리퍼 재시도 실패 (5회 시도)",
+                                "detail": f"Retry failed after 5 attempts with grip_state={current_grip_state}"
+                            }
+                            bb.set("logic/send_event", error_payload)
+
+                            # 재시도 카운트 초기화 및 강제 중단
+                            bb.set("robot/gripper/retry_count", 0)
+                            bb.set("robot/gripper/retry_start_time", None)
+                            bb.set("int_var/grip_retry/val", 0)  # 강제로 재시도 중단
+                            Logger.info(f"[Gripper] 재시도 강제 중단 (grip_retry=0 설정)")
+
+                # 재시도 타임아웃 확인 (60초)
+                retry_start_time = bb.get("robot/gripper/retry_start_time")
+                if grip_retry == 1 and retry_start_time and (time.time() - retry_start_time > 60.0):
+                    Logger.error(f"[Gripper] 재시도 타임아웃 (60초)")
+                    retry_count = bb.get("robot/gripper/retry_count") or 0
+
+                    # 5회 이상 시도했으면 완전히 중단
+                    if retry_count >= 5:
+                        Logger.error(f"[Gripper] 타임아웃 후 최대 횟수 초과 - 재시도 중단")
+                        error_payload = {
+                            "kind": "event",
+                            "evt": "error",
+                            "status": "Auto",
+                            "category": "robot",
+                            "code": "R-003",
+                            "message": "그리퍼 재시도 타임아웃 (5회 시도)",
+                            "detail": f"Retry timeout after 5 attempts"
+                        }
+                        bb.set("logic/send_event", error_payload)
+                        bb.set("robot/gripper/retry_count", 0)
+
+                    # 강제로 재시도 중단
+                    bb.set("int_var/grip_retry/val", 0)
+                    bb.set("robot/gripper/retry_start_time", None)
+
+                # Conty에서 읽은 현재 값을 이전 값으로 저장 (다음 사이클 비교용)
+                bb.set("robot/gripper/retry_prev", grip_retry)
 
             # [Data Recorder] 기록 제어 로직
             current_cmd_bb = int(bb.get("int_var/cmd/val") or 0)
@@ -417,6 +552,10 @@ class RobotCommunication:
             # None일 경우를 대비하여 기본값 0으로 처리
             grip_state_val = int(bb.get("int_var/grip_state/val") or 0)
             vars_to_set.append({'addr': int(self.config["int_var/grip_state/addr"]), 'value': grip_state_val})
+
+            # grip_retry 변수 쓰기
+            grip_retry_val = int(bb.get("int_var/grip_retry/val") or 0)
+            vars_to_set.append({'addr': int(self.config["int_var/grip_retry/addr"]), 'value': grip_retry_val})
 
             # Part 3: Write the collected integer variables to the robot.
             if vars_to_set:

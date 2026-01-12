@@ -350,6 +350,10 @@ class MqttComm:
                         elif action == "stop":
                             if self.Logger: self.Logger.info(f"[LOGIC] Conty Program STOP command received.")
                             self.bb.set("indy_command/stop_program", True)
+                    elif target == "gripper" and action == "retry":
+                        # 그리퍼 파지 재시도 명령 처리 (MQTT_Protocol.md Section 그리퍼 파지 실패시 재시도)
+                        if self.Logger: self.Logger.info(f"[LOGIC] 그리퍼 파지 재시도 명령 수신")
+                        self.bb.set("int_var/grip_retry/val", 1)
                     else:
                         if self.Logger: self.Logger.info(f"[LOGIC] 로봇 제어 명령 수신: {payload.get('target')} -> {payload.get('action')}")
                         self.bb.set("ui/cmd/robot_control/data", payload)

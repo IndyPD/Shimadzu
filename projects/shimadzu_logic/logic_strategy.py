@@ -12,10 +12,13 @@ def _update_system_status(context: LogicContext):
     # 에러 상태
     if current_state in [LogicState.ERROR, LogicState.STOP_AND_OFF]:
         status_str = "에러"
+    # 완료 상태
+    elif current_state == LogicState.PROCESS_COMPLETE:
+        status_str = "완료"
     # 대기 상태 (실제 물리적 공정이 진행되지 않는 상태)
     elif current_state in [
         LogicState.INIT, LogicState.CONNECTING, LogicState.IDLE, 
-        LogicState.WAIT_COMMAND, LogicState.WAIT_PROCESS, LogicState.PROCESS_COMPLETE,
+        LogicState.WAIT_COMMAND, LogicState.WAIT_PROCESS,
         LogicState.REGISTER_PROCESS_INFO, LogicState.CHECK_DEVICE_STATUS, LogicState.RESET_DATA
     ]:
         status_str = "대기"
@@ -606,6 +609,8 @@ class LogicDetermineTaskStrategy(Strategy):
         elif step == 8: # 정렬기에서 잡기 완료 -> 인장기 장착 (8)
             Logger.info("[Logic] DetermineTask: Step 7 (Pick from Aligner) done. -> Step 8 (Load Tensile Machine).")
             bb.set("process/auto/current_step", 9)
+            # 이동중 (2)
+            context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 2})
             return LogicEvent.DO_LOAD_TENSILE_MACHINE
     
 

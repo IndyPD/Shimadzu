@@ -5,6 +5,7 @@ import sys
 import json
 import os
 import threading
+from datetime import datetime, timedelta
 
 DEBUG_MODE = False
 
@@ -155,18 +156,29 @@ class MitutoyoGauge:
         """시리얼 통신으로 데이터를 요청하고 수신합니다."""
         self._log_debug(f"Serial 송신 RAW (Bytes): {repr(self.request_command)}")
         try:
+            t1 = datetime.now()
             # 요청 전 입력 버퍼를 비워 이전 데이터를 지웁니다.
             self.connection.reset_input_buffer()
             # 요청 명령 전송
             self.connection.write(self.request_command)
             
             # 응답 데이터 수신 (CR(\r)까지 읽음)
-            raw_response = self.connection.read_until(b'\r')
+            # raw_response = self.connection.read_until(b'\r')
+            raw_response = b''
+            start_time = time.time()
+            timeout = self.config.get('timeout', 1)
+            while (time.time() - start_time) < timeout:
+                if self.connection.in_waiting > 0:
+                    raw_response += self.connection.read(self.connection.in_waiting)
+                    if b'\r' in raw_response:
+                        break
+                time.sleep(0.001)
             
             # 디버깅: 수신 RAW 메시지 출력
             if raw_response:
                 self._log_debug(f"Serial 수신 RAW (Bytes): {repr(raw_response)}")
-            
+            t2 = datetime.now()
+            if DEBUG_MODE: print(f"[Gauge]recieved data : {raw_response}, {(t2-t1).total_seconds()}")
             return raw_response
         except serial.SerialException as e:
             if DEBUG_MODE: print(f"통신 중 시리얼 오류 발생: {e}")
@@ -189,6 +201,7 @@ class MitutoyoGauge:
             # 1. 요청 명령 전송
             self.connection.sendall(self.request_command)
             
+            
             # 2. 응답 데이터 수신 (CR(\r)이 나올 때까지 읽음)
             buffer = b''
             start_time = time.time()
@@ -197,15 +210,18 @@ class MitutoyoGauge:
             while time.time() - start_time < timeout:
                 try:
                     # 소켓의 settimeout()이 적용되므로, 작은 버퍼로 반복 수신
-                    chunk = self.connection.recv(1) # 1바이트씩 읽기
-                    if chunk:
-                        buffer += chunk
-                        if buffer.endswith(b'\r'):
-                            self._log_debug(f"Socket 수신 RAW (Bytes): {repr(buffer)}")
-                            return buffer # CR 포함하여 응답 반환
-                    else:
-                        # 연결이 닫혔거나 데이터가 없음
-                        time.sleep(0.01)
+                    chunk = self.connection.recv(1024)
+                    if not chunk:
+                        # 데이터가 없으면(연결 종료) 루프 종료
+                        break
+
+                    buffer += chunk
+                    if b'\r' in buffer:
+                        # CR(\r)을 찾으면 거기까지만 잘라서 반환
+                        cr_index = buffer.find(b'\r')
+                        response = buffer[:cr_index+1]
+                        self._log_debug(f"Socket 수신 RAW (Bytes): {repr(response)}")
+                        return response # CR 포함하여 응답 반환
                 except socket.timeout:
                     self._log_debug(f"Socket 수신 타임아웃 발생. 현재 버퍼: {repr(buffer)}")
                     break # 타임아웃 발생
@@ -288,15 +304,15 @@ class MitutoyoGauge:
                 if DEBUG_MODE: print("ERROR: 통신이 연결되지 않았습니다. .connect()를 먼저 호출하세요.")
                 return None
 
+            t1 = datetime.now()
             if self.connection_type == 1:
                 raw_response = self._request_serial_data()
             elif self.connection_type == 2:
                 raw_response = self._request_socket_data()
             else:
                 return None
-            
-            # 요청 간 최소 간격을 보장합니다.
-            time.sleep(0.2)
+            t2 = datetime.now()
+            if DEBUG_MODE: print(f"senddata : {self.request_command}, raw data : {raw_response} {(t2-t1).total_seconds()}")
 
             if raw_response:
                 result = self.parse_data(raw_response)

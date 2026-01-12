@@ -249,7 +249,6 @@ class RobotWaitAutoCommandStrategy(Strategy):
     def operate(self, context: RobotContext) -> RobotEvent:
         if context.check_violation():
             return RobotEvent.VIOLATION_DETECT
-
         robot_cmd_key = "process/auto/robot/cmd"
         robot_cmd : dict = bb.get(robot_cmd_key)
         if robot_cmd :

@@ -1206,3 +1206,84 @@ x, y, z, rx, ry, rz (단위: mm, degree)
 - `msg_id`: use prefix `logic-evt-error-###`.
 - Only `code`/`message` are required; add `detail` if helpful.
 - UI can map `code` to localized strings; keep `message` short and user-facing.
+
+### 그리퍼 파지 실패시 재시도 Robot_control
+**Command (UI → Logic)**
+```json
+{
+  "header": {
+    "msg_type": "ui.command",
+    "source": "ui",
+    "target": "logic",
+    "msg_id": "ui-robot-cmd-001",
+    "ack_required": true,
+    "timestamp": "2025-11-18T12:00:00.000"
+  },
+  "payload": {
+    "kind": "command",
+    "cmd": "robot_control",
+    "action": "retry",
+    "target": "gripper"
+  }
+}
+```
+ 
+ 
+**ACK (Logic → UI)** /OK
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.050"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-robot-cmd-001",
+    "status": "ok",
+    "reason": "Starting gripper retry"
+  }
+}
+```
+ 
+**ACK (Logic → UI)**  /ERROR
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.050"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-robot-cmd-001",
+    "status": "error",
+    "reason": "Starting gripper retry"
+  }
+}
+```
+
+** ACK (UI -> Logic)**
+''' 
+{
+  "header": {
+    "msg_type": "ui.command",
+    "source": "ui",
+    "target": "logic",
+    "msg_id": "ui-robot-cmd-001",
+    "ack_required": true,
+    "timestamp": "2025-11-18T12:00:00.000"
+  },
+  "payload": {
+    "kind": "command",
+    "cmd": "robot_control",
+    "action": "enable",
+    "target": "robot_home",
+  }
+}'''

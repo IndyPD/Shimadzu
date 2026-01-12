@@ -443,6 +443,22 @@ class LogicContext(ContextBase):
 
         # Step 8: Wait for gripper to close, then retreat from rack
         elif self._seq == 8:
+            # [추가] 재시도 성공 여부를 최우선으로 확인
+            if bb.get("robot/gripper/retry_success"):
+                Logger.info(f"[Logic] Step 8 gripper close succeeded after manual retry. Proceeding to next step.")
+                bb.set("robot/gripper/retry_success", False)  # 플래그 초기화
+                bb.set(robot_cmd_key, None)
+                self.gripper_retry_count.pop("rack_close", None)
+                # 성공으로 처리하고 다음 단계로 진행
+                robot_cmd = {
+                    "process" : MotionCommand.RETREAT_FROM_RACK,
+                    "target_floor" : floor,
+                    "state" : ""
+                }
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_seq(9)
+                return LogicEvent.NONE
+
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_RACK:
                 if get_robot_cmd.get("state") == "done":
                     Logger.info(f"[Logic] Step 8: Gripper close done. Retreating from rack.")
@@ -461,10 +477,10 @@ class LogicContext(ContextBase):
                     # 그리퍼 닫기 실패 시 재시도
                     retry_count = self.gripper_retry_count.get("rack_close", 0) + 1
                     self.gripper_retry_count["rack_close"] = retry_count
-                    Logger.warn(f"[Logic] Step 8 gripper close failed. Retry {retry_count}/3")
+                    Logger.warn(f"[Logic] Step 8 gripper close failed. Retry {retry_count}/5")
 
-                    if retry_count >= 3:
-                        Logger.error(f"[Logic] Step 8 gripper close failed after 3 retries: {get_robot_cmd}")
+                    if retry_count >= 5:
+                        Logger.error(f"[Logic] Step 8 gripper close failed after 5 retries: {get_robot_cmd}")
                         Logger.error(f"[Logic] Starting controlled stop due to gripper failure...")
                         bb.set(robot_cmd_key, None)
                         self.gripper_retry_count.pop("rack_close", None)
@@ -736,11 +752,11 @@ class LogicContext(ContextBase):
                     # 그리퍼 닫기 실패 시 재시도
                     retry_count = self.gripper_retry_count.get("indicator_close", 0) + 1
                     self.gripper_retry_count["indicator_close"] = retry_count
-                    Logger.warn(f"[Logic] Step 11 gripper close failed. Retry {retry_count}/3")
+                    Logger.warn(f"[Logic] Step 11 gripper close failed. Retry {retry_count}/5")
                     self._log_detail("Measure_specimen_thickness", f"seq_{self._seq-1}_GripperClose", "Robot", f"Error_Retry{retry_count}")
 
-                    if retry_count >= 3:
-                        Logger.error(f"[Logic] Step 11 gripper close failed after 3 retries")
+                    if retry_count >= 5:
+                        Logger.error(f"[Logic] Step 11 gripper close failed after 5 retries")
                         self._log_detail("Measure_specimen_thickness", f"seq_{self._seq-1}_GripperClose", "Robot", "Error")
                         Logger.error(f"[Logic] Step 11 failed: {get_robot_cmd}")
                         Logger.error(f"[Logic] Starting controlled stop due to gripper failure...")
@@ -978,11 +994,11 @@ class LogicContext(ContextBase):
                     # 그리퍼 닫기 실패 시 재시도
                     retry_count = self.gripper_retry_count.get("align_close", 0) + 1
                     self.gripper_retry_count["align_close"] = retry_count
-                    Logger.warn(f"[Logic] Step 3 gripper close failed. Retry {retry_count}/3")
+                    Logger.warn(f"[Logic] Step 3 gripper close failed. Retry {retry_count}/5")
                     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_GripperClose", "Robot", f"Error_Retry{retry_count}")
 
-                    if retry_count >= 3:
-                        Logger.error(f"[Logic] Step 3 gripper close failed after 3 retries: {get_robot_cmd}")
+                    if retry_count >= 5:
+                        Logger.error(f"[Logic] Step 3 gripper close failed after 5 retries: {get_robot_cmd}")
                         self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_GripperClose", "Robot", "Error")
                         Logger.error(f"[Logic] Starting controlled stop due to gripper failure...")
                         bb.set(robot_cmd_key, None)
@@ -1402,11 +1418,11 @@ class LogicContext(ContextBase):
                 # 그리퍼 닫기 실패 시 재시도
                 retry_count = self.gripper_retry_count.get("tensile_close", 0) + 1
                 self.gripper_retry_count["tensile_close"] = retry_count
-                Logger.warn(f"[Logic] Step 7 gripper close failed. Retry {retry_count}/3")
+                Logger.warn(f"[Logic] Step 7 gripper close failed. Retry {retry_count}/5")
                 self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_GripperClose", "Robot", f"Error_Retry{retry_count}")
 
-                if retry_count >= 3:
-                    Logger.error(f"[Logic] Step 7 gripper close failed after 3 retries: {get_robot_cmd}")
+                if retry_count >= 5:
+                    Logger.error(f"[Logic] Step 7 gripper close failed after 5 retries: {get_robot_cmd}")
                     self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_GripperClose", "Robot", "Error")
                     Logger.error(f"[Logic] Starting controlled stop due to gripper failure...")
                     bb.set(robot_cmd_key, None)

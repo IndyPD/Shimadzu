@@ -4,7 +4,8 @@
   "logic/fsm/strategy" : {"state": "", "strategy": ""},
 
   "robot/gripper/actual_state" : 0,
-
+  "robot/gripper/retry_prev" : 0,
+  "robot/gripper/retry_start_time" : 0,
   "indy_command/direct_teaching_on": 0,
   "indy_command/direct_teaching_off": 0,
   "indy_command/gripper_open": 0,
@@ -41,6 +42,7 @@
   "int_var/robot/position/val": 0,
   "int_var/init/val": 0,
   "int_var/grip_state/val": 0,
+  "int_var/grip_retry/val" : 0,
   "int_var/pull_done/val": 0,
   "int_var/recover_done/val": 0,
   "robot/recover/motion/cmd": 0,
@@ -149,7 +151,7 @@
   "manual/device/tester": 0,
   "manual/robot/tester": 0,
   "manual/device/shimadzu": 0,
-
+  "/robot/gripper/retry_count" : 0,
   "device/indicator/stand/state" : "",
   "device/align/state" : "",
   "device/remote/input/SOL_SENSOR": 0,
