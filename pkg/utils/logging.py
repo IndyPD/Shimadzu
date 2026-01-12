@@ -136,7 +136,7 @@ class Logger(metaclass=SingletonMeta):
     def save_log(self, level: LogLevel, message):
         if os.path.getsize(self._file_path) > MAX_LOG_SIZE_BYTES:
             self.open_new_log()
-        save_msg = datetime.datetime.now().strftime(f'[%Y-%m-%d|%H:%M:%S:%F]{f"[{level.name}]":8}')+message
+        save_msg = datetime.datetime.now().strftime(f'[%Y-%m-%d|%H:%M:%S]{f"[{level.name}]":8}')+message
         self._log_file.write(save_msg + "\n")
         self._log_file.flush()
 

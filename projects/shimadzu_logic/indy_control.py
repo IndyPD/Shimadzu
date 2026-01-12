@@ -60,7 +60,14 @@ class RobotCommunication:
         self.is_sim_mode = False
         self.robot_running_hour = 0
         self.robot_running_min = 0
-
+ 
+        #Sehoon CMD lifecycle timing
+        self.cmd_send_ts = None
+        self.cmd_ack_ts = None
+        self.cmd_done_ts = None
+        self.cmd_tracking_id = None
+        self.last_done_ts = None  # track last DONE to measure idle gap before next CMD
+ 
         # indy_communication에서 설정되는 속성들을 안전하게 초기화합니다.
         self.robot_current_pos = [0.0, 0.0, 0.0]
         self.program_state = ProgramState.PROG_IDLE
@@ -100,6 +107,9 @@ class RobotCommunication:
         self.recording_cmd_id = 0
         self.control_data_p = [0.0] * 6  # [x, y, z, u, v, w]
 
+        # [Robot Home Move] 홈 이동 상태 관리
+        self.robot_home_last_enable_time = None
+
     def start(self):
         """ Start the robot communication thread """
 
@@ -130,32 +140,37 @@ class RobotCommunication:
 
     def run(self):
         """ Thread's target function """
-        # log_start_time = time.time()
-        # total_taktime = 0.0
-        # loop_count = 0
-
+        acc_loop = 0.0
+        max_loop = 0.0
+        n = 0
+        window_start = time.perf_counter()
+        prev_start = None
+ 
         while self.running:
+            loop_start = time.perf_counter()
             time.sleep(0.001)
-            # st_time = datetime.now()
-            self.receive_data_from_bb()  # Get bb data, process bb data
-            self.handle_int_variable()  # Get bb data, process bb data
-
-            self.indy_communication()  # Get indy data
-            self.send_data_to_bb()  # Send indy data to bb
-            
+            self.receive_data_from_bb()  # Get bb data, process bb data          
+            self.handle_int_variable()  # Get bb data, process bb data      
+            self.indy_communication()  # Get indy data        
+            self.send_data_to_bb()  # Send indy data to bb            
             self.process_recording() # [Data Recorder] 기록 처리
-            # ed_time = datetime.now()
-            
-            # taktime = (ed_time - st_time).total_seconds()
-            # total_taktime += taktime
-            # loop_count += 1
-
-            # if time.time() - log_start_time >= 5.0:
-            #     avg_taktime = total_taktime / loop_count if loop_count > 0 else 0
-            #     Logger.info(f"[Indy] Comm avg taktime (5s) : {avg_taktime:.6f} (Loops: {loop_count})")
-            #     log_start_time = time.time()
-            #     total_taktime = 0.0
-            #     loop_count = 0
+ 
+            if prev_start is not None:
+                loop_period = loop_start - prev_start
+                acc_loop += loop_period; n += 1
+                max_loop = max(max_loop, loop_period)
+               
+            prev_start = loop_start
+ 
+            if time.perf_counter() - window_start >= 5.0 and n > 0:
+                Logger.info(
+                    f"[IndyTiming] loop avg {acc_loop/n*1000:.2f} ms max {max_loop*1000:.2f} ms (n={n})"
+                )
+                acc_loop = 0.0
+                max_loop = 0.0
+                n = 0
+                window_start = time.perf_counter()
+ 
 
     def start_recording(self, cmd_id):
         """ 데이터 기록 시작 (JSON 저장을 위한 버퍼 초기화) """
@@ -304,13 +319,58 @@ class RobotCommunication:
                                     Logger.error(f"Stop direct teaching program fail: {e}")
 
                         # Robot Home Move
+                        # enable이 0.5초 이내로 계속 들어오면 홈으로 이동, 끊기거나 disable이 오면 중단
                         elif target == "robot_home":
                             if action == "enable":
-                                try:
-                                    Logger.info("Moving to Home Position.")
-                                    self.indy.movej(self.home_pos, teaching_mode=True, vel_ratio=100)
-                                except Exception as e:
-                                    Logger.error(f"Fail to execute move command: {e}")
+                                Logger.info("[Home Move] Enable signal received. Starting home movement.")
+                                last_enable_time = time.time()
+
+                                while True:
+                                    # 10ms마다 체크
+                                    time.sleep(0.01)
+
+                                    # 블랙보드에서 최신 명령 확인
+                                    if bb.get("ui/cmd/robot_control/trigger"):
+                                        bb.set("ui/cmd/robot_control/trigger", 0)
+                                        current_payload = bb.get("ui/cmd/robot_control/data")
+
+                                        if current_payload and isinstance(current_payload, dict):
+                                            current_target = current_payload.get("target")
+                                            current_action = current_payload.get("action")
+
+                                            # disable 신호 감지 시 즉시 중단
+                                            if current_target == "robot_home" and current_action == "disable":
+                                            #     Logger.info("[Home Move] Disable signal received. Stopping.")
+                                            #     try:
+                                            #         self.indy.stop_motion(stop_category=0)
+                                            #     except Exception as e:
+                                            #         Logger.error(f"[Home Move] Failed to stop: {e}")
+                                                break
+
+                                            # enable 신호 계속 들어오는 경우
+                                            if current_target == "robot_home" and current_action == "enable":
+                                                last_enable_time = time.time()
+
+                                    # 0.5초 동안 enable 신호 없으면 중단
+                                    if time.time() - last_enable_time > 0.5:
+                                        Logger.info("[Home Move] Timeout (0.5s). Stopping.")
+                                        # try:
+                                        #     self.indy.stop_motion(stop_category=0)
+                                        # except Exception as e:
+                                        #     Logger.error(f"[Home Move] Failed to stop: {e}")
+                                        break
+
+                                    # 홈 위치에 도달하면 중단
+                                    if self.is_home_pos:
+                                        Logger.info("[Home Move] Reached home position.")
+                                        break
+
+                                    # 홈으로 이동 (teaching_mode로 부드럽게)
+                                    try:
+                                        self.indy.movej(self.home_pos, teaching_mode=True, vel_ratio=30)
+                                    except Exception as e:
+                                        Logger.error(f"[Home Move] Failed to move: {e}")
+                                        break
                 else :
                     Logger.info(f"[Robot] Robot control command ignored: System is in MANUAL mode (SELECT_SW != 1).")
             else:
@@ -404,14 +464,21 @@ class RobotCommunication:
                     current_pos_id = motion_ack - 500
                     bb.set("robot/current/position", current_pos_id)
                     # Logger.info(f"[Safety] Robot position updated to: {current_pos_id}")
-            
+                #Sehoon ACK timestamp capture
+                if self.cmd_tracking_id is not None and motion_ack == (self.cmd_tracking_id + 500) and self.cmd_ack_ts is None:
+                    self.cmd_ack_ts = time.perf_counter()
+                    
             motion_done = self.get_intvar_address(int_var, int(self.config["int_var/motion_done/addr"]))
             if motion_done is not None:
                 bb.set("int_var/motion_done/val", motion_done)
+                #Sehoon DONE timestamp capture
+                if self.cmd_tracking_id is not None and (motion_done == self.cmd_tracking_id or motion_done == self.cmd_tracking_id + 10000):
+                    self.cmd_done_ts = time.perf_counter()
+                    self.last_done_ts = self.cmd_done_ts
 
             robot_pos = self.get_intvar_address(int_var, int(self.config["int_var/robot/position/addr"]))
             if robot_pos is not None:
-                bb.set("int_var/robot/position/val", robot_pos)
+                bb.set("int_var/robot/position/val", robot_pos) 
 
             # [추가] 로봇 컨트롤러의 grip_state 읽기 (백업용)
             grip_state = self.get_intvar_address(int_var, int(self.config["int_var/grip_state/addr"]))
@@ -445,7 +512,7 @@ class RobotCommunication:
 
                 # 재시도 시작 감지 (0에서 1로 변경)
                 if prev_grip_retry_conty == 0 and grip_retry == 1:
-                    # 재시도 카운트 초기화
+                    # 재시도 카운트 증가
                     retry_count = bb.get("robot/gripper/retry_count") or 0
                     bb.set("robot/gripper/retry_count", retry_count + 1)
                     bb.set("robot/gripper/retry_start_time", time.time())
@@ -545,7 +612,19 @@ class RobotCommunication:
             else:
                 # No ACK yet, or CMD is already 0. Keep sending the current command.
                 cmd_to_write = current_cmd
-
+            #Sehoon send timestamp capture
+            if cmd_to_write != 0:
+                if self.cmd_tracking_id != cmd_to_write:
+                    self.cmd_tracking_id = cmd_to_write
+                    self.cmd_send_ts = time.perf_counter()
+                    self.cmd_ack_ts = None
+                    self.cmd_done_ts = None
+                    gap_ms = None
+                    if self.last_done_ts is not None:
+                        gap_ms = (self.cmd_send_ts - self.last_done_ts) * 1000
+                    gap_str = f"{gap_ms:.2f} ms" if gap_ms is not None else "n/a"
+                    Logger.info(f"[IndyTiming] CMD {cmd_to_write} sent (tracking started, done->send {gap_str})")
+ 
             vars_to_set.append({'addr': int(self.config["int_var/cmd/addr"]), 'value': cmd_to_write})
 
             # Handle other variables to write
@@ -560,7 +639,21 @@ class RobotCommunication:
             # Part 3: Write the collected integer variables to the robot.
             if vars_to_set:
                 self.indy.set_int_variable(vars_to_set)
-
+             #Sehoon DONE latency logging
+            if self.cmd_tracking_id is not None and self.cmd_done_ts is not None:
+                send_ack = (self.cmd_ack_ts - self.cmd_send_ts) * 1000 if self.cmd_ack_ts and self.cmd_send_ts else None
+                send_done = (self.cmd_done_ts - self.cmd_send_ts) * 1000 if self.cmd_send_ts else None
+                ack_done = (self.cmd_done_ts - self.cmd_ack_ts) * 1000 if self.cmd_ack_ts else None
+                send_ack_str = f"{send_ack:.2f}" if send_ack is not None else "n/a"
+                send_done_str = f"{send_done:.2f}" if send_done is not None else "n/a"
+                ack_done_str = f"{ack_done:.2f}" if ack_done is not None else "n/a"
+                Logger.info(
+                    f"[IndyTiming] CMD {self.cmd_tracking_id} timings: send->ACK {send_ack_str} ms, send->DONE {send_done_str} ms, ACK->DONE {ack_done_str} ms"
+                )
+                self.cmd_send_ts = None
+                self.cmd_ack_ts = None
+                self.cmd_done_ts = None
+                self.cmd_tracking_id = None
             # Part 4: Handle boolean variables (like CMD_Init) separately.
             if bb.get("indy_command/reset_init_var"):
                 bb.set("indy_command/reset_init_var", False)

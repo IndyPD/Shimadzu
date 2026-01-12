@@ -303,7 +303,7 @@ class RobotExecuteMotionStrategy(Strategy):
             MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE
         ]
         if self.motion_name in gripper_commands:
-            self.timeout = 10.0  # 그리퍼 명령은 10초 타임아웃
+            self.timeout = 60.0  # 그리퍼 명령은 10초 타임아웃
         else:
             self.timeout = 300.0  # 다른 모션은 300초 타임아웃
         floor = robot_cmd.get("target_floor")
@@ -434,4 +434,4 @@ class RobotExecuteMotionStrategy(Strategy):
         # 다음 모션을 위해 명령 변수 초기화
         context.robot_motion_control(0)  # CMD를 0으로 설정
         bb.set("indy_command/reset_init_var", True)  # ACK/DONE 초기화
-        time.sleep(2)
+        time.sleep(0.1)
