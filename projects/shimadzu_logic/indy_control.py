@@ -67,6 +67,8 @@ class RobotCommunication:
         self.cmd_done_ts = None
         self.cmd_tracking_id = None
         self.last_done_ts = None  # track last DONE to measure idle gap before next CMD
+        self.o_motion_done = None
+        self.o_motion_ack = None
  
         # indy_communication에서 설정되는 속성들을 안전하게 초기화합니다.
         self.robot_current_pos = [0.0, 0.0, 0.0]
@@ -455,8 +457,25 @@ class RobotCommunication:
         try:
             # Part 1: Read all relevant variables from the robot first.
             int_var = self.indy.get_int_variable()['variables']
-
+            #int_var 리딩
             motion_ack = self.get_intvar_address(int_var, int(self.config["int_var/motion_ack/addr"]))
+            motion_done = self.get_intvar_address(int_var, int(self.config["int_var/motion_done/addr"]))
+            robot_pos = self.get_intvar_address(int_var, int(self.config["int_var/robot/position/addr"]))
+            grip_state = self.get_intvar_address(int_var, int(self.config["int_var/grip_state/addr"]))
+            grip_retry = self.get_intvar_address(int_var, int(self.config["int_var/grip_retry/addr"]))
+            
+            #Sehoon
+            bFlag = False
+            if motion_ack != self.o_motion_ack:
+                self.o_motion_ack = motion_ack
+                bFlag = True
+            if motion_done != self.o_motion_done:
+                self.o_motion_done = motion_done
+                bFlag = True
+            if bFlag:
+                Logger.info(f"[IndyTiming] CMD={bb.get('int_var/cmd/val')} motion_ack={motion_ack} motion_done={motion_done}")
+                
+
             if motion_ack is not None:
                 bb.set("int_var/motion_ack/val", motion_ack)
                 # 로봇의 현재 위치를 ack 값 기반으로 저장 (충돌 방지 로직용)
@@ -468,7 +487,7 @@ class RobotCommunication:
                 if self.cmd_tracking_id is not None and motion_ack == (self.cmd_tracking_id + 500) and self.cmd_ack_ts is None:
                     self.cmd_ack_ts = time.perf_counter()
                     
-            motion_done = self.get_intvar_address(int_var, int(self.config["int_var/motion_done/addr"]))
+            
             if motion_done is not None:
                 bb.set("int_var/motion_done/val", motion_done)
                 #Sehoon DONE timestamp capture
@@ -476,12 +495,12 @@ class RobotCommunication:
                     self.cmd_done_ts = time.perf_counter()
                     self.last_done_ts = self.cmd_done_ts
 
-            robot_pos = self.get_intvar_address(int_var, int(self.config["int_var/robot/position/addr"]))
+           
             if robot_pos is not None:
                 bb.set("int_var/robot/position/val", robot_pos) 
 
             # [추가] 로봇 컨트롤러의 grip_state 읽기 (백업용)
-            grip_state = self.get_intvar_address(int_var, int(self.config["int_var/grip_state/addr"]))
+            
             if grip_state is not None:
                 prev_grip_state = bb.get("int_var/grip_state/val") or 0
                 bb.set("int_var/grip_state/val", grip_state)
@@ -505,7 +524,7 @@ class RobotCommunication:
                     Logger.error(f"[Gripper] {error_message}: grip_state={grip_state}")
 
             # [추가] 로봇 컨트롤러의 grip_retry 읽기
-            grip_retry = self.get_intvar_address(int_var, int(self.config["int_var/grip_retry/addr"]))
+            
             if grip_retry is not None:
                 # Conty에서 읽은 이전 값 추적 (내부 상태 추적용)
                 prev_grip_retry_conty = bb.get("robot/gripper/retry_prev") or 0
@@ -647,21 +666,32 @@ class RobotCommunication:
                 send_ack_str = f"{send_ack:.2f}" if send_ack is not None else "n/a"
                 send_done_str = f"{send_done:.2f}" if send_done is not None else "n/a"
                 ack_done_str = f"{ack_done:.2f}" if ack_done is not None else "n/a"
+                
+                # [추가] ACK와 DONE이 동시에 수신되었는지 표시 (1ms 미만 차이)
+                note = ""
+                if ack_done is not None and ack_done < 1.0:
+                    note = " (Simultaneous Recv)"
+                    Logger.info(f"note !! \n")
+
                 Logger.info(
-                    f"[IndyTiming] CMD {self.cmd_tracking_id} timings: send->ACK {send_ack_str} ms, send->DONE {send_done_str} ms, ACK->DONE {ack_done_str} ms"
+                    f"[IndyTiming] CMD {self.cmd_tracking_id} timings: send->ACK {send_ack_str} ms, send->DONE {send_done_str} ms, ACK->DONE {ack_done_str} ms{note}"
                 )
                 self.cmd_send_ts = None
                 self.cmd_ack_ts = None
                 self.cmd_done_ts = None
                 self.cmd_tracking_id = None
             # Part 4: Handle boolean variables (like CMD_Init) separately.
+            # 로봇이 CMD를 인식하려면 init이 True여야 하므로, CMD가 살아있는 동안에는 True를 유지합니다.            
             if bb.get("indy_command/reset_init_var"):
                 bb.set("indy_command/reset_init_var", False)
                 self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': True}])
                 Logger.info("Sent CMD_Init (True) to robot controller to reset ACK/DONE.")
             else:
-                # To ensure the init signal is a one-shot trigger, we must explicitly set it to False
-                # when not being triggered. This mirrors the original logic of setting the int var to 0.
+                # CMD가 0이 아닐 때는 init을 True로 유지해 컨트롤러가 CMD를 계속 인식하도록 한다.
+                keep_init_on = cmd_to_write != 0
+                self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': keep_init_on}])
+                # CMD_Init을 False로 유지하여 ACK/DONE 변수가 깜빡이는 현상을 방지합니다.
+                # reset_init_var가 True일 때만 한 사이클 동안 True가 됩니다.
                 self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': False}])
 
         except Exception as e:
@@ -787,29 +817,33 @@ class RobotCommunication:
         # Test중일때는 사용안함
         is_door_open = False
 
-        # 1. 도어 열림 감지 시 즉시 정지
-        if is_door_open:
-            if self.indy.get_motion_data().get("speed_ratio") != 0:
-                self.indy.set_speed_ratio(0)
-                Logger.info(f"[Robot] Paused by door open. Set Speed Ratio to 0.")
+        # [추가] SELECT_SW가 0(Manual)이면 즉시 정지
+        is_manual_mode = bb.get("device/remote/input/SELECT_SW") == 0
+
+        # 1. 도어 열림 감지 시 또는 수동 모드 전환 시 즉시 정지
+        # if is_door_open or is_manual_mode:
+        #     if self.indy.get_motion_data().get("speed_ratio") != 0:
+        #         self.indy.set_speed_ratio(0)
+        #         reason = "door open" if is_door_open else "manual mode switch"
+        #         Logger.info(f"[Robot] Paused by {reason}. Set Speed Ratio to 0.")
         
-        # 2. 도어가 닫혀 있을 경우, UI 명령 처리
-        else:
-            # 2.1. UI에서 '일시정지' 명령을 받은 경우
-            if program_control_cmd == ProgramControl.PROG_PAUSE:
-                bb.set("ui/reset/program_control", True) # 명령 소비
-                if self.indy.get_motion_data().get("speed_ratio") != 0:
-                    self.indy.set_speed_ratio(0)
-                    Logger.info(f"[Robot] Paused by UI command. Set Speed Ratio to 0.")
+        # # 2. 도어가 닫혀 있을 경우, UI 명령 처리
+        # else:
+        #     # 2.1. UI에서 '일시정지' 명령을 받은 경우
+        #     if program_control_cmd == ProgramControl.PROG_PAUSE:
+        #         bb.set("ui/reset/program_control", True) # 명령 소비
+        #         if self.indy.get_motion_data().get("speed_ratio") != 0:
+        #             self.indy.set_speed_ratio(0)
+        #             Logger.info(f"[Robot] Paused by UI command. Set Speed Ratio to 0.")
             
-            # 2.2. UI에서 '재시작' 또는 '시작' 명령을 받은 경우
-            elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
-                bb.set("ui/reset/program_control", True) # 명령 소비
-                if bb.get("process/program/is_resume") and self.indy.get_motion_data().get("speed_ratio") != 100:
-                    self.indy.set_speed_ratio(100) # (70)
-                    bb.set("process/program/is_resume", False)
-                    Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
-                    Logger.info(f"[Robot] is_resume flag detected. Set Speed Ratio to 100. and reset the flag.")
+        #     # 2.2. UI에서 '재시작' 또는 '시작' 명령을 받은 경우
+        #     elif program_control_cmd in (ProgramControl.PROG_RESUME, ProgramControl.PROG_START):
+        #         bb.set("ui/reset/program_control", True) # 명령 소비
+        #         if bb.get("process/program/is_resume") and self.indy.get_motion_data().get("speed_ratio") != 100:
+        #             self.indy.set_speed_ratio(100) # (70)
+        #             bb.set("process/program/is_resume", False)
+        #             Logger.info(f"[Robot] Resumed by UI command. Set Speed Ratio to 100.")
+        #             Logger.info(f"[Robot] is_resume flag detected. Set Speed Ratio to 100. and reset the flag.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.
         robot_speed = self.indy.get_motion_data()['speed_ratio']
@@ -818,7 +852,7 @@ class RobotCommunication:
         match = re.search(r'/index/(\d+)', self.program_name)
         if match:
             program_index = match.group(1)
-            if program_index == "1":
+            if program_index == str(self.config.get("conty_main_program_index", "1")):
                 ''' 프로그램 시작/일시정지/정지/다시시작 버튼  '''
                 if self.program_state == ProgramState.PROG_IDLE:
                     bb.set("ui/state/program_state", 0)  # Init
@@ -833,3 +867,12 @@ class RobotCommunication:
                 #         bb.set("ui/state/program_state", 3)  # Pause
                 #     elif self.indy.get_motion_data().get("speed_ratio", 100) == 100:
                 #         bb.set("ui/state/program_state", 2)  # Resume
+
+            elif program_index == str(self.config.get("conty_warming_program_index", "3")):
+                ''' 예열 On, Off 버튼 '''
+                if self.program_state == ProgramState.PROG_IDLE:
+                    bb.set("ui/state/warming_state", 0)
+                elif self.program_state == ProgramState.PROG_RUNNING:
+                    bb.set("ui/state/warming_state", 1)
+                elif self.program_state == ProgramState.PROG_STOPPING:
+                    bb.set("ui/state/warming_state", 2)

@@ -27,6 +27,7 @@
   "indy_command/reset_init_var": false,
   "indy_state/button_dt": 0,
   "indy_state/button_stop": 0,
+  "ui/state/warming_state": 0,
   "indy": {
     "robot_state": 0,
     "is_sim_mode": false,

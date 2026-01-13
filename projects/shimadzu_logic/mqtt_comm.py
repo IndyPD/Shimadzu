@@ -343,12 +343,41 @@ class MqttComm:
                     target = payload.get("target")
                     if target == "robot_program":
                         if action == "start":
+                            # 홈 위치 확인
+                            indy_data = self.bb.get("indy")
+                            is_home = indy_data.get("is_home_pos", False) if indy_data else False
+
+                            if not is_home:
+                                if self.Logger: self.Logger.warn(f"[LOGIC] Robot Program START rejected: Robot is not at home position.")
+                                self.send_error_event(category="robot", code="R-004", message="로봇이 홈 위치가 아닙니다. 홈 위치로 이동해주세요.", status="Manual")
+                                # self.send_response_ack(header, status="error", reason="로봇이 홈 위치가 아닙니다. 홈 위치로 이동해주세요.", error_code="ROBOT_NOT_HOME")
+                                return
+
                             program_index = 1 # Conty Program Index 1번 (Main)
                             if self.Logger: self.Logger.info(f"[LOGIC] Conty Program START command received for index: {program_index}")
                             self.bb.set("indy_command/play_program_index", program_index)
                             self.bb.set("indy_command/play_program_trigger", True)
                         elif action == "stop":
                             if self.Logger: self.Logger.info(f"[LOGIC] Conty Program STOP command received.")
+                            self.bb.set("indy_command/stop_program", True)
+                    elif target == "warming_program":
+                        if action == "start":
+                            # 홈 위치 확인
+                            indy_data = self.bb.get("indy")
+                            is_home = indy_data.get("is_home_pos", False) if indy_data else False
+
+                            if not is_home:
+                                if self.Logger: self.Logger.warn(f"[LOGIC] Warming Program START rejected: Robot is not at home position.")
+                                self.send_error_event(category="robot", code="R-004", message="로봇이 홈 위치가 아닙니다. 홈 위치로 이동해주세요.", status="Manual")
+                                # self.send_response_ack(header, status="error", reason="로봇이 홈 위치가 아닙니다.", error_code="ROBOT_NOT_HOME")
+                                return
+
+                            program_index = 3 # Conty Program Index 3번 (Warming)
+                            if self.Logger: self.Logger.info(f"[LOGIC] Warming Program START command received for index: {program_index}")
+                            self.bb.set("indy_command/play_program_index", program_index)
+                            self.bb.set("indy_command/play_program_trigger", True)
+                        elif action == "stop":
+                            if self.Logger: self.Logger.info(f"[LOGIC] Warming Program STOP command received.")
                             self.bb.set("indy_command/stop_program", True)
                     elif target == "gripper" and action == "retry":
                         # 그리퍼 파지 재시도 명령 처리 (MQTT_Protocol.md Section 그리퍼 파지 실패시 재시도)
@@ -456,10 +485,15 @@ class MqttComm:
                     all_states = [robot_comm_ok, shimadzu_comm_ok, gauge_comm_ok, rio_comm_ok, qr_comm_ok, vision_comm_ok]
                     system_entire_state = 1 if all(s == 1 for s in all_states) else 0
     
-                    # 로봇 프로그램 구동 상태 (0: 초기값, 1: 구동중, 2: 정지중)
+                    # 로봇 프로그램 구동 상태 (0: 초기값, 1: 구동중, 2: 정지중, 3: 예열)
                     program_state = self.bb.get("indy").get("program_state")
+                    warming_state = self.bb.get("ui/state/warming_state")
                     program_run_status = 0 # 초기값 (IDLE)
-                    if program_state == 1: # ProgramState.PROG_RUNNING
+
+                    # 예열 프로그램이 실행중인 경우 (warming_state: 0=IDLE, 1=RUNNING, 2=STOPPING)
+                    if warming_state == 1:
+                        program_run_status = 3 # 예열 구동중
+                    elif program_state == 1: # ProgramState.PROG_RUNNING
                         program_run_status = 1 # 구동중
                     elif program_state in [2, 3]: # ProgramState.PROG_PAUSING, ProgramState.PROG_STOPPING
                         program_run_status = 0

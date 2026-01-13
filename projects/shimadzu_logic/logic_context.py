@@ -1147,7 +1147,6 @@ class LogicContext(ContextBase):
                         return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
         
-        # Seq 2: Robot-Motion-load_tensile_machine
         elif self._seq == 2:
             # Logged in seq 1
             robot_cmd = {"process": MotionCommand.LOAD_TENSILE_MACHINE, "state": ""}
@@ -1181,11 +1180,21 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper2On", "Device-Tensile", "Done")
                     Logger.info(f"[Logic] Step 5: Lower tensile gripper (GRIPPER_2) on done.")
                     bb.set(device_cmd_key, None)
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
-                    self.set_seq(6)
+                    
+                    # [수정] 0.5초 딜레이 추가
+                    self.delay_start = time.time()
+                    Logger.info(f"[Logic] Step 5: Waiting 0.5s for stability.")
+                    self.set_seq(55)
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper2On", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 5 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # [추가] 0.5초 딜레이 대기 상태
+        elif self._seq == 55:
+            if time.time() - self.delay_start > 1.0:
+                self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
+                self.set_seq(6)
             return LogicEvent.NONE
 
         # Seq 4: Robot-Motion-GRIPPER_OPEN_AT_TENSILE_MACHINE
@@ -1197,15 +1206,16 @@ class LogicContext(ContextBase):
             self.set_seq(7)
             return LogicEvent.NONE
         elif self._seq == 7:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
-                self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
-                Logger.info(f"[Logic] Step 7: Gripper open at tensile machine done.")
-                bb.set(robot_cmd_key, None)
-                self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_Retreat", "Robot", "Start")
-                self.set_seq(8)
-            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
-                Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_TENSILE_MACHINE:
+                if get_robot_cmd.get("state") == "done":
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
+                    Logger.info(f"[Logic] Step 7: Gripper open at tensile machine done.")
+                    bb.set(robot_cmd_key, None)
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_Retreat", "Robot", "Start")
+                    self.set_seq(8)
+                elif get_robot_cmd.get("state") == "error":
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
+                    Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 5: Robot-Motion-RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD

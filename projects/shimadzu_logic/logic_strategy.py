@@ -1080,6 +1080,10 @@ class LogicProcessCompleteStrategy(Strategy):
         # 런타임 계산 중지를 위해 시작 시간 객체 제거
         bb.set("process_status/runtime_start_obj", None)
 
+        # # [수정] 공정 완료 시 자동 시작 명령 리셋을 prepare에서 수행
+        # bb.set("ui/cmd/auto/tensile", 0)
+        # Logger.info("[Logic] Auto start command has been reset. System is in COMPLETE state.")
+
         # MQTT 'process_completed' 이벤트 발행
         batch_data = bb.get("process/auto/batch_data")
         batch_id = batch_data.get("batch_id", "N/A")
@@ -1094,10 +1098,24 @@ class LogicProcessCompleteStrategy(Strategy):
     
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
-        # 공정 완료 후, 자동 시작 명령을 리셋하여 무한 루프를 방지합니다.
+        
+        # # [수정] 바로 DONE을 반환하지 않고, 재시작 명령이나 리셋 명령이 올 때까지 대기
+        # # 이렇게 해야 UI에서 "완료" 상태를 확인할 수 있음
+        # if bb.get("ui/cmd/auto/tensile") == 1:
+        #     Logger.info("[Logic] Start command received. Exiting COMPLETE state.")
+        
+        # [수정] 공정 완료 시 자동 시작 명령 리셋을 prepare에서 수행
+        
         bb.set("ui/cmd/auto/tensile", 0)
-        Logger.info("[Logic] Auto start command has been reset. Waiting for next batch command.")
+        Logger.info("[Logic] Auto start command has been reset. System is in COMPLETE state.")
+
         return LogicEvent.DONE
+        
+        # if bb.get("ui/cmd/data/reset") == 1:
+        #     Logger.info("[Logic] Data reset command received. Exiting COMPLETE state.")
+        #     return LogicEvent.DONE
+
+        # return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
