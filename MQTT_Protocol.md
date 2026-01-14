@@ -796,7 +796,7 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
         "msg" : ""
       },
       "binpick": {
-        "conntion_info" : "192.168.2.30",
+        "conntion_info" : "192.168.2.16",
         "state" : 1,
         "msg" : ""
       }

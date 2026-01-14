@@ -1031,32 +1031,33 @@ class LogicContext(ContextBase):
                     Logger.info(f"[Logic] Step 5: Retreat from align done.")
                     bb.set(robot_cmd_key, None)
                     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq}_MoveHome", "Robot", "Start")
-                    self.set_seq(6)
+                    self.set_seq(0)
+                    return LogicEvent.DONE
                 elif get_robot_cmd.get("state") == "error":
                     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
                     Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 4: Robot-Motion-ALIGNER_FRONT_HOME
-        elif self._seq == 6:
-            # Logged in seq 7
-            robot_cmd = {"process": MotionCommand.ALIGNER_FRONT_HOME, "state": ""}
-            Logger.info(f"[Logic] Step 6: Sending command: {MotionCommand.ALIGNER_FRONT_HOME}")
-            bb.set(robot_cmd_key, robot_cmd)
-            self.set_seq(7)
-            return LogicEvent.NONE
-        elif self._seq == 7:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.ALIGNER_FRONT_HOME:
-                if get_robot_cmd.get("state") == "done":
-                    self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
-                    Logger.info(f"[Logic] Step 7: Move to Home from Aligner done.")
-                    bb.set(robot_cmd_key, None)
-                    self.set_seq(0)
-                    return LogicEvent.DONE
-                elif get_robot_cmd.get("state") == "error":
-                    self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
-                    Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
-            return LogicEvent.NONE
+        # elif self._seq == 6:
+        #     # Logged in seq 7
+        #     robot_cmd = {"process": MotionCommand.ALIGNER_FRONT_HOME, "state": ""}
+        #     Logger.info(f"[Logic] Step 6: Sending command: {MotionCommand.ALIGNER_FRONT_HOME}")
+        #     bb.set(robot_cmd_key, robot_cmd)
+        #     self.set_seq(7)
+        #     return LogicEvent.NONE
+        # elif self._seq == 7:
+        #     if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.ALIGNER_FRONT_HOME:
+        #         if get_robot_cmd.get("state") == "done":
+        #             self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
+        #             Logger.info(f"[Logic] Step 7: Move to Home from Aligner done.")
+        #             bb.set(robot_cmd_key, None)
+        #             self.set_seq(0)
+        #             return LogicEvent.DONE
+        #         elif get_robot_cmd.get("state") == "error":
+        #             self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
+        #             Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
+        #     return LogicEvent.NONE
 
         return LogicEvent.NONE
         

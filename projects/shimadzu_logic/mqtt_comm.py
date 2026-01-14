@@ -315,7 +315,25 @@ class MqttComm:
                             self.bb.set("ui/command/program_control", self.ProgramControl.PROG_RESUME.value)
                             self.bb.set("process/program/is_resume", True)
             elif cmd == "binpick_control":
-                self.binpick_command = 1
+                # Bin Picking 제어 명령 처리 (MQTT_Protocol.md Section 3.2)
+                if self.role == 'logic' and self.bb:
+                    if self.Logger: self.Logger.info(f"[LOGIC] Bin Picking control command received: {action}")
+                    if action == "start":
+                        self.bb.set("ui/cmd/binpick/action", "start")
+                        self.bb.set("ui/cmd/binpick/trigger", 1)
+                    elif action == "stop":
+                        self.bb.set("ui/cmd/binpick/action", "stop")
+                        self.bb.set("ui/cmd/binpick/trigger", 1)
+            elif cmd == "vision_control":
+                # Vision 연결 제어 명령 처리 (MQTT_Protocol.md Section 3.3)
+                if self.role == 'logic' and self.bb:
+                    if self.Logger: self.Logger.info(f"[LOGIC] Vision control command received: {action}")
+                    if action == "connect":
+                        self.bb.set("ui/cmd/vision/action", "connect")
+                        self.bb.set("ui/cmd/vision/trigger", 1)
+                    elif action == "disconnect":
+                        self.bb.set("ui/cmd/vision/action", "disconnect")
+                        self.bb.set("ui/cmd/vision/trigger", 1)
             elif cmd == "system_control":
                 if action == "do_control":
                     data = payload.get("params")
@@ -540,8 +558,9 @@ class MqttComm:
                                 "msg": self.bb.get("device/gauge/comm_state/value") if gauge_comm_ok else "Connection Failed"
                             },
                             "binpick": {
-                                "conntion_info": "192.168.2.30",
+                                "conntion_info": "192.168.2.16",
                                 "state": 1 if vision_comm_ok else 0,
+                                "comm_state": 1 if vision_comm_ok else 0,
                                 "msg": "OK" if vision_comm_ok else "Connection Failed"
                             }
                         }

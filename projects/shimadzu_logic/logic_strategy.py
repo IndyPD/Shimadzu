@@ -526,7 +526,7 @@ class LogicDetermineTaskStrategy(Strategy):
                     bb.set("process/auto/current_step", 1)
                     return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
                 else:
-                    bb.set("process/auto/current_step", 2)
+                    bb.set("process/auto/current_step", 3)
                     context.db.update_test_tray_item(tray_no, spec_no, {'status': 2})
                     return LogicEvent.DO_PICK_SPECIMEN
             else:
@@ -553,14 +553,16 @@ class LogicDetermineTaskStrategy(Strategy):
 
         if step == 1: # QR 인식 완료 -> 시편 잡기 (2)
             Logger.info("[Logic] DetermineTask: Step 1 (QR Read) done. -> Step 2 (Pick Specimen).")
-            bb.set("process/auto/current_step", 2)
+            bb.set("process/auto/current_step", 3)
+            # bb.set("process/auto/current_step", 2)
+
             # 이동중 (2)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 2})
             return LogicEvent.DO_PICK_SPECIMEN
-        elif step == 2: # 시편 잡기 완료 -> 홈 위치로 이동 (3)
-            Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Rack Front Home).")
-            bb.set("process/auto/current_step", 3)
-            return LogicEvent.DO_MOVE_TO_RACK_FRONT_HOME
+        # elif step == 2: # 시편 잡기 완료 -> 홈 위치로 이동 (3)
+        #     Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Rack Front Home).")
+        #     bb.set("process/auto/current_step", 3)
+        #     return LogicEvent.DO_MOVE_TO_RACK_FRONT_HOME
             
         elif step == 3: # 시편 잡기 완료 -> 두께 측정기로 이동 (3)
             Logger.info("[Logic] DetermineTask: Step 2 (Pick Specimen) done. -> Step 3 (Move to Indicator).")
@@ -698,8 +700,9 @@ class LogicDetermineTaskStrategy(Strategy):
                     "tray_num": tray_no,
                     "specimen_num": next_spec_no
                 })
-                # 2번 시편부터는 QR 읽기(Step 1)를 건너뛰고 바로 시편 잡기(Step 2)로 이동
-                bb.set("process/auto/current_step", 2)
+                # 2번 시편부터는 QR 읽기(Step 1)를 건너뛰고 바로 시편 잡기(Step 3)로 이동
+                # bb.set("process/auto/current_step", 2)
+                bb.set("process/auto/current_step", 3)
                 # 이동중 (2)
                 context.db.update_test_tray_item(tray_no, next_spec_no, {'status': 2})
                 # `batch_test_items`는 트레이(시퀀스) 단위로 상태를 관리하므로, 개별 시편 상태는 DB에 업데이트하지 않음.

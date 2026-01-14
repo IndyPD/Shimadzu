@@ -200,6 +200,19 @@
   "ui/cmd/qr_read/retry": 0,
   "ui/cmd/data/save": 0,
   "ui/cmd/data/reset": 0,
+  "ui/cmd/vision/trigger": 0,
+  "ui/cmd/vision/action": "",
+  "ui/cmd/binpick/trigger": 0,
+  "ui/cmd/binpick/action": "",
+
+  "device/vision/scene_result": {},
+  "device/vision/grasp_result": {},
+  "device/vision/task_status": {},
+  "device/vision/target_coords": {
+    "target_x": 0.0,
+    "target_y": 0.0,
+    "target_theta": 0.0
+  },
 
   "process_status/batch_info" : {
     "batch_id": "",

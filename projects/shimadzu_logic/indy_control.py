@@ -15,6 +15,14 @@ from pkg.utils.rotation_utils import diff_cmd
 
 import numpy as np
 
+# Vision Handler import
+try:
+    from .vision_client_for_smz import VisionHandler
+    VISION_HANDLER_AVAILABLE = True
+except ImportError as e:
+    VISION_HANDLER_AVAILABLE = False
+    print(f"[WARNING] VisionHandler import failed: {e}")
+
 global_config = GlobalConfig()
 bb = GlobalBlackboard()
 
@@ -111,6 +119,20 @@ class RobotCommunication:
 
         # [Robot Home Move] 홈 이동 상태 관리
         self.robot_home_last_enable_time = None
+
+        # [Vision Handler] Bin Picking을 위한 VisionHandler 초기화
+        self.vision_handler = None
+        if VISION_HANDLER_AVAILABLE:
+            vision_ip = general_config.get("bin_picking_ip", "192.168.2.16")
+            vision_port = general_config.get("bin_picking_port", 5003)
+            try:
+                self.vision_handler = VisionHandler(host=vision_ip, port=vision_port, robot_ip=robot_ip)
+                Logger.info(f'[VisionHandler] VisionHandler initialized successfully (Vision: {vision_ip}:{vision_port}, Robot: {robot_ip})')
+            except Exception as e:
+                Logger.error(f'[VisionHandler] Failed to initialize VisionHandler: {e}', exc_info=True)
+                self.vision_handler = None
+        else:
+            Logger.warn(f'[VisionHandler] VisionHandler module not available. Bin Picking features will be disabled.')
 
     def start(self):
         """ Start the robot communication thread """
@@ -257,6 +279,93 @@ class RobotCommunication:
         Command request from FSM by blackbaord
         - only work in NotReadyIdle mode (Program is NOT running)
         """
+
+        # [Vision Control] MQTT → Blackboard → VisionHandler 명령 처리
+        if bb.get("ui/cmd/vision/trigger"):
+            bb.set("ui/cmd/vision/trigger", 0)  # Consume trigger
+            action = bb.get("ui/cmd/vision/action")
+
+            if self.vision_handler is None:
+                Logger.error("[VisionControl] VisionHandler is not initialized.")
+            else:
+                if action == "connect":
+                    Logger.info("[VisionControl] Connecting to Vision System...")
+                    success = self.vision_handler.connect()
+                    if success:
+                        Logger.info("[VisionControl] Vision System connected successfully.")
+                    else:
+                        Logger.error("[VisionControl] Failed to connect to Vision System.")
+                elif action == "disconnect":
+                    Logger.info("[VisionControl] Disconnecting from Vision System...")
+                    self.vision_handler.disconnect()
+                    Logger.info("[VisionControl] Vision System disconnected.")
+
+        # [Bin Pick Control] MQTT → Blackboard → VisionHandler 명령 처리
+        if bb.get("ui/cmd/binpick/trigger"):
+            bb.set("ui/cmd/binpick/trigger", 0)  # Consume trigger
+            action = bb.get("ui/cmd/binpick/action")
+
+            if self.vision_handler is None:
+                Logger.error("[BinPickControl] VisionHandler is not initialized.")
+            elif not self.vision_handler.client.sock:
+                Logger.error("[BinPickControl] Vision System is not connected. Please connect first.")
+            else:
+                if action == "start":
+                    Logger.info("[BinPickControl] Starting Bin Picking sequence...")
+                    try:
+                        # Step 1: Check Scene 요청
+                        Logger.info("[BinPickControl] Step 1: Sending CHECK_SCENE request...")
+                        self.vision_handler.check_scene(mode="SINGLE")
+
+                        # Step 2: SCENE_RESULT 응답 대기 (binpicking.md Section 7 참조)
+                        Logger.info("[BinPickControl] Step 2: Waiting for SCENE_RESULT...")
+                        timeout = 10.0  # 10초 타임아웃
+                        start_time = time.time()
+                        scene_result = None
+
+                        while (time.time() - start_time) < timeout:
+                            scene_result = bb.get("device/vision/scene_result")
+                            if scene_result and scene_result.get("type") == "SCENE_RESULT":
+                                Logger.info(f"[BinPickControl] SCENE_RESULT received: status={scene_result.get('status')}")
+                                break
+                            time.sleep(0.1)  # 100ms 주기로 체크
+
+                        if not scene_result:
+                            Logger.error("[BinPickControl] Timeout waiting for SCENE_RESULT.")
+                            return
+
+                        # Step 3: SCENE_RESULT 분석
+                        status = scene_result.get("status")
+
+                        if status == "TASK_DONE":
+                            Logger.info("[BinPickControl] No specimens detected (TASK_DONE).")
+                            return
+                        elif status == "OVERLAPPING":
+                            Logger.warn("[BinPickControl] Specimens are overlapping. Shake motion needed.")
+                            # TODO: Shake 동작 구현 필요 시 여기에 추가
+                            return
+                        elif status == "TASK_EXECUTION":
+                            # Step 4: 시편 위치로 로봇 이동
+                            specimens = scene_result.get("specimens", [])
+                            if not specimens:
+                                Logger.error("[BinPickControl] No specimen data in TASK_EXECUTION result.")
+                                return
+
+                            Logger.info(f"[BinPickControl] Step 4: Moving to specimen location (count={len(specimens)})...")
+                            success = self.vision_handler.move_to_vision_target_test()
+
+                            if success:
+                                Logger.info("[BinPickControl] Bin Picking sequence completed successfully.")
+                            else:
+                                Logger.error("[BinPickControl] Failed to move to target.")
+                        else:
+                            Logger.error(f"[BinPickControl] Unknown SCENE_RESULT status: {status}")
+
+                    except Exception as e:
+                        Logger.error(f"[BinPickControl] Error during Bin Picking: {e}", exc_info=True)
+                elif action == "stop":
+                    Logger.info("[BinPickControl] Stopping scene check...")
+                    self.vision_handler.stop_scene()
 
         ''' MQTT Protocol compliant robot control '''
         # TODO 146-172번째 줄 코드 프로그램 정지 상태일때만 가능하도록 코드작성
