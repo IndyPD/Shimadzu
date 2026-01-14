@@ -1252,7 +1252,7 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Done")
                     Logger.info(f"[Logic] Step 11: Upper tensile gripper (GRIPPER_1) on done.")
                     bb.set(device_cmd_key, None)
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_MoveHome", "Robot", "Start")
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
                     self.set_seq(12)
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Error")
@@ -1262,9 +1262,9 @@ class LogicContext(ContextBase):
         # Seq 7: Robot-Motion-MOVE_TO_HOME, Device-EXT-EXT_FORWARD
         elif self._seq == 12:
             # Logged in seq 11
-            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
-            Logger.info(f"[Logic] Step 12: Sending command: {MotionCommand.MOVE_TO_HOME}")
-            bb.set(robot_cmd_key, robot_cmd)
+            # robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
+            # Logger.info(f"[Logic] Step 12: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            # bb.set(robot_cmd_key, robot_cmd)
             # 신율계(EXT) 전진 명령 추가
             device_cmd = {"command": DeviceCommand.EXT_FORWARD, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 12: Sending command: {DeviceCommand.EXT_FORWARD} (Extensometer Forward)")
@@ -1273,24 +1273,24 @@ class LogicContext(ContextBase):
             return LogicEvent.NONE
         elif self._seq == 13:
             # 신율계(EXT) 전진 완료 확인 추가
-            robot_done = get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done"
+            # robot_done = get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done"
             ext_done = get_device_cmd and get_device_cmd.get("command") == DeviceCommand.EXT_FORWARD and get_device_cmd.get("is_done")
 
-            if robot_done and ext_done:
+            if ext_done:
                 if get_device_cmd.get("state") == "done":
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
+                    # self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Done")
-                    Logger.info(f"[Logic] Step 13: Move to home and extensometer forward done. Specimen loaded successfully.")
-                    bb.set(robot_cmd_key, None)
+                    Logger.info(f"[Logic] Step 13: Extensometer forward done. Specimen loaded successfully.")
+                    # bb.set(robot_cmd_key, None)
                     bb.set(device_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.DONE
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 13 extensometer failed: {get_device_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
-            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
-                Logger.error(f"[Logic] Step 13 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
+            # elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+            #     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
+            #     Logger.error(f"[Logic] Step 13 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 8: 인장기 하중 제거, shimadzu쪽으로 명령 전달

@@ -365,6 +365,14 @@ class RobotCommunication:
                                     # 홈 위치에 도달하면 중단
                                     if self.is_home_pos:
                                         Logger.info("[Home Move] Reached home position.")
+                                        # bb.set("logic/send_event", {
+                                        #     "kind": "event",
+                                        #     "evt": "error",
+                                        #     "status": "Manual",
+                                        #     "category": "robot",
+                                        #     "code": "R-004",
+                                        #     "message": "이미 홈 위치에 도달했습니다.."
+                                        # })
                                         break
 
                                     # 홈으로 이동 (teaching_mode로 부드럽게)
@@ -846,6 +854,24 @@ class RobotCommunication:
         #             Logger.info(f"[Robot] is_resume flag detected. Set Speed Ratio to 100. and reset the flag.")
         
         # 3. 현재 로봇 속도를 블랙보드에 기록합니다.
+        if self.program_state == ProgramState.PROG_RUNNING:
+            # 1. 도어 열림 또는 수동 모드(SELECT_SW != 1) 전환 시 즉시 정지 (속도 0)
+            if is_door_open or is_manual_mode:
+                #TODO warming state == 1일 경우에는 수동모드일지라도 속도가 100이 되도록 해줘. 
+                if bb.get("ui/state/warming_state") == 1 :
+                    if self.indy.get_motion_data().get("speed_ratio") == 0:
+                        self.indy.set_speed_ratio(100)
+                        Logger.info(f"[Robot] Resumed by warming state (Manual Mode ignored). Set Speed Ratio to 100.")
+                elif self.indy.get_motion_data().get("speed_ratio") != 0:
+                    self.indy.set_speed_ratio(0)
+                    reason = "door open" if is_door_open else "manual mode switch"
+                    Logger.info(f"[Robot] Paused by {reason}. Set Speed Ratio to 0.")
+            # 2. 자동 모드(SELECT_SW == 1) 복귀 시 속도 100으로 재개
+            else: # not is_door_open and not is_manual_mode
+                if self.indy.get_motion_data().get("speed_ratio") == 0:
+                    self.indy.set_speed_ratio(100)
+                    Logger.info(f"[Robot] Resumed by auto mode switch. Set Speed Ratio to 100.")
+
         robot_speed = self.indy.get_motion_data()['speed_ratio']
         bb.set("robot/speed", robot_speed)
 

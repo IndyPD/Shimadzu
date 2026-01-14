@@ -569,7 +569,7 @@ UI는 Logic에게 Bin Picking 동작을 명령하고, Logic은 내부적으로 B
 *   **Phase**: `DETECTING`, `RECOGNIZED`, `SHAKE`, `POSE_READY`, `PICKING`, `MOVING`, `PLACE`, `ERROR` 등
 
 ### 3.2. UI → LOGIC Bin Picking 명령 예시 (Start)
-
+action : start/stop
 ```json
 {
   "header": {
@@ -584,13 +584,12 @@ UI는 Logic에게 Bin Picking 동작을 명령하고, Logic은 내부적으로 B
     "kind": "command",
     "cmd": "binpick_control",
     "action": "start",
-    "job_id": "BP20251118-001"
   }
 }
 ```
-
-### 3.3. LOGIC → UI Bin Picking ACK
-
+ 
+### LOGIC → UI Bin Picking ACK
+ 
 ```json
 {
   "header": {
@@ -607,11 +606,67 @@ UI는 Logic에게 Bin Picking 동작을 명령하고, Logic은 내부적으로 B
     "status": "ok",
     "reason": "BinPicking operation started",
     "data": {
-      "job_id": "BP20251118-001"
     }
   }
 }
 ```
+
+### 3.3. UI → LOGIC vision 명령 예시 (connect)
+action : connect / disconnect
+```json
+{
+  "header": {
+    "msg_type": "ui.command",
+    "source": "ui",
+    "target": "logic",
+    "msg_id": "ui-vision-cmd-001",
+    "ack_required": true,
+    "timestamp": "2025-11-18T12:00:00.000"
+  },
+  "payload": {
+    "kind": "command",
+    "cmd": "vision_control",
+    "action": "connect"
+  }
+}
+```
+### LOGIC → UI Bin Picking ACK (connect)
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-vision-connect-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.050"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-vision-cmd-001",
+    "status": "ok/error",
+    "reason": "VISION_CONNECT_OK / VISION_CONNECT_FAIL "
+  }
+}
+```
+### LOGIC → UI Bin Picking ACK (disconnect)
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-vision-disconnect-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:01:00.030"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-vision-cmd-002",
+    "status": "ok / error",
+    "reason": "VISION_DISCONNECT_OK / VISION_DISCONNECT_FAIL"
+  }
+}
 
 ### 3.4. LOGIC → UI Bin Picking 상태 보고 (Status Report)
 Logic은 Bin Picking 시스템으로부터 받은 데이터를 가공하여 UI에 상시 보고합니다.

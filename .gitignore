@@ -18,3 +18,5 @@ ENV/
 .idea/
 
 projects/shimadzu_logic/motion_data/*
+ref_vision/*
+vision_client_for_smz.py
