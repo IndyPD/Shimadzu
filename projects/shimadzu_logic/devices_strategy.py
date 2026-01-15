@@ -84,6 +84,7 @@ class ErrorStrategy(Strategy):
 
         self.next_event = DeviceEvent.NONE
         self.monitor_sol_sensor = False
+        self.monitor_emo = False
 
         # 감지된 위반 중 자동 복구 가능한 항목이 있는지 확인합니다.
         if violation_code & auto_recoverable_violations:
@@ -94,6 +95,10 @@ class ErrorStrategy(Strategy):
             # SOL 센서 에러인 경우, 공압 공급(센서값 1)을 모니터링하여 자동 복구 시도
             Logger.info("[device] SOL_SENSOR_ERR detected. Monitoring SOL_SENSOR for auto-recovery.")
             self.monitor_sol_sensor = True
+        elif violation_code & DeviceViolation.ISO_EMERGENCY_BUTTON:
+            # 비상정지 버튼인 경우, EMO 해제를 모니터링하여 자동 복구 시도
+            Logger.info("[device] ISO_EMERGENCY_BUTTON detected. Monitoring EMO signals for auto-recovery.")
+            self.monitor_emo = True
         else:
             # SOL 센서 에러와 같은 하드웨어 문제는 수동 조치가 필요합니다.
             # FSM이 ERROR와 RECOVERING을 반복하지 않도록 ERROR 상태에 머무릅니다.
@@ -112,6 +117,16 @@ class ErrorStrategy(Strategy):
             if context.remote_input_data and len(context.remote_input_data) > DigitalInput.SOL_SENSOR:
                 if context.remote_input_data[DigitalInput.SOL_SENSOR] == 1:
                     Logger.info("[device] SOL_SENSOR recovered (Value: 1). Triggering recovery.")
+                    return DeviceEvent.RECOVER
+
+        if self.monitor_emo:
+            # EMO 신호 확인 (NC: 0=트리거, 1=해제)
+            if context.remote_input_data and len(context.remote_input_data) > DigitalInput.EMO_04_SW:
+                emo_cleared = (context.remote_input_data[DigitalInput.EMO_02_SW] == 1 and
+                               context.remote_input_data[DigitalInput.EMO_03_SW] == 1 and
+                               context.remote_input_data[DigitalInput.EMO_04_SW] == 1)
+                if emo_cleared:
+                    Logger.info("[device] EMO signals cleared (all EMO = 1). Triggering recovery.")
                     return DeviceEvent.RECOVER
 
         return self.next_event
@@ -955,19 +970,31 @@ class Gripper1ReleaseStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter Gripper1ReleaseStrategy")
         Logger.info("[device] Device: Releasing Gripper (Tensile Upper Chuck).")
+        self.error_count = 0  # 에러 카운트
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # 상단 그리퍼(GRIPPER_1) 열기
-        if context.chuck_1_open():
+        # 상단 그리퍼(GRIPPER_1) 열기 - Non-blocking 20초 대기
+        status = context.chuck_1_open()
+        if status == "done":
             return DeviceEvent.GRIPPER_1_RELEASE_DONE
-        else:
-            return DeviceEvent.GRIPPER_FAIL
+        elif status == "error":
+            self.error_count += 1
+            Logger.info(f"[device] Failed to open chuck 1 (Upper). Error count {self.error_count}/5")
+
+            if self.error_count >= 5:
+                Logger.error(f"[device] chuck_1_open failed after 5 errors. Giving up.")
+                return DeviceEvent.GRIPPER_FAIL
+            else:
+                time.sleep(0.2)  # 재시도 전 대기
+                return DeviceEvent.NONE  # 재시도 계속
+
+        return DeviceEvent.NONE
 
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         cmd_data = bb.get("process/auto/device/cmd")
         if isinstance(cmd_data, dict):
             is_success = event == DeviceEvent.GRIPPER_1_RELEASE_DONE
-            cmd_data["is_done"] = is_success
+            cmd_data["is_done"] = True
             cmd_data["state"] = "done" if is_success else "error"
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit Gripper1ReleaseStrategy with event: {event}")
@@ -999,19 +1026,31 @@ class Gripper2ReleaseStrategy(Strategy):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter Gripper2ReleaseStrategy")
         Logger.info("[device] Device: Releasing Gripper (Tensile Lower Chuck).")
+        self.error_count = 0  # 에러 카운트
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # 하단 그리퍼(GRIPPER_2) 열기
-        if context.chuck_2_open():
+        # 하단 그리퍼(GRIPPER_2) 열기 - Non-blocking 20초 대기
+        status = context.chuck_2_open()
+        if status == "done":
             return DeviceEvent.GRIPPER_2_RELEASE_DONE
-        else:
-            return DeviceEvent.GRIPPER_FAIL
+        elif status == "error":
+            self.error_count += 1
+            Logger.info(f"[device] Failed to open chuck 2 (Lower). Error count {self.error_count}/5")
+
+            if self.error_count >= 5:
+                Logger.error(f"[device] chuck_2_open failed after 5 errors. Giving up.")
+                return DeviceEvent.GRIPPER_FAIL
+            else:
+                time.sleep(0.2)  # 재시도 전 대기
+                return DeviceEvent.NONE  # 재시도 계속
+
+        return DeviceEvent.NONE
 
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         cmd_data = bb.get("process/auto/device/cmd")
         if isinstance(cmd_data, dict):
             is_success = event == DeviceEvent.GRIPPER_2_RELEASE_DONE
-            cmd_data["is_done"] = is_success
+            cmd_data["is_done"] = True
             cmd_data["state"] = "done" if is_success else "error"
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit Gripper2ReleaseStrategy with event: {event}")

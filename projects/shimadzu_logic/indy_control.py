@@ -116,7 +116,7 @@ class RobotCommunication:
         self.last_record_time = 0
         self.recording_cmd_id = 0
         self.control_data_p = [0.0] * 6  # [x, y, z, u, v, w]
-
+        self.bin_picking_home = self.config["bin_picking_home_pos"]
         # [Robot Home Move] 홈 이동 상태 관리
         self.robot_home_last_enable_time = None
 
@@ -161,6 +161,12 @@ class RobotCommunication:
 
             if self.thread:
                 self.thread.join()
+    def go_home_bin_picking(self):
+        """ Robot move to bin picking home position """
+        Logger.info("[Indy7] Moving to bin picking home position...")
+        self.indy.movej(self.bin_picking_home, vel_ratio=50)
+        self.indy.wait_for_motion_state('is_target_reached')
+        Logger.info("[Indy7] Reached home position.")
 
     def run(self):
         """ Thread's target function """
@@ -292,6 +298,7 @@ class RobotCommunication:
                     Logger.info("[VisionControl] Connecting to Vision System...")
                     success = self.vision_handler.connect()
                     if success:
+                        self.vision_handler.handshake()
                         Logger.info("[VisionControl] Vision System connected successfully.")
                     else:
                         Logger.error("[VisionControl] Failed to connect to Vision System.")
@@ -312,18 +319,32 @@ class RobotCommunication:
             else:
                 if action == "start":
                     Logger.info("[BinPickControl] Starting Bin Picking sequence...")
+                    # status: 0:초기값/1:인식/2:이동/3:잡기/4:인지/5:놓기/6:홈 이동/7:완료/10:쉐이킹
                     try:
-                        # Step 1: Check Scene 요청
-                        Logger.info("[BinPickControl] Step 1: Sending CHECK_SCENE request...")
+                        # [Stop Check] 시작 전 확인
+                        if bb.get("ui/cmd/binpick/action") == "stop":
+                            Logger.info("[BinPickControl] Stop signal detected. Aborting start.")
+                            return
+
+                        # Step 1: Check Scene 요청 (status=1: 인식)
+                        bb.set("process/binpick/status", 1)
+                        # 이전 결과가 남아있을 수 있으므로 초기화
+                        bb.set("device/vision/scene_result", None)
+                        Logger.info("[BinPickControl] Step 1: Sending CHECK_SCENE request... (status=1)")
                         self.vision_handler.check_scene(mode="SINGLE")
 
                         # Step 2: SCENE_RESULT 응답 대기 (binpicking.md Section 7 참조)
                         Logger.info("[BinPickControl] Step 2: Waiting for SCENE_RESULT...")
-                        timeout = 10.0  # 10초 타임아웃
+                        timeout = 60.0  # 60초 타임아웃 (Vision 처리에 시간이 오래 걸릴 수 있음)
                         start_time = time.time()
                         scene_result = None
 
                         while (time.time() - start_time) < timeout:
+                            # [Stop Check] 대기 중 정지 명령 확인
+                            if bb.get("ui/cmd/binpick/action") == "stop":
+                                Logger.info("[BinPickControl] Stop command detected during wait. Aborting.")
+                                return
+
                             scene_result = bb.get("device/vision/scene_result")
                             if scene_result and scene_result.get("type") == "SCENE_RESULT":
                                 Logger.info(f"[BinPickControl] SCENE_RESULT received: status={scene_result.get('status')}")
@@ -332,37 +353,88 @@ class RobotCommunication:
 
                         if not scene_result:
                             Logger.error("[BinPickControl] Timeout waiting for SCENE_RESULT.")
+                            bb.set("process/binpick/status", 0)  # 초기화
                             return
 
                         # Step 3: SCENE_RESULT 분석
                         status = scene_result.get("status")
+                        Logger.info(f"[BinPickControl] Processing status: {status}")
 
                         if status == "TASK_DONE":
                             Logger.info("[BinPickControl] No specimens detected (TASK_DONE).")
+                            bb.set("process/binpick/status", 7)  # 완료
                             return
                         elif status == "OVERLAPPING":
                             Logger.warn("[BinPickControl] Specimens are overlapping. Shake motion needed.")
+                            bb.set("process/binpick/status", 10)  # 쉐이킹
                             # TODO: Shake 동작 구현 필요 시 여기에 추가
                             return
                         elif status == "TASK_EXECUTION":
-                            # Step 4: 시편 위치로 로봇 이동
+                            Logger.info(f"[BinPickControl] Status is TASK_EXECUTION. Processing specimens...")
+                            
+                            # [Stop Check]
+                            if bb.get("ui/cmd/binpick/action") == "stop":
+                                Logger.info("[BinPickControl] Stop command detected. Aborting.")
+                                return
+
+                            # Step 4: 시편 위치로 로봇 이동 (status=2: 이동)
+                            bb.set("process/binpick/status", 2)
                             specimens = scene_result.get("specimens", [])
                             if not specimens:
                                 Logger.error("[BinPickControl] No specimen data in TASK_EXECUTION result.")
+                                bb.set("process/binpick/status", 0)  # 초기화
                                 return
 
-                            Logger.info(f"[BinPickControl] Step 4: Moving to specimen location (count={len(specimens)})...")
-                            success = self.vision_handler.move_to_vision_target_test()
+                            Logger.info(f"[BinPickControl] Step 4: Moving to specimen location (status=2)...")
 
-                            if success:
-                                Logger.info("[BinPickControl] Bin Picking sequence completed successfully.")
+                            # [Stop Check]
+                            if bb.get("ui/cmd/binpick/action") == "stop":
+                                Logger.info("[BinPickControl] Stop command detected. Aborting.")
+                                return
+
+                            # Step 5: 시편 잡기 (status=3: 잡기)
+                            # bb.set("process/binpick/status", 3)
+                            Logger.info(f"[BinPickControl] Step 5: Picking specimen (status=3)...")
+                            pick_success = self.vision_handler.move_to_vision_target_test()
+
+                            if pick_success:
+                                # Step 6: 그립 확인 (status=4: 인지)
+                                bb.set("process/binpick/status", 4)
+                                Logger.info("[BinPickControl] Step 6: Pick confirmed (status=4). Proceeding to place...")
+
+                                # [Stop Check]
+                                if bb.get("ui/cmd/binpick/action") == "stop":
+                                    Logger.info("[BinPickControl] Stop command detected. Aborting.")
+                                    return
+
+                                # Step 7: 시편 Place (status=5: 놓기)
+                                # bb.set("process/binpick/status", 5)
+                                Logger.info("[BinPickControl] Step 7: Placing specimen at point 1 (status=5)...")
+                                place_success = self.vision_handler.place_specimen(point_index=1)
+
+                                if place_success:
+                                    # Step 8: 홈 이동 (status=6: 홈 이동)
+                                    bb.set("process/binpick/status", 6)
+                                    Logger.info("[BinPickControl] Step 8: Moving to home position (status=6)...")
+                                    self.go_home_bin_picking()
+                                    # place_specimen 내부에서 홈 이동 수행됨
+
+                                    # Step 9: 완료 (status=7: 완료)
+                                    bb.set("process/binpick/status", 7)
+                                    Logger.info("[BinPickControl] Bin Picking sequence completed successfully (status=7).")
+                                else:
+                                    Logger.error("[BinPickControl] Failed to place specimen.")
+                                    bb.set("process/binpick/status", 0)  # 초기화
                             else:
-                                Logger.error("[BinPickControl] Failed to move to target.")
+                                Logger.error("[BinPickControl] Failed to pick specimen.")
+                                bb.set("process/binpick/status", 0)  # 초기화
                         else:
                             Logger.error(f"[BinPickControl] Unknown SCENE_RESULT status: {status}")
+                            bb.set("process/binpick/status", 0)  # 초기화
 
                     except Exception as e:
                         Logger.error(f"[BinPickControl] Error during Bin Picking: {e}", exc_info=True)
+                        bb.set("process/binpick/status", 0)  # 에러 발생 시 초기화
                 elif action == "stop":
                     Logger.info("[BinPickControl] Stopping scene check...")
                     self.vision_handler.stop_scene()
@@ -379,6 +451,17 @@ class RobotCommunication:
                 if payload.get("target") == "gripper" and payload.get("action") == "retry":
                     Logger.info(f"Received robot_control command via MQTT->BB: target=gripper, action=retry")
                     bb.set("int_var/grip_retry/val", 1)
+                    return
+
+                # [추가] Log 명령 처리 (Blackboard 전체 데이터 덤프)
+                if payload.get("target") == "log" and payload.get("action") == "send":
+                    Logger.info(f"[Robot] Log command received. Dumping Blackboard data...")
+                    try:
+                        bb_keys = load_json("configs/blackboard.json").keys()
+                        bb_dump = {key: bb.get(key) for key in bb_keys}
+                        Logger.info(f"[Blackboard Dump]\n{json.dumps(bb_dump, indent=2, ensure_ascii=False)}")
+                    except Exception as e:
+                        Logger.error(f"Failed to dump Blackboard: {e}")
                     return
 
             # 프로그램이 실행 중이 아닐 때(IDLE 상태)만 수동 제어 명령을 처리합니다.
@@ -898,7 +981,10 @@ class RobotCommunication:
         bb.set("ui/state/working_minute", self.robot_running_min)
 
         if robot_state_ui == 2 :
-            bb.set("system/emo/on",1)
+            bb.set("system/emo/on", 1)
+        else:
+            # 비상정지 해제 시 초기화
+            bb.set("system/emo/on", 0)
 
         # Robot status string for UI
         robot_status_str = "대기"

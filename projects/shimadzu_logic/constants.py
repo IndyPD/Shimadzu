@@ -359,6 +359,9 @@ class RobotMotionCommand(IntEnum):
     SCRAP_DROP_POS = 7021
     SCRAP_FRONT_RETURN = 7022
     TENSILE_FRONT_RETURN = 8000
+    TENSILE_SAMPLE_RETURN_POS_DOWN = 8001
+    TENSILE_SAMPLE_RETURN_POS_UP = 8002
+    
 
 # 11. Indy Conty 프로그램 상태 정의
 class ProgramState(IntEnum):
@@ -428,10 +431,10 @@ class DigitalInput(IntEnum):
     BCR_ERROR                           = 5
     BUSY                                = 6
     # address 8은 비어있음
-    ENO_01_SW                           = 8
-    EMO_02_SI                           = 9
-    EMO_03_SI                           = 10
-    EMO_04_SI                           = 11
+    EMO_01_SW                           = 8
+    EMO_02_SW                           = 9
+    EMO_03_SW                           = 10
+    EMO_04_SW                           = 11
     DOOR_1_OPEN                         = 12
     DOOR_2_OPEN                         = 13
     DOOR_3_OPEN                         = 14

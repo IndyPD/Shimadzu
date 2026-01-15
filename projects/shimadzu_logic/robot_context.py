@@ -235,8 +235,9 @@ class RobotContext(ContextBase):
 
             MotionCommand.RETREAT_FROM_ALIGN_AFTER_PLACE: RobotMotionCommand.ALIGNER_FRONT_RETURN,
             MotionCommand.RETREAT_FROM_ALIGN_AFTER_PICK: RobotMotionCommand.ALIGNER_FRONT_RETURN,
+            # MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD: RobotMotionCommand.TENSILE_FRONT_RETURN,
+            # MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK: RobotMotionCommand.TENSILE_FRONT_RETURN,
             MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD: RobotMotionCommand.TENSILE_FRONT_RETURN,
-            MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK: RobotMotionCommand.TENSILE_FRONT_RETURN,
             MotionCommand.RETREAT_FROM_SCRAP_DISPOSER: RobotMotionCommand.SCRAP_FRONT_RETURN,
 
             MotionCommand.GRIPPER_OPEN_AT_INDICATOR: RobotMotionCommand.GRIPPER_OPEN,
@@ -291,6 +292,9 @@ class RobotContext(ContextBase):
         elif motion_name == MotionCommand.PICK_FROM_TENSILE_MACHINE:
             if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_UP
             if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_PICK_POS_DOWN
+        elif motion_name == MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK:
+            if pos == 2: return RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP
+            if pos == 1: return RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN
 
         # ACT06: Scrap Disposer
         elif motion_name == MotionCommand.PLACE_IN_SCRAP_DISPOSER:
@@ -328,6 +332,8 @@ class RobotContext(ContextBase):
             RobotMotionCommand.THICK_GAUGE_FRONT_RETURN_3,
             RobotMotionCommand.ALIGNER_FRONT_RETURN,
             RobotMotionCommand.TENSILE_FRONT_RETURN,
+            RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN,
+            RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP,
             RobotMotionCommand.SCRAP_FRONT_RETURN,
         }
 
@@ -378,10 +384,15 @@ class RobotContext(ContextBase):
         if current_pos_id == RobotMotionCommand.ALIGNER_SAMPLE_PICK and next_cmd_id == RobotMotionCommand.ALIGNER_FRONT_RETURN: return True
 
         # 규칙 5: 인장시험기(Tensile) 내부 시퀀스
+        # if 7001 <= current_pos_id <= 7002 and next_cmd_id == RobotMotionCommand.TENSILE_FRONT_RETURN: return True
+        # if 7001 <= current_pos_id <= 7002 and next_cmd_id in [RobotMotionCommand.TENSILE_FRONT_RETURN, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP]: return True
+        # if current_pos_id == RobotMotionCommand.TENSILE_FRONT_MOVE and (7011 <= next_cmd_id <= 7012): return True
+        # if 7011 <= current_pos_id <= 7012 and next_cmd_id == RobotMotionCommand.SCRAP_FRONT_MOVE: return True
+        # if 7011 <= current_pos_id <= 7012 and next_cmd_id in [RobotMotionCommand.SCRAP_FRONT_MOVE, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP]: return True
         if current_pos_id == RobotMotionCommand.TENSILE_FRONT_MOVE and (7001 <= next_cmd_id <= 7002): return True
-        if 7001 <= current_pos_id <= 7002 and next_cmd_id == RobotMotionCommand.TENSILE_FRONT_RETURN: return True
+        if 7001 <= current_pos_id <= 7002 and next_cmd_id in [RobotMotionCommand.TENSILE_FRONT_RETURN]: return True
         if current_pos_id == RobotMotionCommand.TENSILE_FRONT_MOVE and (7011 <= next_cmd_id <= 7012): return True
-        if 7011 <= current_pos_id <= 7012 and next_cmd_id == RobotMotionCommand.SCRAP_FRONT_MOVE: return True
+        if 7011 <= current_pos_id <= 7012 and next_cmd_id in [RobotMotionCommand.SCRAP_FRONT_MOVE, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN, RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP]: return True
 
         # 규칙 6: 스크랩(Scrap) 내부 시퀀스
         if current_pos_id == RobotMotionCommand.SCRAP_FRONT_MOVE and next_cmd_id == RobotMotionCommand.SCRAP_DROP_POS: return True

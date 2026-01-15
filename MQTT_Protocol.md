@@ -2,8 +2,6 @@ Markdown
 
 # 인장기 시험 자동화 Logic ↔ UI MQTT 프로토콜 정의서
 
-## 최종 작성일 : 2026-01-02
-
 ## 1. 명령 (Command) 및 응답 (ACK) 요약
 
 ### 1.1. 통신 요약 테이블
@@ -240,6 +238,81 @@ Markdown
 }
 ```
 
+### 추가 ACK 예시: tensile_control/pause
+`payload.data.action`에 `"pause"`를 포함해 UI가 일시정지 ACK를 올바르게 인식하도록 합니다.
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-005",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.120"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-tensile-cmd-004",
+    "status": "ok",
+    "reason": "System paused successfully.",
+    "data": {
+      "action": "pause",
+      "batch_id": "B-20251208-001"
+    }
+  }
+}
+```
+
+### 추가 ACK 예시: tensile_control/resume
+`payload.data.action`에 `"resume"`을 포함해 UI가 재시작 상태를 유지하도록 합니다.
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-006",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:05.120"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-tensile-cmd-006",
+    "status": "ok",
+    "reason": "Operation resumed.",
+    "data": {
+      "action": "resume",
+      "batch_id": "B-20251208-001"
+    }
+  }
+}
+```
+
+### 추가 ACK 예시: tensile_control/reset
+UI가 reset ACK를 `reset`으로 처리하려면 `payload.data.action`을 명시합니다.
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-007",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:10.120"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-tensile-cmd-007",
+    "status": "ok",
+    "reason": "Starting reset and recovery procedure.",
+    "data": {
+      "action": "reset",
+      "batch_id": "B-20251208-001"
+    }
+  }
+}
+```
+
 ### 2.3. system_control/do_control (개별 핀 제어)
 
 **DO Command (UI → Logic)**
@@ -436,7 +509,7 @@ Markdown
 ### 2.6. robot_settings_control (로봇 설정 제어)
 **DO Command (UI → Logic)**
 * **target**: `robot_direct_teaching_mode`,`gripper`,`robot_home`
-* **target**: `disable`,`enable` / `close`,`open`
+* **target**: `disable`,`enable` / `close`,`open`, `retry`(에러 발생시) 
 ```json
 {
   "header": {
@@ -560,6 +633,69 @@ Markdown
   }
 }
 ```
+### 2.8. 복구설정 로그 신호
+**로그 신호 전송 Command (UI → Logic)**
+* **action**: ``
+```json
+{
+  "header": {
+    "msg_type": "ui.command",
+    "source": "ui",
+    "target": "logic",
+    "msg_id": "ui-data-cmd-001",
+    "ack_required": true,
+    "timestamp": "2025-11-18T12:00:00.000"
+  },
+  "payload": {
+    "kind": "command",
+    "cmd": "robot_control",
+    "action": "send",
+    "target":"log"
+  }
+}
+```
+**ACK (Logic → UI)** /OK
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.100"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-log-cmd-001",
+    "status": "ok",
+    "reason": "",
+    "data": {
+      "action": ""
+    }
+  }
+}
+```
+**ACK (Logic → UI)** /ERROR
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-ack-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:00:00.100"
+  },
+  "payload": {
+    "kind": "ack",
+    "ack_of": "ui-log-cmd-001",
+    "status": "error",
+    "reason": "",
+    "error_code": ""
+  }
+}
+```
 
 ## 3. Bin Picking 통신 정의 (UI ↔ LOGIC)
 UI는 Logic에게 Bin Picking 동작을 명령하고, Logic은 내부적으로 Bin Picking 시스템을 제어한 뒤 결과를 UI에 보고합니다.
@@ -587,9 +723,9 @@ action : start/stop
   }
 }
 ```
- 
+
 ### LOGIC → UI Bin Picking ACK
- 
+
 ```json
 {
   "header": {
@@ -667,8 +803,9 @@ action : connect / disconnect
     "reason": "VISION_DISCONNECT_OK / VISION_DISCONNECT_FAIL"
   }
 }
+```
 
-### 3.4. LOGIC → UI Bin Picking 상태 보고 (Status Report)
+### 3.4. LOGIC → UI Bin Picking 상태 보고 (Status Report) - 사용X
 Logic은 Bin Picking 시스템으로부터 받은 데이터를 가공하여 UI에 상시 보고합니다.
 
 ```json
@@ -748,6 +885,9 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
 ```
 
 ### 4.2. LOGIC → UI 시스템 통합 상태 (system_status)
+상태 표시 | 1: 정상 / 0: 에러 
+버튼 | 1: 좌 / 2: 우 / program_run : 3 : 예열 시작
+
 ```json
 {
   "header": {
@@ -767,7 +907,7 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
         "conntion_info" : "192.168.2.20",
         "state" : 1,
         "comm_state" : 1,
-        "current_pos" : 0,
+        "current_pos" : "[245.932, 11.054626, 464.7319, 89.99936, -179.9995, 40.00032]",
         "current_motion" : 100,
         "recover_motion" : 1103,
         "direct_teaching_mode" : 1,
@@ -796,15 +936,16 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
         "msg" : ""
       },
       "binpick": {
-        "conntion_info" : "192.168.2.16",
+        "conntion_info" : "192.168.2.30",
         "state" : 1,
+        "comm_state" : 1,
         "msg" : ""
       }
     }
   }
 }
 ```
-### 4.3. LOGIC → UI 시스템 작업 상태 (process_status)
+### 4.3. LOGIC → UI 배치 시스템 작업 상태 (process_status)
 ```json
 {
   "header": {
@@ -839,12 +980,35 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
       "registered": 15.00
     },
     "aligner_status": "정렬중"
-    
+   
+  }
+}
+```
+### 4.3.1 (빈피킹) LOGIC → UI 빈피킹 시스템 작업 상태 (binpick_status)
+status: (0:초기값/1:인식/2:이동/3:잡기/4:인지/5:놓기/6:홈 이동/7:완료/10:쉐이킹)
+```json
+{
+  "header": {
+    "msg_type": "logic.event",
+    "source": "logic",
+    "target": "ui",
+    "msg_id": "logic-evt-state-001",
+    "ack_required": false,
+    "timestamp": "2025-11-18T12:05:01.000"
+  },
+  "payload": {
+    "kind": "event",
+    "evt": "binpick_status",
+    "batch_info": {
+      "status": "0"
+    }
   }
 }
 ```
 
-### 4.4. LOGIC → UI 공정 완료 상태 전달
+
+
+### 4.4. (배치) LOGIC → UI 공정 완료 상태 전달
 ```json
 {
   "header": {
@@ -867,7 +1031,7 @@ Logic에서 UI로 상시 발행되는 상태 메시지들입니다.
 }
 ```
 
-### 4.5. LOGIC → UI 공정 중 정지(UI-STOP명령) 완료 상태 전달
+### 4.5. (배치) LOGIC → UI 공정 중 정지(UI-STOP명령) 완료 상태 전달
 UI의 `stop` 명령에 따라 공정이 즉시 중단된 후, Logic이 UI에게 정지가 완료되었음을 알리는 이벤트입니다.
 ```json
 {
@@ -890,7 +1054,7 @@ UI의 `stop` 명령에 따라 공정이 즉시 중단된 후, Logic이 UI에게 
 }
 ```
 
-### 4.6. LOGIC → UI 공정 중 단계정지(UI-STEP STOP명령) 완료 상태 전달
+### 4.6. (배치) LOGIC → UI 공정 중 단계정지(UI-STEP STOP명령) 완료 상태 전달
 ```json
 {
   "header": {
@@ -912,433 +1076,15 @@ UI의 `stop` 명령에 따라 공정이 즉시 중단된 후, Logic이 UI에게 
 }
 ```
 
-## 5. 시스템 오류 및 이벤트 보고 (UI 팝업)
+## 5. JSON 데이터 모델 명세
 
-본 항목은 Logic 시스템이 로봇, 장비 등에서 발생한 심각한 오류나 주요 이벤트를 UI에 전달하여 사용자에게 팝업으로 알릴 때 사용하는 메시지를 정의합니다. 이를 통해 운영자는 시스템의 예외 상황을 즉시 인지하고 필요한 조치를 취할 수 있습니다.
+### 5.1. system_states 배열 (system_status)
+*   `[0]`: Robot Comm (1:OK)
+*   `[1]`: Shimadzu Device Comm (1:OK)
+*   `[2]`: Gauge Comm
+*   `[3]`: RIO Comm
+*   `[4]`: QR Reader Comm
+*   `[5]`: Vision Comm
 
-### 5.1. LOGIC → UI 오류 이벤트 (system_error_event)
-
-Logic은 시스템의 치명적인 오류(예: 공압 공급 중단, 로봇 충돌)가 감지되면 `system_error_event`를 UI로 즉시 발행합니다. UI는 이 메시지를 수신하면 사용자에게 오류 내용과 권장 조치를 담은 팝업을 표시해야 합니다.
-
-### 5.2. 주요 필드 설명
-
-| 필드명 | 설명 | 예시 |
-| :--- | :--- | :--- |
-| `error_source` | 오류가 발생한 주요 모듈을 명시합니다. | `device`, `robot`, `logic` |
-| `error_code` | `constants.py`에 정의된 `DeviceViolation` 또는 `RobotViolation`과 같은 구체적인 오류 코드입니다. | `SOL_SENSOR_ERR`, `COLLISION_VIOLATION` |
-| `error_message` | UI에 표시될 사용자 친화적인 오류 메시지입니다. | "로봇 충돌이 감지되었습니다." |
-| `severity` | 오류의 심각도를 나타냅니다. `critical`은 시스템 정지를 의미할 수 있습니다. | `critical`, `warning` |
-| `recommended_action` | 사용자에게 권장되는 조치 사항입니다. | "주 공압 공급 라인을 확인하세요." |
-
-### 5.3. 주요 오류 코드 및 메시지 정의
-
-시스템에서 발생할 수 있는 주요 치명적 오류(Critical) 목록입니다.
-
-| Error Source | Error Code | Error Message (Example) | Recommended Action |
-| :--- | :--- | :--- | :--- |
-| `device` | `SOL_SENSOR_ERR` | 솔레노이드 밸브 공압 공급 오류가 감지되었습니다. | 주 공압 공급 라인을 확인한 후 리셋 버튼을 누르세요. |
-| `robot` | `COLLISION_VIOLATION` | 로봇 충돌이 감지되었습니다. | 로봇을 안전한 위치로 수동 이동시킨 후 복구 시퀀스를 진행하세요. |
-| `robot` | `ROBOT_SINGULARITY_ERR` | 로봇이 특이점(Singularity) 자세에 도달했습니다. | 로봇 자세를 확인하고 티칭 포인트를 수정하거나 수동으로 이동시키세요. |
-| `device` | `REMOTE_IO_COMM_ERR` | Remote I/O 장치와의 통신이 두절되었습니다. | Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요. |
-| `device` | `QR_COMM_ERR` | QR 리더기와의 통신이 두절되었습니다. | QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요. |
-| `device` | `QR_READ_FAIL` | QR 코드를 읽는데 실패했습니다. (최대 횟수 초과) | 시편의 QR 코드 상태를 확인하거나 조명을 조절해주세요. |
-| `device` | `GAUGE_COMM_ERR` | 변위 측정기(Gauge)와의 통신이 두절되었습니다. | 측정기 전원 및 케이블 연결을 확인하세요. |
-| `device` | `GAUGE_MEASURE_FAIL` | 측정기로부터 유효한 값을 읽어오지 못했습니다. | 측정기 디스플레이 상태를 확인하고 재시도하세요. |
-| `device` | `SMZ_COMM_ERR` | 시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다. | 시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요. |
-| `device` | `SMZ_COMM_CONTROL_ERROR` | 시마즈(Shimadzu) 시험기 제어 명령이 실패하였습니다. | 시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요. |
-
-### 5.4. 주요 오류 코드 및 메세지 예시
-
-**오류 이벤트 메시지 예시 (COLLISION_VIOLATION)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-002",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:35:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "robot",
-    "error_code": "COLLISION_VIOLATION",
-    "error_message": "로봇 충돌이 감지되었습니다.",
-    "severity": "critical",
-    "recommended_action": "로봇을 안전한 위치로 수동 이동시킨 후 복구 시퀀스를 진행하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (ROBOT_SINGULARITY_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-003",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:36:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "robot",
-    "error_code": "ROBOT_SINGULARITY_ERR",
-    "error_message": "로봇이 특이점(Singularity) 자세에 도달했습니다.",
-    "severity": "critical",
-    "recommended_action": "로봇 자세를 확인하고 티칭 포인트를 수정하거나 수동으로 이동시키세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (SOL_SENSOR_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-001",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:30:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "SOL_SENSOR_ERR",
-    "error_message": "솔레노이드 밸브 공압 공급 오류가 감지되었습니다.",
-    "severity": "critical",
-    "recommended_action": "주 공압 공급 라인을 확인한 해주세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (REMOTE_IO_COMM_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-004",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:40:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "REMOTE_IO_COMM_ERR",
-    "error_message": "Remote I/O 장치와의 통신이 두절되었습니다.",
-    "severity": "critical",
-    "recommended_action": "Remote I/O 전원 및 LAN 케이블 연결 상태를 확인하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (QR_COMM_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-005",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:41:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "QR_COMM_ERR",
-    "error_message": "QR 리더기와의 통신이 두절되었습니다.",
-    "severity": "critical",
-    "recommended_action": "QR 리더기 전원 및 시리얼/LAN 연결을 확인하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (QR_READ_FAIL)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-006",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:42:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "QR_READ_FAIL",
-    "error_message": "QR 코드를 읽는데 실패했습니다. (최대 횟수 초과)",
-    "severity": "warning",
-    "recommended_action": "시편의 QR 코드 상태를 확인하거나 조명을 조절해주세요."
-  }
-}
-
-```
-
-**오류 이벤트 메시지 예시 (GAUGE_COMM_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-007",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:43:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "GAUGE_COMM_ERR",
-    "error_message": "변위 측정기(Gauge)와의 통신이 두절되었습니다.",
-    "severity": "critical",
-    "recommended_action": "측정기 전원 및 케이블 연결을 확인하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (GAUGE_MEASURE_FAIL)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-008",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:44:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "GAUGE_MEASURE_FAIL",
-    "error_message": "측정기로부터 유효한 값을 읽어오지 못했습니다.",
-    "severity": "warning",
-    "recommended_action": "측정기 디스플레이 상태를 확인하고 재시도하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (SMZ_COMM_ERR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-009",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:45:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "SMZ_COMM_ERR",
-    "error_message": "시마즈(Shimadzu) 시험기와의 통신이 두절되었습니다.",
-    "severity": "critical",
-    "recommended_action": "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요."
-  }
-}
-```
-
-**오류 이벤트 메시지 예시 (SMZ_COMM_CONTROL_ERROR)**
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-009",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:45:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "system_error_event",
-    "error_source": "device",
-    "error_code": "SMZ_COMM_ERR",
-    "error_message": "시마즈(Shimadzu) 시험기 제어 명령이 실패하였습니다.",
-    "severity": "critical",
-    "recommended_action": "시험기 PC 소프트웨어 실행 여부 및 통신 설정을 확인하세요."
-  }
-}
-```
-
-## 6. JSON 데이터 모델 명세
-
-### 6.1. system_states 배열 (system_status)
-
-[0]: Robot Comm (1:OK)
-[1]: Shimadzu Device Comm (1:OK)
-[2]: Gauge Comm
-[3]: Remote IO Comm
-[4]: QR Reader Comm
-[5]: Vision Comm
-
-### 6.2. robot_pose 구조
-
-x, y, z, rx, ry, rz (단위: mm, degree)
-```
-
-# MQTT Error Event Guide
-
-- Topic: `/logic/evt`
-- Frame: `header` + `payload` (same envelope as MQTT_Protocol.md)
-- Purpose: Logic publishes error events to UI (20 codes across device/shimadzu/robot).
-
-## Minimal Error Message
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-evt-error-001",
-    "ack_required": false,
-    "timestamp": "2026-01-06T12:00:00.000"
-  },
-  "payload": {
-    "kind": "event",
-    "evt": "error",
-    "category": "device | shimadzu | robot",
-    "code": "D-001",
-    "message": "공압 공급 끊김"
-  }
-}
-```
-
-## Error Code List
-### device
-| code  | message                     | detail (optional)                         |
-|-------|-----------------------------|-------------------------------------------|
-| D-001 | 공압 공급 X                 | Pneumatic supply lost                     |
-| D-002 | 센서 remote IO 연결 X       | Remote IO for sensor not connected        |
-| D-003 | remote IO 연결 후 통신 X    | IO connected but no communication         |
-| D-004 | QR 통신 연결 X              | QR reader communication lost              |
-| D-005 | QR 인식 X                   | QR read failed                            |
-| D-006 | 측정기 연결 X               | Measurement device not connected          |
-| D-007 | 측정기 측정 X               | Measurement device read failed            |
-| D-008 | 신율계 전후진 X             | Extensometer forward/backward failed      |
-| D-009 | 정렬기 정렬 X               | Aligner failed to align                   |
-| D-010 | 툴체인저 센서 오류 ATC1     | Tool changer sensor error ATC1            |
-| D-011 | 툴체인저 센서 오류 ATC2     | Tool changer sensor error ATC2            |
-| D-012 | 비상정지 버튼               | Emergency stop button pressed             |
-| D-013 | 스크랩 처리기 열림 → 로봇 정지 | Scrap processor open; robot halted        |
-
-### shimadzu
-| code  | message                          | detail (optional)                           |
-|-------|----------------------------------|---------------------------------------------|
-| S-001 | 시마즈 통신 연결 문제            | Shimadzu connection lost                    |
-| S-002 | 통신O, 데이터 송수신 오류        | Shimadzu command/response mismatch          |
-| S-003 | 측정기 그리퍼 파지 실패          | Shimadzu gripper failed to hold specimen    |
-
-### robot
-| code  | message                   | detail (optional)                           |
-|-------|---------------------------|---------------------------------------------|
-| R-001 | 로봇 상태 이상 (opstate)  | Robot in unexpected state/opstate           |
-| R-002 | 그리퍼 파지 실패          | Gripper failed to pick                      |
-| R-003 | 그리퍼 제어 실패          | Gripper control command failed              |
-| R-004 | 모션 타임아웃 (로봇)      | Robot motion timeout                        |
-| R-005 | 모션 타임아웃 (그리퍼)    | Gripper motion timeout                      |
-
-## Usage Notes
-- `msg_id`: use prefix `logic-evt-error-###`.
-- Only `code`/`message` are required; add `detail` if helpful.
-- UI can map `code` to localized strings; keep `message` short and user-facing.
-
-### 그리퍼 파지 실패시 재시도 Robot_control
-**Command (UI → Logic)**
-```json
-{
-  "header": {
-    "msg_type": "ui.command",
-    "source": "ui",
-    "target": "logic",
-    "msg_id": "ui-robot-cmd-001",
-    "ack_required": true,
-    "timestamp": "2025-11-18T12:00:00.000"
-  },
-  "payload": {
-    "kind": "command",
-    "cmd": "robot_control",
-    "action": "retry",
-    "target": "gripper"
-  }
-}
-```
- 
- 
-**ACK (Logic → UI)** /OK
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-ack-001",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:00:00.050"
-  },
-  "payload": {
-    "kind": "ack",
-    "ack_of": "ui-robot-cmd-001",
-    "status": "ok",
-    "reason": "Starting gripper retry"
-  }
-}
-```
- 
-**ACK (Logic → UI)**  /ERROR
-```json
-{
-  "header": {
-    "msg_type": "logic.event",
-    "source": "logic",
-    "target": "ui",
-    "msg_id": "logic-ack-001",
-    "ack_required": false,
-    "timestamp": "2025-11-18T12:00:00.050"
-  },
-  "payload": {
-    "kind": "ack",
-    "ack_of": "ui-robot-cmd-001",
-    "status": "error",
-    "reason": "Starting gripper retry"
-  }
-}
-```
-
-** ACK (UI -> Logic)**
-''' 
-{
-  "header": {
-    "msg_type": "ui.command",
-    "source": "ui",
-    "target": "logic",
-    "msg_id": "ui-robot-cmd-001",
-    "ack_required": true,
-    "timestamp": "2025-11-18T12:00:00.000"
-  },
-  "payload": {
-    "kind": "command",
-    "cmd": "robot_control",
-    "action": "enable",
-    "target": "robot_home",
-  }
-}'''
+### 5.2. robot_pose 구조
+*   `x`, `y`, `z`, `rx`, `ry`, `rz` (단위: mm, degree)

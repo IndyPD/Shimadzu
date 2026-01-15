@@ -632,7 +632,7 @@ class LogicDetermineTaskStrategy(Strategy):
             # [수정] 인장 시험(Step 9)을 건너뛰고 바로 다음 단계 로직을 실행하기 위해 재귀 호출
             return self.operate(context)
         
-        elif step == 10: # 인장 시험 시작 완료 -> 상단 시편 수거 (10)
+        elif step == 10: # 인장 시험 시작 완료 -> 하단 시편 수거 (10)
             Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick Upper Specimen).")
             bb.set("process/auto/current_step", 11)
             bb.set("process/auto/tensile_pick_pos", 1) # 1: 하단
@@ -642,22 +642,22 @@ class LogicDetermineTaskStrategy(Strategy):
 
         elif step == 11: # 상단 수거 완료 -> 스크랩 처리 (11)
             Logger.info("[Logic] DetermineTask: Step 10 (Pick Upper) done. -> Step 11 (Dispose Scrap).")
-            bb.set("process/auto/current_step", 13)
+            bb.set("process/auto/current_step", 12)
             return LogicEvent.DO_DISPOSE_SCRAP
 
-        # 지금은 상단 시편만 사용하므로 주석 처리
-        # elif step == 11: # 스크랩 처리 완료 -> 하단 시편 수거 (12)
-        #     Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. -> Step 12 (Pick Lower Specimen).")
-        #     bb.set("process/auto/current_step", 12)
-        #     bb.set("process/auto/tensile_pick_pos", 2) # 2: 상단
-        #     return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
+        # 상단 시편만 사용하므로 주석 처리
+        elif step == 12: # 스크랩 처리 완료 -> 상단 시편 수거 (12)
+            Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. -> Step 12 (Pick Lower Specimen).")
+            bb.set("process/auto/current_step", 13)
+            bb.set("process/auto/tensile_pick_pos", 2) # 2: 상단
+            return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
 
-        # elif step == 12: # 하단 수거 완료 -> 스크랩 처리 (13)
-        #     Logger.info("[Logic] DetermineTask: Step 12 (Pick Lower) done. -> Step 13 (Dispose Scrap).")
-        #     bb.set("process/auto/current_step", 13)
-        #     return LogicEvent.DO_DISPOSE_SCRAP
+        elif step == 13: # 하단 수거 완료 -> 스크랩 처리 (13)
+            Logger.info("[Logic] DetermineTask: Step 12 (Pick Lower) done. -> Step 13 (Dispose Scrap).")
+            bb.set("process/auto/current_step", 14)
+            return LogicEvent.DO_DISPOSE_SCRAP
 
-        elif step == 13: # 스크랩 처리 완료 -> 시편 공정 종료
+        elif step == 14: # 스크랩 처리 완료 -> 시편 공정 종료 (14)
             Logger.info("[Logic] DetermineTask: Step 13 (Dispose Scrap) done. Current specimen cycle finished.")
 
             spec_no = bb.get("process/auto/current_specimen_no")
@@ -685,8 +685,7 @@ class LogicDetermineTaskStrategy(Strategy):
                 
                 context.process_complete() # 공정 완료 처리 호출
                 return LogicEvent.PROCESS_STOP # 정지 이벤트 발생
-            
-            # 현재 시편 완료 기록 (3.2, 3.3)
+                # 현재 시편 완료 기록 (3.2, 3.3)
             context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
             # 완료 (10)
             context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
@@ -720,6 +719,95 @@ class LogicDetermineTaskStrategy(Strategy):
 
         Logger.error(f"[Logic] DetermineTask: Reached an unknown step ({step}). This should not happen.")
         return LogicEvent.VIOLATION_DETECT
+        
+        # elif step == 10: # 인장 시험 시작 완료 -> 하단 시편 수거 (10)
+        #     Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick Upper Specimen).")
+        #     bb.set("process/auto/current_step", 11)
+        #     bb.set("process/auto/tensile_pick_pos", 1) # 1: 하단
+        #     # 처리중 (6) - 스크랩 처리 시작
+        #     context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 6})
+        #     return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
+
+        # elif step == 11: # 상단 수거 완료 -> 스크랩 처리 (11)
+        #     Logger.info("[Logic] DetermineTask: Step 10 (Pick Upper) done. -> Step 11 (Dispose Scrap).")
+        #     bb.set("process/auto/current_step", 13)
+        #     return LogicEvent.DO_DISPOSE_SCRAP
+
+        # 지금은 상단 시편만 사용하므로 주석 처리
+        # elif step == 11: # 스크랩 처리 완료 -> 하단 시편 수거 (12)
+        #     Logger.info("[Logic] DetermineTask: Step 11 (Dispose Scrap) done. -> Step 12 (Pick Lower Specimen).")
+        #     bb.set("process/auto/current_step", 12)
+        #     bb.set("process/auto/tensile_pick_pos", 2) # 2: 상단
+        #     return LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE
+
+        # elif step == 12: # 하단 수거 완료 -> 스크랩 처리 (13)
+        #     Logger.info("[Logic] DetermineTask: Step 12 (Pick Lower) done. -> Step 13 (Dispose Scrap).")
+        #     bb.set("process/auto/current_step", 13)
+        #     return LogicEvent.DO_DISPOSE_SCRAP
+
+        # elif step == 13: # 스크랩 처리 완료 -> 시편 공정 종료
+        #     Logger.info("[Logic] DetermineTask: Step 13 (Dispose Scrap) done. Current specimen cycle finished.")
+
+        #     spec_no = bb.get("process/auto/current_specimen_no")
+        #     tray_no = current_specimen['tray_no']
+        #     batch_id = batch_data['batch_id']
+
+        #     # Step Stop 요청이 있었는지 확인
+        #     if bb.get("process/auto/step_stop_requested"):
+        #         bb.set("process/auto/step_stop_requested", False) # 플래그 소비
+        #         Logger.info("[Logic] Step Stop executed. Marking current specimen as complete and stopping.")
+
+        #         # 현재 시편 완료 DB 업데이트
+        #         context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
+        #         # 완료 (10)
+        #         context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
+        #         Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB due to Step Stop.")
+                
+        #         # MQTT 'process_step_stopped' 이벤트 발행
+        #         event_payload = {
+        #             "evt": "process_step_stopped",
+        #             "reason": "The process was successfully stopped after completing the current specimen.",
+        #             "data": {"batch_id": batch_id, "last_completed_specimen": spec_no}
+        #         }
+        #         bb.set("logic/events/one_shot", event_payload)
+                
+        #         context.process_complete() # 공정 완료 처리 호출
+        #         return LogicEvent.PROCESS_STOP # 정지 이벤트 발생
+            
+        #     # 현재 시편 완료 기록 (3.2, 3.3)
+        #     context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE")
+        #     # 완료 (10)
+        #     context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
+        #     Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} is marked as DONE in DB.")
+        #     if spec_no < 5:
+        #         # 다음 시편으로 루프 (동일 트레이)
+        #         next_spec_no = spec_no + 1
+        #         bb.set("process/auto/current_specimen_no", next_spec_no)
+        #         bb.set("process/auto/target_num", next_spec_no)
+        #         bb.set("process_status/current_process_tray_info", {
+        #             "tray_num": tray_no,
+        #             "specimen_num": next_spec_no
+        #         })
+        #         # 2번 시편부터는 QR 읽기(Step 1)를 건너뛰고 바로 시편 잡기(Step 3)로 이동
+        #         # bb.set("process/auto/current_step", 2)
+        #         bb.set("process/auto/current_step", 3)
+        #         # 이동중 (2)
+        #         context.db.update_test_tray_item(tray_no, next_spec_no, {'status': 2})
+        #         # `batch_test_items`는 트레이(시퀀스) 단위로 상태를 관리하므로, 개별 시편 상태는 DB에 업데이트하지 않음.
+        #         context.db.insert_summary_log(batch_id=batch_data['batch_id'], tray_no=current_specimen['tray_no'], specimen_no=next_spec_no, work_history="START")
+        #         Logger.info(f"[Logic] DetermineTask: Moving to next specimen {next_spec_no} in same tray. Skipping QR read, starting from Step 2 (Pick Specimen).")
+        #         return LogicEvent.DO_PICK_SPECIMEN
+        #     else:
+        #         # 트레이 내 모든 시편 완료 -> 다음 트레이 탐색
+        #         current_specimen['seq_status'] = 3 # DONE
+        #         bb.set("process/auto/batch_data", batch_data)
+        #         context.db.update_processing_status(current_specimen['seq_order'], 3) # 트레이 상태를 완료로 DB 업데이트
+        #         bb.set("process/auto/current_step", 0)
+        #         Logger.info(f"[Logic] DetermineTask: All specimens in Tray {current_specimen['tray_no']} are complete. Finding next tray.")
+        #         return self.operate(context) # 재귀 호출로 다음 트레이 탐색
+
+        # Logger.error(f"[Logic] DetermineTask: Reached an unknown step ({step}). This should not happen.")
+        # return LogicEvent.VIOLATION_DETECT
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")

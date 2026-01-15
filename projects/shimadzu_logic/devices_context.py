@@ -56,6 +56,8 @@ class DeviceContext(ContextBase):
         self.gauge_initial_check_done = False
         self.gauge_measurement_done = False
         self.chuck_open_start_time = 0
+        self.chuck_1_open_start_time = 0
+        self.chuck_2_open_start_time = 0
 
         # remote I/O 장치 인스턴스 생성
         if self.dev_remoteio_enable :
@@ -435,9 +437,9 @@ class DeviceContext(ContextBase):
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
                 # EMO 신호는 NC(Normally Closed)이므로 0일 때 트리거된 것으로 간주
-                emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SI] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_03_SI] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_04_SI] == 0)
+                emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SW] == 0 or 
+                                 self.remote_input_data[DigitalInput.EMO_03_SW] == 0 or 
+                                 self.remote_input_data[DigitalInput.EMO_04_SW] == 0)
                 
                 sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
                 if sol_sensor == 0:
@@ -499,6 +501,9 @@ class DeviceContext(ContextBase):
                 self.iocontroller.write_output_data(output_data)
                 self.remote_output_data = output_data
 
+            # MQTT 전송을 위해 전체 DO 리스트 업데이트
+            bb.set("device/remote/output/entire", output_data)
+
             # 4. 카운터 증가
             self._do_write_counter += 1
             
@@ -523,10 +528,10 @@ class DeviceContext(ContextBase):
                 bb.set("device/remote/input/BCR_OK", self.remote_input_data[DigitalInput.BCR_OK])
                 bb.set("device/remote/input/BCR_ERROR", self.remote_input_data[DigitalInput.BCR_ERROR])
                 bb.set("device/remote/input/BUSY", self.remote_input_data[DigitalInput.BUSY])
-                bb.set("device/remote/input/ENO_01_SW", self.remote_input_data[DigitalInput.ENO_01_SW])
-                bb.set("device/remote/input/EMO_02_SI", self.remote_input_data[DigitalInput.EMO_02_SI])
-                bb.set("device/remote/input/EMO_03_SI", self.remote_input_data[DigitalInput.EMO_03_SI])
-                bb.set("device/remote/input/EMO_04_SI", self.remote_input_data[DigitalInput.EMO_04_SI])
+                bb.set("device/remote/input/EMO_01_SW", self.remote_input_data[DigitalInput.EMO_01_SW])
+                bb.set("device/remote/input/EMO_02_SW", self.remote_input_data[DigitalInput.EMO_02_SW])
+                bb.set("device/remote/input/EMO_03_SW", self.remote_input_data[DigitalInput.EMO_03_SW])
+                bb.set("device/remote/input/EMO_04_SW", self.remote_input_data[DigitalInput.EMO_04_SW])
                 bb.set("device/remote/input/DOOR_1_OPEN", self.remote_input_data[DigitalInput.DOOR_1_OPEN])
                 bb.set("device/remote/input/DOOR_2_OPEN", self.remote_input_data[DigitalInput.DOOR_2_OPEN])
                 bb.set("device/remote/input/DOOR_3_OPEN", self.remote_input_data[DigitalInput.DOOR_3_OPEN])
@@ -869,45 +874,69 @@ class DeviceContext(ContextBase):
             reraise(e)
             return False
 
-    def chuck_1_open(self) -> bool:
+    def chuck_1_open(self) -> str:
         '''
-        상단 그리퍼(GRIPPER_1) 열기 - 블랙보드 기반 (검증 불필요)
-        :return: success True, fail False
+        상단 그리퍼(GRIPPER_1) 열기 - Non-blocking 20초 대기 방식
+        :return: "running", "done", "error"
         '''
         try:
             if not self._is_io_writable():
-                return False
+                return "error"
 
-            # 블랙보드에만 쓰기
-            bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 0)
+            # Start sequence
+            if self.chuck_1_open_start_time == 0:
+                # 블랙보드에만 쓰기
+                bb.set("device/remote/output/GRIPPER_1_UNCLAMP", 0)
 
-            Logger.info(f"[device] Chuck 1 (Upper) Open Command Queued.")
-            return True
+                self.chuck_1_open_start_time = time.time()
+                Logger.info(f"[device] Chuck 1 (Upper) Open Command Queued. Waiting 20s for completion.")
+                return "running"
+
+            # Check timer
+            if time.time() - self.chuck_1_open_start_time >= 20.0:
+                # Timer finished
+                self.chuck_1_open_start_time = 0
+                Logger.info(f"[device] Chuck 1 (Upper) Open 20s Wait Complete.")
+                return "done"
+
+            return "running"
 
         except Exception as e:
             Logger.error(f"[device] Error in chuck_1_open: {e}\n{traceback.format_exc()}")
-            reraise(e)
-            return False
+            self.chuck_1_open_start_time = 0
+            return "error"
 
-    def chuck_2_open(self) -> bool:
+    def chuck_2_open(self) -> str:
         '''
-        하단 그리퍼(GRIPPER_2) 열기 - 블랙보드 기반 (검증 불필요)
-        :return: success True, fail False
+        하단 그리퍼(GRIPPER_2) 열기 - Non-blocking 20초 대기 방식
+        :return: "running", "done", "error"
         '''
         try:
             if not self._is_io_writable():
-                return False
+                return "error"
 
-            # 블랙보드에만 쓰기
-            bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 0)
+            # Start sequence
+            if self.chuck_2_open_start_time == 0:
+                # 블랙보드에만 쓰기
+                bb.set("device/remote/output/GRIPPER_2_UNCLAMP", 0)
 
-            Logger.info(f"[device] Chuck 2 (Lower) Open Command Queued.")
-            return True
+                self.chuck_2_open_start_time = time.time()
+                Logger.info(f"[device] Chuck 2 (Lower) Open Command Queued. Waiting 20s for completion.")
+                return "running"
+
+            # Check timer
+            if time.time() - self.chuck_2_open_start_time >= 20.0:
+                # Timer finished
+                self.chuck_2_open_start_time = 0
+                Logger.info(f"[device] Chuck 2 (Lower) Open 20s Wait Complete.")
+                return "done"
+
+            return "running"
 
         except Exception as e:
             Logger.error(f"[device] Error in chuck_2_open: {e}\n{traceback.format_exc()}")
-            reraise(e)
-            return False
+            self.chuck_2_open_start_time = 0
+            return "error"
 
     # 신율계 전후진 제어 및 확인 함수들    
     def EXT_move_forword(self) :

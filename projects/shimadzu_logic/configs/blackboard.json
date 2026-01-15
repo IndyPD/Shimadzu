@@ -83,10 +83,6 @@
   "device/remote/input/BCR_OK": 0,
   "device/remote/input/BCR_ERROR": 0,
   "device/remote/input/BUSY": 0,
-  "device/remote/input/EMO_01_SW": 0,
-  "device/remote/input/EMO_02_SW": 0,
-  "device/remote/input/EMO_03_SW": 0,
-  "device/remote/input/EMO_04_SW": 0,
   "device/remote/input/TEST_GRIPPER_1_CLAMP": 0,
   "device/remote/input/TEST_GRIPPER_1_UNCLAMP": 0,
   "device/remote/input/TEST_GRIPPER_2_CLAMP": 0,
@@ -158,10 +154,10 @@
   "device/indicator/stand/state" : "",
   "device/align/state" : "",
   "device/remote/input/SOL_SENSOR": 0,
-  "device/remote/input/ENO_01_SW": 0,
-  "device/remote/input/EMO_02_SI": 0,
-  "device/remote/input/EMO_03_SI": 0,
-  "device/remote/input/EMO_04_SI": 0,
+  "device/remote/input/EMO_01_SW": 0,
+  "device/remote/input/EMO_02_SW": 0,
+  "device/remote/input/EMO_03_SW": 0,
+  "device/remote/input/EMO_04_SW": 0,
   "device/remote/input/DOOR_1_OPEN": 0,
   "device/remote/input/DOOR_2_OPEN": 0,
   "device/remote/input/DOOR_3_OPEN": 0,
@@ -315,5 +311,7 @@
   },
   "logic/events/one_shot" : {},
 
-  "logic/send_event" : {}
+  "logic/send_event" : {},
+
+  "process/binpick/status": 0
 }

@@ -323,6 +323,7 @@ class MqttComm:
                         self.bb.set("ui/cmd/binpick/trigger", 1)
                     elif action == "stop":
                         self.bb.set("ui/cmd/binpick/action", "stop")
+                        self.bb.set("process/binpick/status", 0)  # 상태 초기화
                         self.bb.set("ui/cmd/binpick/trigger", 1)
             elif cmd == "vision_control":
                 # Vision 연결 제어 명령 처리 (MQTT_Protocol.md Section 3.3)
@@ -594,7 +595,21 @@ class MqttComm:
                     process_status_msg_id = self.rules["event_ids"].get("process_status", "logic-evt-proc-status-001")
                     self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
                         self._create_frame("logic.event", "ui", process_status_msg_id, process_status_payload, False)))
-                    
+
+                    # 3.5. Bin Picking Status Publishing (binpick_status)
+                    binpick_status = self.bb.get("process/binpick/status")
+                    if binpick_status is not None:
+                        binpick_status_payload = {
+                            "kind": "event",
+                            "evt": "binpick_status",
+                            "batch_info": {
+                                "status": str(binpick_status)
+                            }
+                        }
+                        binpick_status_msg_id = self.rules["event_ids"].get("binpick_status", "logic-evt-binpick-status-001")
+                        self.client.publish(self.rules["topics"]["logic_evt"], json.dumps(
+                            self._create_frame("logic.event", "ui", binpick_status_msg_id, binpick_status_payload, False)))
+
                     # 4. Event Publishing (logic/send_event) - One-shot events
                     event_payload = self.bb.get("logic/send_event")
                     if event_payload:

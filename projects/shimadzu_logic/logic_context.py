@@ -1254,7 +1254,9 @@ class LogicContext(ContextBase):
                     Logger.info(f"[Logic] Step 11: Upper tensile gripper (GRIPPER_1) on done.")
                     bb.set(device_cmd_key, None)
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
+                    # self.set_seq(14)
                     self.set_seq(12)
+                    # return LogicEvent.DONE
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 11 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
@@ -1298,13 +1300,13 @@ class LogicContext(ContextBase):
         # TODO 시마즈 프로그램 세팅 완료 후 구현 예정
         elif self._seq == 14:
             self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskPreload", "Device-Shimadzu", "Start")
-            device_cmd = {"command": DeviceCommand.DO_ASK_PRELOAD, "state": "", "is_done": False}
-            Logger.info(f"[Logic] Step 14: Sending command: {DeviceCommand.DO_ASK_PRELOAD} (Ask Preload)")
+            device_cmd = {"command": DeviceCommand.ASK_PRELOAD, "state": "", "is_done": False}
+            Logger.info(f"[Logic] Step 14: Sending command: {DeviceCommand.ASK_PRELOAD} (Ask Preload)")
             bb.set(device_cmd_key, device_cmd)
             self.set_seq(15)
             return LogicEvent.NONE
         elif self._seq == 15:
-            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.DO_ASK_PRELOAD and get_device_cmd.get("is_done"):
+            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.ASK_PRELOAD and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskPreload", "Device-Shimadzu", "Done")
                     Logger.info(f"[Logic] Step 15: Preload status received successfully.")
@@ -1350,6 +1352,8 @@ class LogicContext(ContextBase):
                 self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq+2}_MoveToTensile", "Robot", "Start")
                 self.set_seq(2)
             return LogicEvent.NONE
+            # self.set_seq(2)
+            # return LogicEvent.NONE
 
         # Seq 1: 신율계 후진 완료 확인
         elif self._seq == 1:
@@ -1451,32 +1455,41 @@ class LogicContext(ContextBase):
                     return LogicEvent.NONE
             return LogicEvent.NONE
 
-        # Seq 5: Device-Tensile_gripper-TENSILE_GRIPPER_OFF
+        # Seq 5: Device-Tensile_gripper-TENSILE_GRIPPER_1_OFF (상단) 또는 TENSILE_GRIPPER_2_OFF (하단)
         elif self._seq == 8:
             # Logged in seq 7
-            device_cmd = {"command": DeviceCommand.TENSILE_GRIPPER_OFF, "state": "", "is_done": False}
-            Logger.info(f"[Logic] Step 8: Sending command: {DeviceCommand.TENSILE_GRIPPER_OFF}")
+            # num: 1=하단(GRIPPER_2), 2=상단(GRIPPER_1)
+            if num == 2:
+                gripper_off_cmd = DeviceCommand.TENSILE_GRIPPER_1_OFF  # 상단 그리퍼 열기
+                Logger.info(f"[Logic] Step 8: Sending command: {DeviceCommand.TENSILE_GRIPPER_1_OFF} (Upper Chuck OFF)")
+            else:
+                gripper_off_cmd = DeviceCommand.TENSILE_GRIPPER_2_OFF  # 하단 그리퍼 열기
+                Logger.info(f"[Logic] Step 8: Sending command: {DeviceCommand.TENSILE_GRIPPER_2_OFF} (Lower Chuck OFF)")
+            device_cmd = {"command": gripper_off_cmd, "state": "", "is_done": False}
             bb.set(device_cmd_key, device_cmd)
             self.set_seq(9)
             return LogicEvent.NONE
         elif self._seq == 9:
-            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.TENSILE_GRIPPER_OFF and get_device_cmd.get("is_done"):
+            # num: 1=하단(GRIPPER_2), 2=상단(GRIPPER_1)
+            expected_cmd = DeviceCommand.TENSILE_GRIPPER_1_OFF if num == 2 else DeviceCommand.TENSILE_GRIPPER_2_OFF
+            if get_device_cmd and get_device_cmd.get("command") == expected_cmd and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
-                    self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_GripperOff", "Device-Tensile", "Done")
-                    Logger.info(f"[Logic] Step 9: Tensile gripper off done.")
+                    gripper_name = "Upper" if num == 2 else "Lower"
+                    self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_Gripper{num}Off", "Device-Tensile", "Done")
+                    Logger.info(f"[Logic] Step 9: Tensile {gripper_name} gripper off done.")
                     bb.set(device_cmd_key, None)
                     self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq}_Retreat", "Robot", "Start")
                     self.set_seq(10)
                 else:
-                    self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_GripperOff", "Device-Tensile", "Error")
+                    self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq-1}_Gripper{num}Off", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 9 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 6: RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK
         elif self._seq == 10:
             # Logged in seq 9
-            robot_cmd = {"process": MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK, "state": ""}
-            Logger.info(f"[Logic] Step 10: Sending command: {MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK}")
+            robot_cmd = {"process": MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK, "position": num, "state": ""}
+            Logger.info(f"[Logic] Step 10: Sending command: {MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK} at pos {num}")
             bb.set(robot_cmd_key, robot_cmd)
             self._log_detail("retreat_from_tensile_machine_after_pick", f"seq_{self._seq}_Retreat", "Robot", "Start")
             self.set_seq(11)
@@ -2389,7 +2402,7 @@ class LogicContext(ContextBase):
             if self._sub_seq == 0:
                 self._log_detail("execute_controlled_stop", "seq_60_Retreat", "Robot", "Start")
                 cmd = MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK
-                robot_cmd = {"process": cmd, "state": ""}
+                robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
                 self.set_sub_seq(1)
