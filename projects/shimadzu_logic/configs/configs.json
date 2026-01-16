@@ -4,7 +4,7 @@
   "remote_io": "192.168.2.40",
   "mqtt_ip": "127.0.0.1",
   "shimadzu_ip": "127.0.0.1",
-  "shimadzu_port": 50003,
+  "shimadzu_port": 30002,
   "bin_picking_ip": "192.168.2.16",
   "bin_picking_port": 5003,
   "db_host": "localhost",

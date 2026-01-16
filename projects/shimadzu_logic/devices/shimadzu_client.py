@@ -126,7 +126,9 @@ class ShimadzuClient:
                 data = self.socket.recv(4096)
                 if not data:
                     break
-                self.log(f'Received raw data: {data}')
+                # [Log Filter] Raw data log filtering
+                if b"SYS_STATUS" not in data and b"I_AM_HERE" not in data:
+                    self.log(f'Received raw data: {data}')
                 buffer += data
                 while b'\x02' in buffer and b'\x03' in buffer:
                     start_idx = buffer.find(b'\x02')
@@ -155,7 +157,9 @@ class ShimadzuClient:
 
             command = parsed.get("type")
             params = parsed.get("params", {})
-            self.log(f"Received: {command} | Params: {params}")
+            
+            if command not in ["SYS_STATUS", "I_AM_HERE"]:
+                self.log(f"Received: {command} | Params: {params}")
 
             # 응답 대기 중인 경우 이벤트 세트
             if self.expected_response and command == self.expected_response:
@@ -187,7 +191,9 @@ class ShimadzuClient:
             if isinstance(msg, str):
                 msg = msg.encode('utf-8')
             self.socket.sendall(msg)
-            self.log(f"Sent: {command} | Params: {params}")
+            
+            if command not in ["ASK_SYS_STATUS", "ARE_YOU_THERE"]:
+                self.log(f"Sent: {command} | Params: {params}")
         except Exception as e:
             self.log(f"Send error: {e}")
 
@@ -220,11 +226,14 @@ class ShimadzuClient:
             if isinstance(msg, str):
                 msg = msg.encode('utf-8')
             self.socket.sendall(msg)
-            self.log(f"Sent: {command} | Params: {params} | Waiting for: {expected_response}")
+            
+            if command not in ["ASK_SYS_STATUS", "ARE_YOU_THERE"]:
+                self.log(f"Sent: {command} | Params: {params} | Waiting for: {expected_response}")
 
             # 응답 대기
             if self.response_event.wait(timeout):
-                self.log(f"Response received within {timeout}s: {self.response_data}")
+                if command not in ["ASK_SYS_STATUS", "ARE_YOU_THERE"]:
+                    self.log(f"Response received within {timeout}s: {self.response_data}")
                 result = self.response_data
                 # 초기화
                 self.expected_response = None
@@ -269,7 +278,7 @@ class ShimadzuClient:
         Returns:
             응답 데이터 또는 타임아웃 시 None
         """
-        return self.send_and_wait("START_RUN", "RUN_STARTED", {"LOTNAME": lotname}, timeout=timeout)
+        return self.send_and_wait("START_RUN", "ACK_START_RUN", {"LOTNAME": lotname}, timeout=timeout)
 
     def send_ask_sys_status(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         """
@@ -310,7 +319,7 @@ class ShimadzuClient:
             "ChuckL": format_float_value(chuckl, 7, 2),
             "ISFinal": isfinal
         }
-        return self.send_and_wait("ASK_REGISTER", "REGISTER_RESULT", params, timeout=timeout)
+        return self.send_and_wait("ASK_REGISTER", "REGISTERED", params, timeout=timeout)
  
     def send_stop_ana(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         """
@@ -323,9 +332,9 @@ class ShimadzuClient:
         Returns:
             응답 데이터 또는 타임아웃 시 None
         """
-        return self.send_and_wait("STOP_ANA", "STOP_ACK", timeout=timeout)
+        return self.send_and_wait("STOP_ANA", "ACK_STOP_ANA", timeout=timeout)
 
-    def send_ask_preload(self, timeout: float = 5.0) :
+    def send_ask_preload(self, timeout: float = 60.0) :
         """
         12. 프리로드 시험 시작 요청 (ASK_PRELOAD)
 
@@ -335,7 +344,102 @@ class ShimadzuClient:
         Returns:
             응답 데이터 또는 타임아웃 시 None
         """
-        return self.send_and_wait("ASK_PRELOAD", "PRELOAD_STARTED", timeout=timeout)
+        return self.send_and_wait("ASK_PRELOAD", "ACK_PRELOAD", timeout=timeout)
+
+    def send_start_ana(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        """
+        7. 시험 시작 요청 (START_ANA)
+        ASK_REGISTER -> REGISTER_RESULT 이후 시험 시작 명령
+        Shimadzu에서 ANA_STARTED 응답 후 실제 시험 진행
+
+        Args:
+            timeout: 응답 대기 시간 (초)
+
+        Returns:
+            응답 데이터 또는 타임아웃 시 None
+        """
+        return self.send_and_wait("START_ANA", "ACK_START_ANA", timeout=timeout)
+
+    def send_ack_ana_result(self):
+        """
+        10. 시험 결과 수신 확인 (ACK_ANA_RESULT)
+        ANA_RESULT 수신 후 전송
+        """
+        self.send_command("ACK_ANA_RESULT")
+        self.log("Sent ACK_ANA_RESULT")
+
+    def wait_for_ana_result(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
+        """
+        9. 시험 결과 대기 (ANA_RESULT)
+        시험이 완료될 때까지 ANA_RESULT 메시지를 대기합니다.
+        시험 시간이 길 수 있으므로 기본 타임아웃은 300초(5분)입니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초, 기본 300초)
+
+        Returns:
+            응답 데이터 {"command": "ANA_RESULT", "params": {...}} 또는 타임아웃 시 None
+        """
+        try:
+            # 이전 응답 데이터 초기화
+            self.response_event.clear()
+            self.response_data = None
+            self.expected_response = "ANA_RESULT"
+
+            self.log(f"Waiting for ANA_RESULT (timeout: {timeout}s)...")
+
+            # 응답 대기 (별도 명령 전송 없이 수신만 대기)
+            if self.response_event.wait(timeout):
+                self.log(f"ANA_RESULT received: {self.response_data}")
+                result = self.response_data
+                # 초기화
+                self.expected_response = None
+                self.response_data = None
+                return result
+            else:
+                self.log(f"Timeout: No ANA_RESULT received within {timeout}s")
+                # 초기화
+                self.expected_response = None
+                self.response_data = None
+                return None
+
+        except Exception as e:
+            self.log(f"Wait for ANA_RESULT error: {e}")
+            self.expected_response = None
+            self.response_data = None
+            return None
+
+    # [Method 2] Non-blocking check functions (Commented out)
+    # def start_waiting_ana_result(self):
+    #     """ANA_RESULT 대기 시작 (이벤트 초기화)"""
+    #     self.response_event.clear()
+    #     self.response_data = None
+    #     self.expected_response = "ANA_RESULT"
+    #     self.log("Started waiting for ANA_RESULT (Non-blocking)...")
+    #
+    # def check_ana_result(self) -> Optional[Dict[str, Any]]:
+    #     """ANA_RESULT 도착 여부 확인 (Non-blocking)"""
+    #     if self.response_event.is_set():
+    #         self.log(f"ANA_RESULT received: {self.response_data}")
+    #         result = self.response_data
+    #         # 초기화
+    #         self.expected_response = None
+    #         self.response_data = None
+    #         return result
+    #     return None
+
+    def send_end_run(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        """
+        자동운전 종료 (END_RUN)
+        모든 시험 완료 후 자동운전 종료 명령
+
+        Args:
+            timeout: 응답 대기 시간 (초)
+
+        Returns:
+            응답 데이터 또는 타임아웃 시 None
+        """
+        return self.send_and_wait("END_RUN", "RUN_ENDED", timeout=timeout)
  
 # --- 사용 예시 ---
 if __name__ == "__main__":

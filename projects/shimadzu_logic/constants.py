@@ -152,6 +152,7 @@ class DeviceState(OpState):
     GRIPPER_2_GRIP                      = 27            # 하단 그리퍼 잡기
     GRIPPER_2_RELEASE                   = 28            # 하단 그리퍼 풀기
     ASK_PRELOAD                         = 29            # 프리로드 확인
+    START_MEASUREMENT                   = 30            # 측정 시작 (START_RUN)
 
 
 
@@ -221,6 +222,10 @@ class DeviceEvent(OpEvent):
     DO_ASK_PRELOAD                      = 52            # 프리로드 확인 실행
     ASK_PRELOAD_DONE                    = 53            # 프리로드 확인 완료
     ASK_PRELOAD_FAIL                    = 54            # 프리로드 확인 실패
+
+    DO_START_MEASUREMENT                = 55            # 측정 시작 실행
+    START_MEASUREMENT_DONE              = 56            # 측정 시작 완료
+    START_MEASUREMENT_FAIL              = 57            # 측정 시작 실패
 
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
@@ -596,3 +601,4 @@ class DeviceCommand(str, Enum):
     QR_READ                             = "qr_read"
     REGISTER_METHOD                     = "register_method"
     ASK_PRELOAD                         = "ask_preload"
+    START_MEASUREMENT                   = "start_measurement"

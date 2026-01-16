@@ -45,6 +45,7 @@ class DeviceContext(ContextBase):
         self.dev_remoteio_enable = True
         self.dev_smz_enable =  True
         self.dev_qr_enable = True
+        self.smz_initial_check_done = False
 
         self.dev_smz_check_time = datetime.now()
         
@@ -371,10 +372,18 @@ class DeviceContext(ContextBase):
                 # t3 = datetime.now()
                 # Shimadzu
                 if self.dev_smz_enable :
-                    smz_run_state = self.smz_ask_sys_status()
-                    bb.set("device/shimadzu/comm_status", 1 if smz_run_state else 0)
-                    # if smz_run_state:
-                    #     bb.set("device/shimadzu/run_state", smz_run_state)
+                    # smz_run_state = self.smz_ask_sys_status()
+                    # bb.set("device/shimadzu/comm_status", 1 if smz_run_state else 0)
+                    # # if smz_run_state:
+                    # #     bb.set("device/shimadzu/run_state", smz_run_state)
+                    
+                    if not self.smz_initial_check_done:
+                        smz_run_state = self.smz_ask_sys_status()
+                        if smz_run_state:
+                            bb.set("device/shimadzu/comm_status", 1)
+                            self.smz_initial_check_done = True
+                        else:
+                            bb.set("device/shimadzu/comm_status", 0)
                 # else :
                 #     bb.set("device/shimadzu/comm_status", 1)
                 
@@ -420,19 +429,39 @@ class DeviceContext(ContextBase):
                 #     self.violation_code |= DeviceViolation.SMZ_COMM_ERR
                 # else:
                     
-                smz_state = self.smz_ask_sys_status()
-                try :
-                    if smz_state is False:
-                        Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
-                        self.violation_code |= DeviceViolation.SMZ_COMM_ERR
-                    elif smz_state is not None :
-                        if smz_state.get("RUN") == "E":
+                # smz_state = self.smz_ask_sys_status()
+                # try :
+                #     if smz_state is False:
+                #         Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                #         self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                #     elif smz_state is not None :
+                #         if smz_state.get("RUN") == "E":
+                #             Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                #             self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
+                # except Exception as e:
+                #     Logger.error(f"[device] SMZ Ask system status result : {smz_state}")
+                #     Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
+                #     self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                
+                if not self.smz_initial_check_done:
+                    smz_state = self.smz_ask_sys_status()
+                    try :
+                        if smz_state is False:
                             Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
-                            self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
-                except Exception as e:
-                    Logger.error(f"[device] SMZ Ask system status result : {smz_state}")
-                    Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
-                    self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                            self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                        elif smz_state is not None :
+                            if smz_state.get("RUN") == "E":
+                                Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
+                                self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
+                            
+                            # 성공적으로 상태를 받았으면 플래그 설정
+                            self.smz_initial_check_done = True
+                            bb.set("device/shimadzu/comm_status", 1)
+
+                    except Exception as e:
+                        Logger.error(f"[device] SMZ Ask system status result : {smz_state}")
+                        Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
+                        self.violation_code |= DeviceViolation.SMZ_COMM_ERR
             
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
@@ -1360,6 +1389,12 @@ class DeviceContext(ContextBase):
         :rtype: Optional[Dict[str, Any]]
         '''
         try:
+            Logger.info(f"[device] smz_ask_register params received: {regist_data}")
+            
+            # [FIX] 측정된 두께값 백업 (DB 조회 결과로 덮어씌워지는 것 방지)
+            measured_thickness = regist_data.get("thickness")
+            
+            db_result = {}
             batch_data = bb.get("process/auto/batch_data")
             if batch_data:
                 current_qr_no = regist_data.get("qr_no")
@@ -1369,32 +1404,35 @@ class DeviceContext(ContextBase):
                     
                     if target_item:
                         try:
-                            db_result = self.db.get_test_method_details(current_qr_no)
-                            if db_result:
+                            details = self.db.get_test_method_details(current_qr_no)
+                            if details:
+                                db_result = details
                                 Logger.info(f"[device] Fetched method items from DB for {current_qr_no}")
                                 regist_data.update(db_result)
                         except Exception as e:
                             Logger.error(f"[device] Failed to fetch batch method items from DB: {e}")
+                    else:
+                        Logger.warn(f"[device] smz_ask_register: qr_no '{current_qr_no}' not found in current batch processData.")
+                        
 
             bb.set("device/shimadzu/ask_register/params", regist_data)
-            batch_id = bb.get("process_status/batch_info")
+            batch_id = bb.get("process_status/batch_id")
             specimen_no = bb.get("process/auto/current_specimen_no")
             try_no = bb.get("process/auto/target_floor")
 
-            mtname = db_result.get("test_method")
+            mtname = db_result.get("test_method") or regist_data.get("mtname")
             # batch ID + tray_no + speimen_no ex) B-20260108-001-t10-s03
             tpname = f"{batch_id}-t{try_no:02d}-s{specimen_no:02d}"
-            size1 = db_result.get("size1")
-            size2 = db_result.get("size2")
-            gl = db_result.get("gl")
+            size1 = measured_thickness or db_result.get("size1") or regist_data.get("size1")
+            size2 = db_result.get("size2") or regist_data.get("size2")
+            gl = db_result.get("gl") or db_result.get("ql") or regist_data.get("gl")
             # thickness = bb.get(""specimen/thickness_avg")
-            chuckl = db_result.get("chuckl")
+            chuckl = db_result.get("chuckl") or regist_data.get("chuckl")
             last_tray_no = bb.get("process_status/last_tray_no")
-            if last_tray_no != 0 and try_no == last_tray_no:
-                if specimen_no == 5:
-                    isfinal = 1  # 전체 시험중 마지막 시험인 경우     
-            else:
-                isfinal = 0  # 마지막 시험이 아닌 경우
+            
+            isfinal = 0
+            if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
+                isfinal = 1  # 전체 시험중 마지막 시험인 경우
 
             Logger.info(f"[device] Sending ASK_REGISTER to Shimadzu (MTNAME: {mtname}, TPNAME: {tpname}, SIZE1: {size1}, SIZE2: {size2}, GL: {gl}, ChuckL: {chuckl}, ISFinal: {isfinal}, timeout: {timeout}s)")
 
@@ -1547,7 +1585,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_ask_preload(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def smz_ask_preload(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 프리로드 상태 확인 요청을 보내고 응답을 기다립니다.
 
@@ -1574,7 +1612,113 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in smz_ask_preload: {e}\n{traceback.format_exc()}")
             reraise(e)
             return None
-    
+
+    def smz_start_ana(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        '''
+        Shimadzu 서버에 시험 시작 명령(START_ANA)을 전송하고 응답을 기다립니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초)
+
+        Returns:
+            성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        '''
+        try:
+            if not self.dev_smz_enable:
+                return {"command": "ANA_STARTED", "params": {"STATUS": "OK"}}
+
+            Logger.info(f"[device] Sending START_ANA to Shimadzu (timeout: {timeout}s)")
+            result = self.shimadzu_client.send_start_ana(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] START_ANA timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] START_ANA response received: {result}")
+            return result
+
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_start_ana: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return None
+
+    def smz_wait_ana_result(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
+        '''
+        Shimadzu 서버로부터 시험 결과(ANA_RESULT)를 대기합니다.
+        시험 시간이 길 수 있으므로 기본 타임아웃은 300초(5분)입니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초, 기본 300초)
+
+        Returns:
+            성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        '''
+        try:
+            if not self.dev_smz_enable:
+                return {"command": "ANA_RESULT", "params": {"CODE": "00", "TPNAME": "TEST"}}
+
+            Logger.info(f"[device] Waiting for ANA_RESULT from Shimadzu (timeout: {timeout}s)")
+            result = self.shimadzu_client.wait_for_ana_result(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] ANA_RESULT timeout after {timeout}s - No result from Shimadzu")
+                return None
+
+            Logger.info(f"[device] ANA_RESULT received: {result}")
+            return result
+
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_wait_ana_result: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return None
+
+    def smz_ack_ana_result(self) -> bool:
+        '''
+        Shimadzu 서버에 시험 결과 수신 확인(ACK_ANA_RESULT)을 보냅니다.
+        ANA_RESULT 수신 후 호출해야 합니다.
+
+        Returns:
+            전송 성공 여부
+        '''
+        try:
+            if not self.dev_smz_enable:
+                return True
+            Logger.info("[device] Sending ACK_ANA_RESULT to Shimadzu")
+            self.shimadzu_client.send_ack_ana_result()
+            return True
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_ack_ana_result: {e}\n{traceback.format_exc()}")
+            return False
+
+    def smz_end_run(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        '''
+        Shimadzu 서버에 자동운전 종료(END_RUN) 명령을 전송합니다.
+
+        Args:
+            timeout: 응답 대기 시간 (초)
+
+        Returns:
+            성공 시 응답 데이터, 타임아웃 또는 실패 시 None
+        '''
+        try:
+            if not self.dev_smz_enable:
+                return {"command": "RUN_ENDED", "params": {"STATUS": "OK"}}
+
+            Logger.info(f"[device] Sending END_RUN to Shimadzu (timeout: {timeout}s)")
+            result = self.shimadzu_client.send_end_run(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] END_RUN timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] END_RUN response received: {result}")
+            return result
+
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_end_run: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return None
+
     def reconnect_remote_io(self) -> bool:
         """Remote I/O 재연결을 시도합니다."""
         Logger.info("[device] Attempting to reconnect to Remote IO...")

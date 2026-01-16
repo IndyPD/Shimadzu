@@ -221,21 +221,43 @@ class LogicRegisterProcessInfoStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Registering process info.")
+        context._seq = 0
+        context._sub_seq = 0
         
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
-        # 1. 기존 실행 데이터 초기화 (10개 슬롯 생성 및 ID 리셋)
-
-        # 2. DB에서 공정 계획 로드 및 실행 테이블 기입
-        # get_batch_data 내부에서 데이터 가공 및 Blackboard(bb) 저장이 자동으로 수행됩니다.
-        batch_info = context.db.get_batch_data()
-        if batch_info is not None:
-            return LogicEvent.REGISTRATION_DONE
         
-        Logger.error(f"[Logic] Failed to load batch data from DB.")
-        return LogicEvent.VIOLATION_DETECT
+        if context._seq == 0:
+            # 1. DB에서 공정 계획 로드 및 실행 테이블 기입
+            # get_batch_data 내부에서 데이터 가공 및 Blackboard(bb) 저장이 자동으로 수행됩니다.
+            batch_info = context.db.get_batch_data()
+            if batch_info is not None:
+                # 배치 정보에서 Lot Name 추출
+                process_data = batch_info.get("processData", [])
+                lot_name = "DEFAULT_LOT"
+                if process_data:
+                    lot_name = process_data[0].get("lot", "DEFAULT_LOT")
+                
+                # 다음 단계(START_MEASUREMENT)를 위해 Lot Name 저장
+                self.lot_name = lot_name
+                context.set_seq(1)
+            else:
+                Logger.error(f"[Logic] Failed to load batch data from DB.")
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        elif context._seq == 1:
+            # 2. Shimadzu 장비에 START_RUN 명령 전송
+            result = context.start_measurement_sequence(self.lot_name)
+            if result == LogicEvent.DONE:
+                return LogicEvent.REGISTRATION_DONE
+            elif result == LogicEvent.VIOLATION_DETECT:
+                return LogicEvent.VIOLATION_DETECT
+            
+            return LogicEvent.NONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
 class LogicResetDataStrategy(Strategy):
@@ -258,7 +280,8 @@ class LogicCheckDeviceStatusStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Checking device status.")
-        
+        context.set_seq(0)
+        context.set_sub_seq(0)
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
         # 툴 상태 확인 및 교체 로직 실행
@@ -425,6 +448,10 @@ class LogicDetermineTaskStrategy(Strategy):
            # RUNNING
             bb.set("process/auto/current_specimen_no", 1) # 시편 번호 1번부터 시작
             bb.set("process/auto/batch_data", batch_data)
+
+            # [FIX] Set process_status/qr_no and batch_id for device usage
+            bb.set("process_status/qr_no", current_specimen.get('qr_no'))
+            bb.set("process_status/batch_id", batch_data.get('batch_id'))
             
             # DB 업데이트 (Tray RUNNING, Specimen 1 RUNNING)
             Logger.info(f"[Logic] DetermineTask: Updating sequence {current_specimen['seq_order']} status to RUNNING (2) in DB.")
@@ -517,6 +544,10 @@ class LogicDetermineTaskStrategy(Strategy):
                     "tray_num": tray_no,
                     "specimen_num": spec_no
                 })
+
+                # [FIX] Ensure qr_no and batch_id are set (important for restart scenario)
+                bb.set("process_status/qr_no", current_specimen.get('qr_no'))
+                bb.set("process_status/batch_id", batch_data.get('batch_id'))
                 
                 # # 상태를 2(RUNNING)로 변경
                 # context.db.update_test_tray_item(tray_no, spec_no, {'status': 2})
@@ -624,14 +655,13 @@ class LogicDetermineTaskStrategy(Strategy):
         #     context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
         #     return LogicEvent.DO_START_TENSILE_TEST
         
-        elif step == 9: # 9번으로 옮기기 (인장시험 X) (정렬대기는 추후에)  (임시코드)
+        elif step == 9: # 인장기 장착 완료 -> 인장 시험 시작 (9)
             Logger.info("[Logic] DetermineTask: Step 8 (Load Tensile Machine) done. -> Step 9 (Start Tensile Test).")
             bb.set("process/auto/current_step", 10)
             # 시험중 (5)
             context.db.update_test_tray_item(current_specimen['tray_no'], bb.get("process/auto/current_specimen_no"), {'status': 5})
-            # return LogicEvent.DO_START_TENSILE_TEST
-            # [수정] 인장 시험(Step 9)을 건너뛰고 바로 다음 단계 로직을 실행하기 위해 재귀 호출
-            return self.operate(context)
+            #return self.operate(context)
+            return LogicEvent.DO_START_TENSILE_TEST
         
         elif step == 10: # 인장 시험 시작 완료 -> 하단 시편 수거 (10)
             Logger.info("[Logic] DetermineTask: Step 9 (Start Tensile Test) command sent. -> Step 10 (Pick Upper Specimen).")

@@ -277,14 +277,14 @@ class RobotCommunication:
                
             prev_start = loop_start
  
-            if time.perf_counter() - window_start >= 5.0 and n > 0:
-                Logger.info(
-                    f"[IndyTiming] loop avg {acc_loop/n*1000:.2f} ms max {max_loop*1000:.2f} ms (n={n})"
-                )
-                acc_loop = 0.0
-                max_loop = 0.0
-                n = 0
-                window_start = time.perf_counter()
+            # if time.perf_counter() - window_start >= 5.0 and n > 0:
+            #     Logger.info(
+            #         f"[IndyTiming] loop avg {acc_loop/n*1000:.2f} ms max {max_loop*1000:.2f} ms (n={n})"
+            #     )
+            #     acc_loop = 0.0
+            #     max_loop = 0.0
+            #     n = 0
+            #     window_start = time.perf_counter()
  
 
     def start_recording(self, cmd_id):
@@ -814,15 +814,15 @@ class RobotCommunication:
             grip_retry = self.get_intvar_address(int_var, int(self.config["int_var/grip_retry/addr"]))
             
             #Sehoon
-            bFlag = False
-            if motion_ack != self.o_motion_ack:
-                self.o_motion_ack = motion_ack
-                bFlag = True
-            if motion_done != self.o_motion_done:
-                self.o_motion_done = motion_done
-                bFlag = True
-            if bFlag:
-                Logger.info(f"[IndyTiming] CMD={bb.get('int_var/cmd/val')} motion_ack={motion_ack} motion_done={motion_done}")
+            # bFlag = False
+            # if motion_ack != self.o_motion_ack:
+            #     self.o_motion_ack = motion_ack
+            #     bFlag = True
+            # if motion_done != self.o_motion_done:
+            #     self.o_motion_done = motion_done
+            #     bFlag = True
+            # if bFlag:
+            #     Logger.info(f"[IndyTiming] CMD={bb.get('int_var/cmd/val')} motion_ack={motion_ack} motion_done={motion_done}")
                 
 
             if motion_ack is not None:
@@ -833,16 +833,16 @@ class RobotCommunication:
                     bb.set("robot/current/position", current_pos_id)
                     # Logger.info(f"[Safety] Robot position updated to: {current_pos_id}")
                 #Sehoon ACK timestamp capture
-                if self.cmd_tracking_id is not None and motion_ack == (self.cmd_tracking_id + 500) and self.cmd_ack_ts is None:
-                    self.cmd_ack_ts = time.perf_counter()
+                # if self.cmd_tracking_id is not None and motion_ack == (self.cmd_tracking_id + 500) and self.cmd_ack_ts is None:
+                #     self.cmd_ack_ts = time.perf_counter()
                     
             
             if motion_done is not None:
                 bb.set("int_var/motion_done/val", motion_done)
                 #Sehoon DONE timestamp capture
-                if self.cmd_tracking_id is not None and (motion_done == self.cmd_tracking_id or motion_done == self.cmd_tracking_id + 10000):
-                    self.cmd_done_ts = time.perf_counter()
-                    self.last_done_ts = self.cmd_done_ts
+                # if self.cmd_tracking_id is not None and (motion_done == self.cmd_tracking_id or motion_done == self.cmd_tracking_id + 10000):
+                #     self.cmd_done_ts = time.perf_counter()
+                #     self.last_done_ts = self.cmd_done_ts
 
            
             if robot_pos is not None:
@@ -981,17 +981,17 @@ class RobotCommunication:
                 # No ACK yet, or CMD is already 0. Keep sending the current command.
                 cmd_to_write = current_cmd
             #Sehoon send timestamp capture
-            if cmd_to_write != 0:
-                if self.cmd_tracking_id != cmd_to_write:
-                    self.cmd_tracking_id = cmd_to_write
-                    self.cmd_send_ts = time.perf_counter()
-                    self.cmd_ack_ts = None
-                    self.cmd_done_ts = None
-                    gap_ms = None
-                    if self.last_done_ts is not None:
-                        gap_ms = (self.cmd_send_ts - self.last_done_ts) * 1000
-                    gap_str = f"{gap_ms:.2f} ms" if gap_ms is not None else "n/a"
-                    Logger.info(f"[IndyTiming] CMD {cmd_to_write} sent (tracking started, done->send {gap_str})")
+            # if cmd_to_write != 0:
+            #     if self.cmd_tracking_id != cmd_to_write:
+            #         self.cmd_tracking_id = cmd_to_write
+            #         self.cmd_send_ts = time.perf_counter()
+            #         self.cmd_ack_ts = None
+            #         self.cmd_done_ts = None
+            #         gap_ms = None
+            #         if self.last_done_ts is not None:
+            #             gap_ms = (self.cmd_send_ts - self.last_done_ts) * 1000
+            #         gap_str = f"{gap_ms:.2f} ms" if gap_ms is not None else "n/a"
+            #         Logger.info(f"[IndyTiming] CMD {cmd_to_write} sent (tracking started, done->send {gap_str})")
  
             vars_to_set.append({'addr': int(self.config["int_var/cmd/addr"]), 'value': cmd_to_write})
 
@@ -1008,27 +1008,27 @@ class RobotCommunication:
             if vars_to_set:
                 self.indy.set_int_variable(vars_to_set)
              #Sehoon DONE latency logging
-            if self.cmd_tracking_id is not None and self.cmd_done_ts is not None:
-                send_ack = (self.cmd_ack_ts - self.cmd_send_ts) * 1000 if self.cmd_ack_ts and self.cmd_send_ts else None
-                send_done = (self.cmd_done_ts - self.cmd_send_ts) * 1000 if self.cmd_send_ts else None
-                ack_done = (self.cmd_done_ts - self.cmd_ack_ts) * 1000 if self.cmd_ack_ts else None
-                send_ack_str = f"{send_ack:.2f}" if send_ack is not None else "n/a"
-                send_done_str = f"{send_done:.2f}" if send_done is not None else "n/a"
-                ack_done_str = f"{ack_done:.2f}" if ack_done is not None else "n/a"
+            # if self.cmd_tracking_id is not None and self.cmd_done_ts is not None:
+            #     send_ack = (self.cmd_ack_ts - self.cmd_send_ts) * 1000 if self.cmd_ack_ts and self.cmd_send_ts else None
+            #     send_done = (self.cmd_done_ts - self.cmd_send_ts) * 1000 if self.cmd_send_ts else None
+            #     ack_done = (self.cmd_done_ts - self.cmd_ack_ts) * 1000 if self.cmd_ack_ts else None
+            #     send_ack_str = f"{send_ack:.2f}" if send_ack is not None else "n/a"
+            #     send_done_str = f"{send_done:.2f}" if send_done is not None else "n/a"
+            #     ack_done_str = f"{ack_done:.2f}" if ack_done is not None else "n/a"
                 
-                # [추가] ACK와 DONE이 동시에 수신되었는지 표시 (1ms 미만 차이)
-                note = ""
-                if ack_done is not None and ack_done < 1.0:
-                    note = " (Simultaneous Recv)"
-                    Logger.info(f"note !! \n")
+            #     # [추가] ACK와 DONE이 동시에 수신되었는지 표시 (1ms 미만 차이)
+            #     note = ""
+            #     if ack_done is not None and ack_done < 1.0:
+            #         note = " (Simultaneous Recv)"
+            #         Logger.info(f"note !! \n")
 
-                Logger.info(
-                    f"[IndyTiming] CMD {self.cmd_tracking_id} timings: send->ACK {send_ack_str} ms, send->DONE {send_done_str} ms, ACK->DONE {ack_done_str} ms{note}"
-                )
-                self.cmd_send_ts = None
-                self.cmd_ack_ts = None
-                self.cmd_done_ts = None
-                self.cmd_tracking_id = None
+            #     Logger.info(
+            #         f"[IndyTiming] CMD {self.cmd_tracking_id} timings: send->ACK {send_ack_str} ms, send->DONE {send_done_str} ms, ACK->DONE {ack_done_str} ms{note}"
+            #     )
+            #     self.cmd_send_ts = None
+            #     self.cmd_ack_ts = None
+            #     self.cmd_done_ts = None
+            #     self.cmd_tracking_id = None
             # Part 4: Handle boolean variables (like CMD_Init) separately.
             # 로봇이 CMD를 인식하려면 init이 True여야 하므로, CMD가 살아있는 동안에는 True를 유지합니다.            
             if bb.get("indy_command/reset_init_var"):
@@ -1041,8 +1041,7 @@ class RobotCommunication:
                 self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': keep_init_on}])
                 # CMD_Init을 False로 유지하여 ACK/DONE 변수가 깜빡이는 현상을 방지합니다.
                 # reset_init_var가 True일 때만 한 사이클 동안 True가 됩니다.
-                self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': False}])
-
+                # self.indy.set_bool_variable([{'addr': int(self.config["int_var/init/addr"]), 'value': False}])
         except Exception as e:
             Logger.error(f"Error in handle_int_variable cycle: {e}")
 

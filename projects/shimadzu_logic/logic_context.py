@@ -1254,51 +1254,83 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Done")
                     Logger.info(f"[Logic] Step 11: Upper tensile gripper (GRIPPER_1) on done.")
                     bb.set(device_cmd_key, None)
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
-                    # self.set_seq(14)
-                    self.set_seq(12)
-                    # return LogicEvent.DONE
+                    # 흐름도: 상단 그리퍼 닫기 완료 -> ASK_REGISTER
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
+                    self.set_seq(16)  # ASK_REGISTER로 이동
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 11 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Seq 7: Robot-Motion-MOVE_TO_HOME, Device-EXT-EXT_FORWARD
+        # Seq 16-17: ASK_REGISTER (시험 조건 등록)
+        elif self._seq == 16:
+            self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
+            # 시험 조건 등록을 위한 데이터 준비
+            tray_no = bb.get("process/auto/target_floor")
+            specimen_no = bb.get("process/auto/current_specimen_no")
+            qr_no = bb.get("process_status/qr_no") or ""
+            batch_id = bb.get("process_status/batch_id") or ""
+            thickness = bb.get("specimen/thickness_avg") or 0.0
+
+            if not batch_id:
+                Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/batch_id' is empty.")
+            if not qr_no:
+                Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/qr_no' is empty.")
+
+            regist_data = {
+                "tray_no": tray_no,
+                "specimen_no": specimen_no,
+                "qr_no": qr_no,
+                "batch_id": batch_id,
+                "thickness": thickness
+            }
+
+            device_cmd = {"command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False}
+            Logger.info(f"[Logic] Step 16: Sending command: {DeviceCommand.REGISTER_METHOD} (Ask Register)")
+            bb.set(device_cmd_key, device_cmd)
+            self.set_seq(17)
+            return LogicEvent.NONE
+        elif self._seq == 17:
+            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.REGISTER_METHOD and get_device_cmd.get("is_done"):
+                if get_device_cmd.get("state") == "done":
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Done")
+                    Logger.info(f"[Logic] Step 17: Register method completed successfully.")
+                    bb.set(device_cmd_key, None)
+                    # 흐름도: ASK_REGISTER 완료 -> EXT_FORWARD
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
+                    self.set_seq(12)  # EXT_FORWARD로 이동
+                else:
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Error")
+                    Logger.error(f"[Logic] Step 17 failed: {get_device_cmd}")
+                    bb.set(device_cmd_key, None)
+                    self.set_seq(0)
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Seq 12-13: EXT_FORWARD (신율계 전진)
         elif self._seq == 12:
-            # Logged in seq 11
-            # robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
-            # Logger.info(f"[Logic] Step 12: Sending command: {MotionCommand.MOVE_TO_HOME}")
-            # bb.set(robot_cmd_key, robot_cmd)
-            # 신율계(EXT) 전진 명령 추가
             device_cmd = {"command": DeviceCommand.EXT_FORWARD, "state": "", "is_done": False}
             Logger.info(f"[Logic] Step 12: Sending command: {DeviceCommand.EXT_FORWARD} (Extensometer Forward)")
             bb.set(device_cmd_key, device_cmd)
             self.set_seq(13)
             return LogicEvent.NONE
         elif self._seq == 13:
-            # 신율계(EXT) 전진 완료 확인 추가
-            # robot_done = get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done"
             ext_done = get_device_cmd and get_device_cmd.get("command") == DeviceCommand.EXT_FORWARD and get_device_cmd.get("is_done")
 
             if ext_done:
                 if get_device_cmd.get("state") == "done":
-                    # self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Done")
-                    Logger.info(f"[Logic] Step 13: Extensometer forward done. Specimen loaded successfully.")
-                    # bb.set(robot_cmd_key, None)
+                    Logger.info(f"[Logic] Step 13: Extensometer forward done.")
                     bb.set(device_cmd_key, None)
-                    self.set_seq(0)
-                    return LogicEvent.DONE
+                    # 흐름도: EXT_FORWARD 완료 -> ASK_PRELOAD
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskPreload", "Device-Shimadzu", "Start")
+                    self.set_seq(14)  # ASK_PRELOAD로 이동
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 13 extensometer failed: {get_device_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
-            # elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-            #     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
-            #     Logger.error(f"[Logic] Step 13 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Seq 8: 인장기 하중 제거, shimadzu쪽으로 명령 전달
-        # TODO 시마즈 프로그램 세팅 완료 후 구현 예정
+        # Seq 14-15: ASK_PRELOAD (프리로드 확인)
         elif self._seq == 14:
             self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskPreload", "Device-Shimadzu", "Start")
             device_cmd = {"command": DeviceCommand.ASK_PRELOAD, "state": "", "is_done": False}
@@ -1310,7 +1342,7 @@ class LogicContext(ContextBase):
             if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.ASK_PRELOAD and get_device_cmd.get("is_done"):
                 if get_device_cmd.get("state") == "done":
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskPreload", "Device-Shimadzu", "Done")
-                    Logger.info(f"[Logic] Step 15: Preload status received successfully.")
+                    Logger.info(f"[Logic] Step 15: Preload status received successfully. Specimen loaded and ready for test.")
                     bb.set(device_cmd_key, None)
                     self.set_seq(0)
                     return LogicEvent.DONE
@@ -1763,6 +1795,50 @@ class LogicContext(ContextBase):
             self.set_seq(0)
             return LogicEvent.VIOLATION_DETECT
     
+    def start_measurement_sequence(self, lot_name: str):
+        """
+        Device FSM에 측정 시작(START_RUN) 명령을 전달하고 완료를 대기합니다.
+        """
+        try:
+            get_device_cmd = bb.get(device_cmd_key)
+
+            # Step 1: 명령 전송
+            if self._sub_seq == 0:
+                device_cmd = {
+                    "command": DeviceCommand.START_MEASUREMENT,
+                    "params": {"lot_name": lot_name},
+                    "state": "",
+                    "is_done": False
+                }
+                bb.set(device_cmd_key, device_cmd)
+                Logger.info(f"[Logic] Sent START_MEASUREMENT command to DeviceFSM (Lot: {lot_name}).")
+                self.set_sub_seq(1)
+                return LogicEvent.NONE
+
+            # Step 2: 명령 완료 대기
+            elif self._sub_seq == 1:
+                if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.START_MEASUREMENT:
+                    if not get_device_cmd.get("is_done"):
+                        return LogicEvent.NONE
+
+                    if get_device_cmd.get("state") == "done":
+                        Logger.info("[Logic] DeviceFSM confirmed measurement started.")
+                        bb.set(device_cmd_key, None)
+                        self.set_sub_seq(0)
+                        return LogicEvent.DONE
+                    else:
+                        Logger.error(f"[Logic] DeviceFSM failed to start measurement.")
+                        bb.set(device_cmd_key, None)
+                        self.set_sub_seq(0)
+                        return LogicEvent.VIOLATION_DETECT
+            
+            return LogicEvent.NONE
+
+        except Exception as e:
+            Logger.error(f"[Logic] Exception in start_measurement_sequence: {e}")
+            self.set_sub_seq(0)
+            return LogicEvent.VIOLATION_DETECT
+
     def set_seq(self, num) :
         if self._seq != num :
             Logger.info(f"original seq : {self._seq}, new : {num}")
@@ -2450,7 +2526,11 @@ class LogicContext(ContextBase):
         - Bin Tool(36,37): 37번(ATC_2_2)이 꺼져있으면 로봇에 장착된 상태.
         """
         get_robot_cmd = bb.get(robot_cmd_key)
-        
+        atc_1_2 = bb.get("device/remote/input/ATC_1_2_SENSOR") # Pro Tool Station
+        atc_2_2 = bb.get("device/remote/input/ATC_2_2_SENSOR") # Bin Tool Station
+        Logger.info(f"[Logic] check_and_Change_tool approached. {self._seq}, {self._sub_seq}, {get_robot_cmd}, {atc_1_2}, {atc_2_2}")
+
+
         # Step 0: 센서 확인 및 분기
         if self._seq == 0:
             # 센서 값 읽기 (1: 감지됨/스테이션에 있음, 0: 감지안됨/로봇에 있음)

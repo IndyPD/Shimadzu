@@ -469,6 +469,8 @@ class WaitCommandStrategy(Strategy):
                 return DeviceEvent.DO_REGISTER_METHOD
             elif cmd == DeviceCommand.ASK_PRELOAD:
                 return DeviceEvent.DO_ASK_PRELOAD
+            elif cmd == DeviceCommand.START_MEASUREMENT:
+                return DeviceEvent.DO_START_MEASUREMENT
 
         return DeviceEvent.NONE
     
@@ -786,33 +788,91 @@ class ExtensometerForwardStrategy(Strategy):
         Logger.info(f"[device] exit ExtensometerForwardStrategy with event: {event}")
 
 class StartTensileTestStrategy(Strategy):
+    """
+    인장 시험 시작 전략
+    흐름도에 따른 시퀀스:
+    1. START_ANA 전송 -> ANA_STARTED 수신
+    2. ACK_ANA_STARTED 전송
+    3. ANA_RESULT 대기 (시험 완료까지, 최대 5분)
+    4. ACK_ANA_RESULT 전송
+    """
     def prepare(self, context: DeviceContext, **kwargs):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[device] enter StartTensileTestStrategy")
         Logger.info("[device] Device: Starting Tensile Test.")
+        self._seq = 0
+        self.ana_result = None
+        self.start_time = time.time()
+        self.test_timeout = 300.0  # 시험 타임아웃 5분
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
-        # Logic FSM에서 전달된 파라미터(lotname 등)를 사용해야 하지만,
-        # 현재 구조에서는 cmd dict에서 가져와야 함.
+        # Seq 0: START_ANA 전송 및 ACK_START_ANA 응답 대기
+        if self._seq == 0:
+            Logger.info("[device][TensileTest] Seq 0: Sending START_ANA...")
+            result = context.smz_start_ana(timeout=10.0)
 
-        # Shimadzu에 시험 시작 명령 전송
-        lotname = bb.get("process_status/lot_name")
-        result = context.smz_start_measurement(lotname=lotname)
-        
-        # 응답 확인
-        if result and result.get('status') == 'OK':
-            Logger.info(f"[device] Shimadzu test started successfully for lot: {lotname}")
-            return DeviceEvent.TENSILE_TEST_DONE
-        else:
-            Logger.error(f"[device] Failed to start Shimadzu test: {result}")
-            return DeviceEvent.TENSILE_TEST_FAIL
-    
+            if result is None:
+                Logger.error("[device][TensileTest] START_ANA failed - no response from Shimadzu")
+                return DeviceEvent.TENSILE_TEST_FAIL
+
+            # ACK_START_ANA 응답 확인
+            Logger.info(f"[device][TensileTest] ACK_START_ANA received: {result}")
+            self.start_time = time.time()  # 시험 시작 시간 기록
+            self._seq = 2
+            return DeviceEvent.NONE
+
+        # Seq 2: ANA_RESULT 대기 (시험 완료까지)
+        elif self._seq == 2:
+            Logger.info("[device][TensileTest] Seq 2: Waiting for ANA_RESULT...")
+            
+            # [Method 1] Blocking wait (300s)
+            # FSM 스레드가 여기서 블로킹되지만, 이벤트 유실 문제는 해결됩니다.
+            result = context.smz_wait_ana_result(timeout=300.0)
+
+            if result is not None:
+                # 시험 결과 수신
+                self.ana_result = result
+                Logger.info(f"[device][TensileTest] ANA_RESULT received: {result}")
+
+                # 결과 코드 확인
+                params = result.get("params", {})
+                code = params.get("CODE", "99")
+                if code == "00":
+                    Logger.info("[device][TensileTest] Test completed successfully (CODE: 00)")
+                else:
+                    Logger.error(f"[device][TensileTest] Test completed with CODE: {code}")
+
+                # 결과 데이터를 블랙보드에 저장
+                bb.set("shimadzu/ana_result", params)
+                self._seq = 3
+            else:
+                # 타임아웃 (300초 경과)
+                Logger.error(f"[device][TensileTest] Test timeout (300s)")
+                return DeviceEvent.TENSILE_TEST_FAIL
+            
+            return DeviceEvent.NONE
+
+        # Seq 3: ACK_ANA_RESULT 전송 및 완료
+        elif self._seq == 3:
+            Logger.info("[device][TensileTest] Seq 3: Sending ACK_ANA_RESULT...")
+            if context.smz_ack_ana_result():
+                Logger.info("[device][TensileTest] ACK_ANA_RESULT sent successfully")
+                Logger.info("[device][TensileTest] Tensile test sequence completed!")
+                return DeviceEvent.TENSILE_TEST_DONE
+            else:
+                Logger.error("[device][TensileTest] Failed to send ACK_ANA_RESULT")
+                return DeviceEvent.TENSILE_TEST_FAIL
+
+        return DeviceEvent.NONE
+
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
         cmd_data = bb.get("process/auto/device/cmd")
         if isinstance(cmd_data, dict):
             is_success = event == DeviceEvent.TENSILE_TEST_DONE
-            cmd_data["is_done"] = is_success
+            cmd_data["is_done"] = True
             cmd_data["state"] = "done" if is_success else "error"
+            if self.ana_result:
+                cmd_data["result"] = self.ana_result.get("params", {})
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit StartTensileTestStrategy with event: {event}")
 
@@ -1078,3 +1138,31 @@ class AskPreloadStrategy(Strategy):
             cmd_data["state"] = "done" if is_success else "error"
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit AskPreloadStrategy with event: {event}")
+
+class StartMeasurementStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter StartMeasurementStrategy")
+        self.cmd_data = bb.get("process/auto/device/cmd")
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        if not self.cmd_data or not isinstance(self.cmd_data, dict):
+            return DeviceEvent.START_MEASUREMENT_FAIL
+        
+        params = self.cmd_data.get("params", {})
+        lot_name = params.get("lot_name", "DEFAULT_LOT")
+        
+        # 1. START_RUN 전송 (ACK_START_RUN 대기 포함)
+        result = context.smz_start_measurement(lot_name)
+        if result:
+            return DeviceEvent.START_MEASUREMENT_DONE
+        
+        return DeviceEvent.START_MEASUREMENT_FAIL
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        if isinstance(self.cmd_data, dict):
+            is_success = event == DeviceEvent.START_MEASUREMENT_DONE
+            self.cmd_data["is_done"] = True
+            self.cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", self.cmd_data)
+        Logger.info(f"[device] exit StartMeasurementStrategy with event: {event}")
