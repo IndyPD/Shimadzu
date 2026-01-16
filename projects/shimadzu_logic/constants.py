@@ -74,7 +74,6 @@ class LogicEvent(OpEvent):
     # LogicState 기반 이벤트
     START_AUTO_COMMAND                  = 5             # 자동화 공정 시작 명령
     REGISTRATION_DONE                   = 6             # 공정 정보 등록 완료
-    STATUS_CHECK_DONE                   = 7             # 장비 상태 확인 완료
     PROCESS_START                       = 8             # 자동화 공정 시작
     PROCESS_STOP                        = 9             # 공정 정지 (현재 모션 완료 후 정지)
     PROCESS_STEP_STOP                   = 10            # 공정 단계 정지 (현재 공정 완료 후 정지)
@@ -328,11 +327,19 @@ class RobotMotionCommand(IntEnum):
     GRIPPER_CLOSE = 91
     # 복구
     RECOVERY_HOME = 100
-    # 공정 중 모션 (Process)
-    PRO_TOOL_MOVE_POS = 105
-    PRO_TOOL_ENTER_SENSOR_3 = 106
-    PRO_TOOL_ENTER_SENSOR_4 = 107
-    PRO_TOOL_INSERT_MOVE_UP = 108
+    # Tool Change - Bin Picking Tool
+    BIN_TOOL_MOVE_POS = 101
+    BIN_TOOL_MOVE_INSERT = 102
+    BIN_TOOL_ENTER_SENSOR_2_1 = 103
+    BIN_TOOL_ENTER_SENSOR_2_2 = 104
+    BIN_TOOL_INSERT_MOVE_UP = 105
+    # Tool Change - Process Tool
+    PRO_TOOL_MOVE_POS = 106
+    PRO_TOOL_MOVE_INSERT = 107
+    PRO_TOOL_ENTER_SENSOR_1_1 = 108
+    PRO_TOOL_ENTER_SENSOR_1_2 = 109
+    PRO_TOOL_INSERT_MOVE_UP = 110
+    TOOL_CHANGE_HOME = 111
     RACK_FRONT_MOVE = 1000
     RACK_FRONT_RETURN = 2000
     THICK_GAUGE_FRONT_MOVE = 3000
@@ -556,6 +563,19 @@ class MotionCommand(str, Enum):
     # ACT07: 홈 (Home)
     MOVE_TO_HOME                        = "move_to_home"
 
+    # Tool Change
+    BIN_TOOL_MOVE_POS                   = "bin_tool_move_pos"
+    BIN_TOOL_MOVE_INSERT                = "bin_tool_move_insert"
+    BIN_TOOL_ENTER_SENSOR_2_1           = "bin_tool_enter_sensor_2_1"
+    BIN_TOOL_ENTER_SENSOR_2_2           = "bin_tool_enter_sensor_2_2"
+    BIN_TOOL_INSERT_MOVE_UP             = "bin_tool_insert_move_up"
+    
+    PRO_TOOL_MOVE_POS                   = "pro_tool_move_pos"
+    PRO_TOOL_MOVE_INSERT                = "pro_tool_move_insert"
+    PRO_TOOL_ENTER_SENSOR_1_1           = "pro_tool_enter_sensor_1_1"
+    PRO_TOOL_ENTER_SENSOR_1_2           = "pro_tool_enter_sensor_1_2"
+    PRO_TOOL_INSERT_MOVE_UP             = "pro_tool_insert_move_up"
+    TOOL_CHANGE_HOME                    = "tool_change_home"
 
 class DeviceCommand(str, Enum):
     """장치(Device)의 개별 동작을 정의하는 Enum 클래스입니다."""

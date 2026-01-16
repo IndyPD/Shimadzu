@@ -92,6 +92,8 @@ class DBHandler:
                     bb.set("process/auto/current_specimen_no", 0)
                     bb.set("process_status/runtime", 0)
                     bb.set("process_status/system_status", "대기중")
+                    bb.set("process_status/batch_id", "")
+                    bb.set("process_status/batch_info", {"batch_id": "", "status": "대기"})
                     bb.set("ui/cmd/data/reset", 0) # 명령 처리 후 플래그 리셋
 
             except Exception as e:

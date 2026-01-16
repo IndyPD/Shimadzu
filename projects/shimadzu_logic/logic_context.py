@@ -45,6 +45,7 @@ class LogicContext(ContextBase):
         self.status = LogicStatus()
         self.violation_code = 0x00
         self._set_seq = 0
+        self._seq = 0
         self._sub_seq = 0
         self.db = db_handler
         self._sub_seq_bk = 0
@@ -1571,7 +1572,12 @@ class LogicContext(ContextBase):
                 self._log_detail("Disposer_Scrap", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
                 Logger.info(f"[Logic] Step 5: Gripper open at scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self.set_seq(6)
+                
+                tensile_pick_pos = bb.get("process/auto/tensile_pick_pos")
+                if tensile_pick_pos == 2:
+                    self.set_seq(8)
+                else:
+                    self.set_seq(6)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                 self._log_detail("Disposer_Scrap", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
                 Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
@@ -1590,7 +1596,8 @@ class LogicContext(ContextBase):
                 self._log_detail("Disposer_Scrap", f"seq_{self._seq-1}_Retreat", "Robot", "Done")
                 Logger.info(f"[Logic] Step 7: Retreat from scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                self.set_seq(8)
+                self.set_seq(0)
+                return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                 self._log_detail("Disposer_Scrap", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
                 Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
@@ -2435,6 +2442,180 @@ class LogicContext(ContextBase):
             return LogicEvent.NONE
             
         return LogicEvent.NONE
+
+    def check_and_change_tool(self):
+        """
+        로봇의 툴 상태를 확인하고 Pro Tool로 교체하는 로직입니다.
+        - Pro Tool(33,34): 34번(ATC_1_2)이 꺼져있으면 로봇에 장착된 상태.
+        - Bin Tool(36,37): 37번(ATC_2_2)이 꺼져있으면 로봇에 장착된 상태.
+        """
+        get_robot_cmd = bb.get(robot_cmd_key)
+        
+        # Step 0: 센서 확인 및 분기
+        if self._seq == 0:
+            # 센서 값 읽기 (1: 감지됨/스테이션에 있음, 0: 감지안됨/로봇에 있음)
+            atc_1_2 = bb.get("device/remote/input/ATC_1_2_SENSOR") # Pro Tool Station
+            atc_2_2 = bb.get("device/remote/input/ATC_2_2_SENSOR") # Bin Tool Station
+            
+            # Case 1: Pro Tool이 스테이션에 없음 (로봇이 장착 중) -> 완료
+            if atc_1_2 == 0:
+                Logger.info("[Logic] Pro Tool is attached (ATC_1_2 OFF). Ready to start.")
+                return LogicEvent.DONE
+            
+            # Case 2: Pro Tool이 스테이션에 있음 (로봇 미장착) -> 교체 필요
+            else:
+                Logger.info("[Logic] Pro Tool is in station (ATC_1_2 ON). Checking Bin Tool status.")
+                
+                # Bin Tool 상태 확인
+                if atc_2_2 == 0: # Bin Tool이 스테이션에 없음 (로봇이 장착 중)
+                    Logger.info("[Logic] Robot has Bin Tool (ATC_2_2 OFF). Starting Drop Bin Tool sequence.")
+                    self.set_seq(10) # Bin Tool 반납 시퀀스로 이동
+                else: # Bin Tool도 스테이션에 있음 (로봇은 빈 상태)
+                    Logger.info("[Logic] Robot is empty (Both Tools in Station). Starting Pick Pro Tool sequence.")
+                    self.set_seq(20) # Pro Tool 장착 시퀀스로 이동
+            return LogicEvent.NONE
+
+        # --- Drop Bin Tool Sequence (10-19) ---
+        # Sequence: Home -> 111 -> 101 -> 102 -> 103 -> 104 -> 105 -> 111 -> Home
+        elif self._seq == 10: # 1. Tool Change Home (111)
+            self._send_robot_cmd(MotionCommand.TOOL_CHANGE_HOME)
+            self.set_seq(11)
+        elif self._seq == 11: # Wait
+            if self._check_robot_cmd_done(MotionCommand.TOOL_CHANGE_HOME): self.set_seq(12)
+
+        elif self._seq == 12: # 2. Bin Tool 위치로 이동 (101)
+            self._send_robot_cmd(MotionCommand.BIN_TOOL_MOVE_POS)
+            self.set_seq(13)
+        elif self._seq == 13: # Wait
+            if self._check_robot_cmd_done(MotionCommand.BIN_TOOL_MOVE_POS): self.set_seq(14)
+        
+        elif self._seq == 14: # 3. Insert 이동 (102)
+            self._send_robot_cmd(MotionCommand.BIN_TOOL_MOVE_INSERT)
+            self.set_seq(15)
+        elif self._seq == 15: # Wait
+            if self._check_robot_cmd_done(MotionCommand.BIN_TOOL_MOVE_INSERT): self.set_seq(16)
+
+        elif self._seq == 16: # 4. 2-1번 센서 진입 (103)
+            self._send_robot_cmd(MotionCommand.BIN_TOOL_ENTER_SENSOR_2_1)
+            self.set_seq(17)
+        elif self._seq == 17: # Wait
+            if self._check_robot_cmd_done(MotionCommand.BIN_TOOL_ENTER_SENSOR_2_1):
+                # [Safety Check] 2-1 Sensor (Outer) - 103번 위치
+                if bb.get("device/remote/input/ATC_2_1_SENSOR") == 0:
+                    Logger.warn("[Logic] Bin Tool Outer Sensor (2-1) NOT detected at pos 103.")
+                    # 경고만 하고 진행 (필요 시 에러 처리)
+                self.set_seq(18)
+
+        elif self._seq == 18: # 5. 2-2번 센서 진입 (완전 진입) (104)
+            self._send_robot_cmd(MotionCommand.BIN_TOOL_ENTER_SENSOR_2_2)
+            self.set_seq(19)
+        elif self._seq == 19: # Wait
+            if self._check_robot_cmd_done(MotionCommand.BIN_TOOL_ENTER_SENSOR_2_2):
+                # [Safety Check] 2-2 Sensor (Inner) - 104번 위치
+                # 툴을 놓기 직전이므로 반드시 감지되어야 함
+                if bb.get("device/remote/input/ATC_2_2_SENSOR") == 0:
+                    Logger.error("[Logic] Bin Tool Inner Sensor (2-2) NOT detected at pos 104. Stopping for safety.")
+                    return LogicEvent.VIOLATION_DETECT
+                self.set_seq(191)
+
+        elif self._seq == 191: # 6. 위로 이동 (툴 놓고 빠지기) (105)
+            self._send_robot_cmd(MotionCommand.BIN_TOOL_INSERT_MOVE_UP)
+            self.set_seq(192)
+        elif self._seq == 192: # Wait
+            if self._check_robot_cmd_done(MotionCommand.BIN_TOOL_INSERT_MOVE_UP):
+                Logger.info("[Logic] Bin Tool Dropped. Moving directly to Pro Tool Pick position.")
+                self.set_seq(22) # 바로 Pro Tool Insert Move Up (110)으로 이동
+
+        # elif self._seq == 193: # 7. Tool Change Home (111)
+        #     self._send_robot_cmd(MotionCommand.TOOL_CHANGE_HOME)
+        #     self.set_seq(194)
+        # elif self._seq == 194: # Wait
+        #     if self._check_robot_cmd_done(MotionCommand.TOOL_CHANGE_HOME): 
+        #         Logger.info("[Logic] Bin Tool Dropped. Proceeding to Pick Pro Tool.")
+        #         # 안전을 위해 홈으로 이동 후 툴 체인지 홈으로 이동
+        #         self._send_robot_cmd(MotionCommand.MOVE_TO_HOME)
+        #         self.set_seq(195)
+        
+        # elif self._seq == 195: # Wait for Home
+        #     if self._check_robot_cmd_done(MotionCommand.MOVE_TO_HOME):
+        #         self.set_seq(20)
+
+        # --- Pick Pro Tool Sequence (20-29) ---
+        # Sequence: Home -> 111 -> 110 -> 109 -> 108 -> 107 -> 106 -> 111 -> Home
+        elif self._seq == 20: # 1. Tool Change Home (111)
+            self._send_robot_cmd(MotionCommand.TOOL_CHANGE_HOME)
+            self.set_seq(21)
+        elif self._seq == 21: # Wait
+            if self._check_robot_cmd_done(MotionCommand.TOOL_CHANGE_HOME): self.set_seq(22)
+
+        elif self._seq == 22: # 2. Move Up (110)
+            self._send_robot_cmd(MotionCommand.PRO_TOOL_INSERT_MOVE_UP)
+            self.set_seq(23)
+        elif self._seq == 23: # Wait
+            if self._check_robot_cmd_done(MotionCommand.PRO_TOOL_INSERT_MOVE_UP): self.set_seq(24)
+
+        elif self._seq == 24: # 3. Inner Sensor (109) - Gripper Attach (1-2번 센서)
+            self._send_robot_cmd(MotionCommand.PRO_TOOL_ENTER_SENSOR_1_2)
+            self.set_seq(25)
+        elif self._seq == 25: # Wait
+            if self._check_robot_cmd_done(MotionCommand.PRO_TOOL_ENTER_SENSOR_1_2):
+                # [Safety Check] 1-2 Sensor (Inner) - 109번 위치
+                # 툴을 잡기 직전이므로 반드시 감지되어야 함
+                if bb.get("device/remote/input/ATC_1_2_SENSOR") == 0:
+                    Logger.error("[Logic] Pro Tool Inner Sensor (1-2) NOT detected at pos 109. Stopping for safety.")
+                    return LogicEvent.VIOLATION_DETECT
+                self.set_seq(26)
+
+        elif self._seq == 26: # 4. Outer Sensor (108) (1-1번 센서)
+            self._send_robot_cmd(MotionCommand.PRO_TOOL_ENTER_SENSOR_1_1)
+            self.set_seq(27)
+        elif self._seq == 27: # Wait
+            if self._check_robot_cmd_done(MotionCommand.PRO_TOOL_ENTER_SENSOR_1_1):
+                # [Safety Check] 1-1 Sensor (Outer) - 108번 위치
+                if bb.get("device/remote/input/ATC_1_1_SENSOR") == 0:
+                    Logger.warn("[Logic] Pro Tool Outer Sensor (1-1) NOT detected at pos 108.")
+                    # 경고만 하고 진행
+                self.set_seq(28)
+
+        elif self._seq == 28: # 5. Entry (107)
+            self._send_robot_cmd(MotionCommand.PRO_TOOL_MOVE_INSERT)
+            self.set_seq(29)
+        elif self._seq == 29: # Wait
+            if self._check_robot_cmd_done(MotionCommand.PRO_TOOL_MOVE_INSERT): self.set_seq(30)
+        
+        elif self._seq == 30: # 6. Front (106)
+            self._send_robot_cmd(MotionCommand.PRO_TOOL_MOVE_POS)
+            self.set_seq(31)
+        elif self._seq == 31: # Wait
+            if self._check_robot_cmd_done(MotionCommand.PRO_TOOL_MOVE_POS): self.set_seq(32)
+
+        elif self._seq == 32: # 7. Tool Change Home (111)
+            self._send_robot_cmd(MotionCommand.TOOL_CHANGE_HOME)
+            self.set_seq(33)
+        elif self._seq == 33: # Wait
+            if self._check_robot_cmd_done(MotionCommand.TOOL_CHANGE_HOME):
+                self._send_robot_cmd(MotionCommand.MOVE_TO_HOME) # 8. Home
+                self.set_seq(34)
+
+        elif self._seq == 34: # Wait for Home
+            if self._check_robot_cmd_done(MotionCommand.MOVE_TO_HOME):
+                Logger.info("[Logic] Pro Tool Attached.")
+                self.set_seq(0)
+                return LogicEvent.DONE
+        
+        return LogicEvent.NONE
+
+    def _send_robot_cmd(self, process):
+        robot_cmd = {"process": process, "state": ""}
+        bb.set(robot_cmd_key, robot_cmd)
+
+    def _check_robot_cmd_done(self, process):
+        get_robot_cmd = bb.get(robot_cmd_key)
+        if get_robot_cmd and get_robot_cmd.get("process") == process:
+            if get_robot_cmd.get("state") == "done":
+                bb.set(robot_cmd_key, None)
+                return True
+        return False
 
     def process_complete(self):
         """ 모든 배치 공정이 완료되었음을 처리하고 FSM을 대기 상태로 전환합니다. """

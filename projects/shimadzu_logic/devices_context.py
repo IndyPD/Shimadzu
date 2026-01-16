@@ -43,7 +43,7 @@ class DeviceContext(ContextBase):
 
         self.dev_gauge_enable = True
         self.dev_remoteio_enable = True
-        self.dev_smz_enable =  False
+        self.dev_smz_enable =  True
         self.dev_qr_enable = True
 
         self.dev_smz_check_time = datetime.now()

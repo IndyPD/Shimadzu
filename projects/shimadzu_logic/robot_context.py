@@ -249,6 +249,19 @@ class RobotContext(ContextBase):
             MotionCommand.GRIPPER_CLOSE_FOR_INDICATOR: RobotMotionCommand.GRIPPER_CLOSE,
             MotionCommand.GRIPPER_CLOSE_FOR_ALIGN: RobotMotionCommand.GRIPPER_CLOSE,
             MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE: RobotMotionCommand.GRIPPER_CLOSE,
+
+            MotionCommand.BIN_TOOL_MOVE_POS: RobotMotionCommand.BIN_TOOL_MOVE_POS,
+            MotionCommand.BIN_TOOL_MOVE_INSERT: RobotMotionCommand.BIN_TOOL_MOVE_INSERT,
+            MotionCommand.BIN_TOOL_ENTER_SENSOR_2_1: RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_1,
+            MotionCommand.BIN_TOOL_ENTER_SENSOR_2_2: RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_2,
+            MotionCommand.BIN_TOOL_INSERT_MOVE_UP: RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP,
+            
+            MotionCommand.PRO_TOOL_MOVE_POS: RobotMotionCommand.PRO_TOOL_MOVE_POS,
+            MotionCommand.PRO_TOOL_MOVE_INSERT: RobotMotionCommand.PRO_TOOL_MOVE_INSERT,
+            MotionCommand.PRO_TOOL_ENTER_SENSOR_1_1: RobotMotionCommand.PRO_TOOL_ENTER_SENSOR_1_1,
+            MotionCommand.PRO_TOOL_ENTER_SENSOR_1_2: RobotMotionCommand.PRO_TOOL_ENTER_SENSOR_1_2,
+            MotionCommand.PRO_TOOL_INSERT_MOVE_UP: RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP,
+            MotionCommand.TOOL_CHANGE_HOME: RobotMotionCommand.TOOL_CHANGE_HOME,
         }
         if motion_name in static_mapping:
             return static_mapping[motion_name]
@@ -335,6 +348,9 @@ class RobotContext(ContextBase):
             RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_DOWN,
             RobotMotionCommand.TENSILE_SAMPLE_RETURN_POS_UP,
             RobotMotionCommand.SCRAP_FRONT_RETURN,
+            RobotMotionCommand.BIN_TOOL_MOVE_POS,
+            RobotMotionCommand.PRO_TOOL_MOVE_POS,
+            RobotMotionCommand.TOOL_CHANGE_HOME,
         }
 
         # 규칙 1: 거점 -> 거점 이동 허용
@@ -397,6 +413,32 @@ class RobotContext(ContextBase):
         # 규칙 6: 스크랩(Scrap) 내부 시퀀스
         if current_pos_id == RobotMotionCommand.SCRAP_FRONT_MOVE and next_cmd_id == RobotMotionCommand.SCRAP_DROP_POS: return True
         if current_pos_id == RobotMotionCommand.SCRAP_DROP_POS and next_cmd_id == RobotMotionCommand.SCRAP_FRONT_RETURN: return True
+
+        # 규칙 7: 툴 체인지 (Tool Change) 시퀀스
+        # Bin Tool Internal (101 <-> 102 <-> 103 <-> 104 <-> 105) - Bidirectional
+        if 101 <= current_pos_id <= 104 and next_cmd_id == current_pos_id + 1: return True
+        if 102 <= current_pos_id <= 105 and next_cmd_id == current_pos_id - 1: return True
+        
+        # Pro Tool Internal (106 <-> 107 <-> 108 <-> 109 <-> 110) - Bidirectional for Pick/Place
+        if 106 <= current_pos_id <= 109 and next_cmd_id == current_pos_id + 1: return True
+        if 107 <= current_pos_id <= 110 and next_cmd_id == current_pos_id - 1: return True
+
+        # Tool Change Home (111) Connections
+        # Pro Tool
+        if current_pos_id == RobotMotionCommand.TOOL_CHANGE_HOME and next_cmd_id == RobotMotionCommand.PRO_TOOL_MOVE_POS: return True # 111 -> 106
+        if current_pos_id == RobotMotionCommand.PRO_TOOL_MOVE_POS and next_cmd_id == RobotMotionCommand.TOOL_CHANGE_HOME: return True # 106 -> 111
+        if current_pos_id == RobotMotionCommand.TOOL_CHANGE_HOME and next_cmd_id == RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP: return True # 111 -> 110
+        if current_pos_id == RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP and next_cmd_id == RobotMotionCommand.TOOL_CHANGE_HOME: return True # 110 -> 111
+        
+        # Bin Tool
+        if current_pos_id == RobotMotionCommand.TOOL_CHANGE_HOME and next_cmd_id == RobotMotionCommand.BIN_TOOL_MOVE_POS: return True # 111 -> 101
+        if current_pos_id == RobotMotionCommand.BIN_TOOL_MOVE_POS and next_cmd_id == RobotMotionCommand.TOOL_CHANGE_HOME: return True # 101 -> 111
+        if current_pos_id == RobotMotionCommand.TOOL_CHANGE_HOME and next_cmd_id == RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP: return True # 111 -> 105
+        if current_pos_id == RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP and next_cmd_id == RobotMotionCommand.TOOL_CHANGE_HOME: return True # 105 -> 111
+
+        # Direct Tool Change (105 <-> 110)
+        if current_pos_id == RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP and next_cmd_id == RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP: return True # 105 -> 110
+        if current_pos_id == RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP and next_cmd_id == RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP: return True # 110 -> 105
 
         # 허용된 규칙에 해당하지 않으면 이동 불가
         Logger.warn(f"[Safety] Invalid move blocked: from {current_pos_id} to {next_cmd_id}")

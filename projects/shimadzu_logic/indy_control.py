@@ -168,6 +168,91 @@ class RobotCommunication:
         self.indy.wait_for_motion_state('is_target_reached')
         Logger.info("[Indy7] Reached home position.")
 
+    def execute_cmd_sequence(self, cmd_list, description=""):
+        """
+        로봇에게 일련의 CMD ID를 순차적으로 전송하고 완료를 대기합니다.
+        (indy_control 내부에서 직접 제어할 때 사용)
+        """
+        # [Fix] 로봇 프로그램 실행 상태 확인 및 자동 시작
+        # execute_cmd_sequence는 메인 루프를 블로킹하므로 직접 상태를 확인해야 합니다.
+        try:
+            prog_data = self.indy.get_program_data()
+            if prog_data["program_state"] != ProgramState.PROG_RUNNING:
+                Logger.warn(f"[ToolChange] Robot program is NOT running. Attempting to start...")
+                
+                # Auto Mode 확인 및 설정
+                is_auto_mode = self.indy.check_auto_mode()
+                if not is_auto_mode.get('on'):
+                    self.indy.set_auto_mode(True)
+                    time.sleep(0.5)
+
+                self.indy.play_program(prog_idx=int(self.config["conty_main_program_index"]))
+                
+                # 프로그램 시작 대기 (최대 5초)
+                for _ in range(50):
+                    time.sleep(0.1)
+                    prog_data = self.indy.get_program_data()
+                    if prog_data["program_state"] == ProgramState.PROG_RUNNING:
+                        Logger.info("[ToolChange] Robot program started.")
+                        # ACK/DONE 초기화 (Init=True -> False)
+                        init_addr = int(self.config["int_var/init/addr"])
+                        self.indy.set_bool_variable([{'addr': init_addr, 'value': True}])
+                        time.sleep(0.1)
+                        self.indy.set_bool_variable([{'addr': init_addr, 'value': False}])
+                        break
+                else:
+                    Logger.error("[ToolChange] Failed to start robot program. Aborting sequence.")
+                    return False
+        except Exception as e:
+            Logger.error(f"[ToolChange] Error checking/starting robot program: {e}")
+            return False
+
+        Logger.info(f"[ToolChange] Starting sequence: {description}")
+        cmd_addr = int(self.config["int_var/cmd/addr"])
+        ack_addr = int(self.config["int_var/motion_ack/addr"])
+        done_addr = int(self.config["int_var/motion_done/addr"])
+        init_addr = int(self.config["int_var/init/addr"])
+
+        for cmd_id in cmd_list:
+            Logger.info(f"[ToolChange] Executing CMD {cmd_id}...")
+            
+            # 1. Send CMD & Init=True
+            self.indy.set_int_variable([{'addr': cmd_addr, 'value': cmd_id}])
+            self.indy.set_bool_variable([{'addr': init_addr, 'value': True}])
+            
+            # 2. Wait for ACK (CMD + 500)
+            start_time = time.time()
+            while time.time() - start_time < 5.0:
+                int_vars = self.indy.get_int_variable()['variables']
+                ack = self.get_intvar_address(int_vars, ack_addr)
+                if ack == cmd_id + 500:
+                    break
+                time.sleep(0.05)
+            else:
+                Logger.error(f"[ToolChange] Timeout waiting for ACK of CMD {cmd_id}")
+                return False
+            
+            # 3. Reset CMD & Init=False
+            self.indy.set_int_variable([{'addr': cmd_addr, 'value': 0}])
+            self.indy.set_bool_variable([{'addr': init_addr, 'value': False}])
+            
+            # 4. Wait for DONE (CMD + 10000)
+            start_time = time.time()
+            while time.time() - start_time < 30.0:
+                int_vars = self.indy.get_int_variable()['variables']
+                done = self.get_intvar_address(int_vars, done_addr)
+                if done == cmd_id + 10000:
+                    break
+                time.sleep(0.05)
+            else:
+                Logger.error(f"[ToolChange] Timeout waiting for DONE of CMD {cmd_id}")
+                return False
+            
+            Logger.info(f"[ToolChange] CMD {cmd_id} Done.")
+        
+        Logger.info(f"[ToolChange] Sequence '{description}' completed successfully.")
+        return True
+
     def run(self):
         """ Thread's target function """
         acc_loop = 0.0
@@ -320,6 +405,70 @@ class RobotCommunication:
                 if action == "start":
                     Logger.info("[BinPickControl] Starting Bin Picking sequence...")
                     # status: 0:초기값/1:인식/2:이동/3:잡기/4:인지/5:놓기/6:홈 이동/7:완료/10:쉐이킹
+                    
+                    # [Tool Check] Bin Picking 시작 전 툴 상태 확인
+                    # ATC_2_2_SENSOR (Bin Tool): 1=In Station(미장착), 0=On Robot(장착)
+                    atc_2_2 = bb.get("device/remote/input/ATC_2_2_SENSOR")
+                    # ATC_1_2_SENSOR (Pro Tool): 1=In Station(미장착), 0=On Robot(장착)
+                    atc_1_2 = bb.get("device/remote/input/ATC_1_2_SENSOR")
+
+                    # 1. Pro Tool이 장착되어 있는 경우 -> Pro Tool 반납 후 Bin Tool 장착
+                    if atc_1_2 == 0:
+                        Logger.info("[BinPickControl] Pro Tool detected (ATC_1_2 OFF). Initiating tool change to Bin Tool.")
+                        
+                        # Drop Pro Tool Sequence: 111 -> 106 -> 107 -> 108 -> 109 -> 110 (End here)
+                        drop_pro_seq = [
+                            RobotMotionCommand.TOOL_CHANGE_HOME,
+                            RobotMotionCommand.PRO_TOOL_MOVE_POS,
+                            RobotMotionCommand.PRO_TOOL_MOVE_INSERT,
+                            RobotMotionCommand.PRO_TOOL_ENTER_SENSOR_1_1,
+                            RobotMotionCommand.PRO_TOOL_ENTER_SENSOR_1_2,
+                            RobotMotionCommand.PRO_TOOL_INSERT_MOVE_UP
+                        ]
+                        if not self.execute_cmd_sequence(drop_pro_seq, "Drop Pro Tool"):
+                            Logger.error("[BinPickControl] Failed to drop Pro Tool. Aborting.")
+                            bb.set("process/binpick/status", 0)
+                            return
+                        
+                        # Pro Tool 반납 완료. 바로 Bin Tool 장착 (110 -> 105 Direct)
+                        Logger.info("[BinPickControl] Pro Tool dropped. Moving directly to Pick Bin Tool.")
+                        
+                        pick_bin_seq = [
+                            RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP,
+                            RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_2,
+                            RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_1,
+                            RobotMotionCommand.BIN_TOOL_MOVE_INSERT,
+                            RobotMotionCommand.BIN_TOOL_MOVE_POS,
+                            RobotMotionCommand.TOOL_CHANGE_HOME,
+                            RobotMotionCommand.RECOVERY_HOME
+                        ]
+                        if not self.execute_cmd_sequence(pick_bin_seq, "Pick Bin Tool (Direct)"):
+                            Logger.error("[BinPickControl] Failed to pick Bin Tool. Aborting.")
+                            bb.set("process/binpick/status", 0)
+                            return
+
+                    # 2. Bin Tool이 장착되어 있지 않은 경우 (빈 손) -> Bin Tool 장착
+                    elif atc_2_2 == 1:
+                        Logger.info("[BinPickControl] Robot is empty (ATC_2_2 ON). Picking Bin Tool.")
+                        
+                        # Pick Bin Tool Sequence: 111 -> 105 -> 104 -> 103 -> 102 -> 101 -> 111 -> 100
+                        pick_bin_seq = [
+                            RobotMotionCommand.TOOL_CHANGE_HOME,
+                            RobotMotionCommand.BIN_TOOL_INSERT_MOVE_UP,
+                            RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_2,
+                            RobotMotionCommand.BIN_TOOL_ENTER_SENSOR_2_1,
+                            RobotMotionCommand.BIN_TOOL_MOVE_INSERT,
+                            RobotMotionCommand.BIN_TOOL_MOVE_POS,
+                            RobotMotionCommand.TOOL_CHANGE_HOME,
+                            RobotMotionCommand.RECOVERY_HOME
+                        ]
+                        if not self.execute_cmd_sequence(pick_bin_seq, "Pick Bin Tool"):
+                            Logger.error("[BinPickControl] Failed to pick Bin Tool. Aborting.")
+                            bb.set("process/binpick/status", 0)
+                            return
+
+                    Logger.info("[BinPickControl] Tool check complete. Bin Tool is ready.")
+
                     try:
                         # [Stop Check] 시작 전 확인
                         if bb.get("ui/cmd/binpick/action") == "stop":

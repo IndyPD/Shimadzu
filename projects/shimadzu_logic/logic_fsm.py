@@ -50,7 +50,7 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.CHECK_DEVICE_STATUS: {
-                LogicEvent.STATUS_CHECK_DONE: LogicState.WAIT_PROCESS, # 확인 완료 -> 공정 대기
+                LogicEvent.DONE: LogicState.WAIT_PROCESS, # 확인 완료 -> 공정 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
             LogicState.WAIT_PROCESS: {

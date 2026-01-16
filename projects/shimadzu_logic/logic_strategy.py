@@ -42,7 +42,7 @@ class LogicConnectingStrategy(Strategy):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Starting connection checks for all modules (Device & Robot).")
         # devices_context.py에서 dev_smz_enable이 False로 하드코딩되어 있으므로, 여기서도 동일하게 설정합니다.
-        self.dev_smz_enable = False
+        self.dev_smz_enable = True # False --- IGNORE ---
 
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
@@ -261,8 +261,9 @@ class LogicCheckDeviceStatusStrategy(Strategy):
         
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
-        # 장비 상태 확인 로직
-        return LogicEvent.STATUS_CHECK_DONE
+        # 툴 상태 확인 및 교체 로직 실행
+        return context.check_and_change_tool()
+        # return LogicEvent.STATUS_CHECK_DONE
     
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
