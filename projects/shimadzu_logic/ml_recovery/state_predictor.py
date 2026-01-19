@@ -133,7 +133,7 @@ class StatePredictor:
                 except:
                     confidence = 0.95  # 기본값
 
-            Logger.info(f"[State Predictor] Predicted: {state_name} (CMD {pred_cmd_id}) with {confidence*100:.1f}% confidence")
+            # Logger.info(f"[State Predictor] Predicted: {state_name} (CMD {pred_cmd_id}) with {confidence*100:.1f}% confidence")
 
             return pred_cmd_id, state_name, confidence
 

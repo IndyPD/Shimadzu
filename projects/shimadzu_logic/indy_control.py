@@ -14,6 +14,7 @@ from pkg.configs.global_config import GlobalConfig
 from pkg.utils.rotation_utils import diff_cmd
 
 import numpy as np
+import joblib
 
 # Vision Handler import
 try:
@@ -22,6 +23,14 @@ try:
 except ImportError as e:
     VISION_HANDLER_AVAILABLE = False
     print(f"[WARNING] VisionHandler import failed: {e}")
+
+# Zone Predictor import
+try:
+    from .ml_recovery.zone_predictor import ZonePredictor
+    ZONE_PREDICTOR_AVAILABLE = True
+except ImportError:
+    ZONE_PREDICTOR_AVAILABLE = False
+    # print("[WARNING] ZonePredictor import failed")
 
 global_config = GlobalConfig()
 bb = GlobalBlackboard()
@@ -120,6 +129,19 @@ class RobotCommunication:
         # [Robot Home Move] 홈 이동 상태 관리
         self.robot_home_last_enable_time = None
 
+        # [Zone Predictor] 모델 로드
+        self.zone_predictor = None
+        if ZONE_PREDICTOR_AVAILABLE:
+            Logger.info("[Indy7] Initializing Zone Predictor...")
+            try:
+                self.zone_predictor = ZonePredictor()
+                if self.zone_predictor.load_model():
+                    Logger.info(f"[Indy7] Zone predictor model loaded successfully")
+                else:
+                    Logger.warn(f"[Indy7] Failed to load zone predictor model")
+            except Exception as e:
+                Logger.error(f"[Indy7] Error initializing ZonePredictor: {e}")
+
         # [Vision Handler] Bin Picking을 위한 VisionHandler 초기화
         self.vision_handler = None
         if VISION_HANDLER_AVAILABLE:
@@ -133,6 +155,16 @@ class RobotCommunication:
                 self.vision_handler = None
         else:
             Logger.warn(f'[VisionHandler] VisionHandler module not available. Bin Picking features will be disabled.')
+
+        # [Tensile Test] Hardcoded Positions & Calculation Variables
+        self.tensile_pos_1_p = [-210.2356, -160.18307, 641.5257, -168.5878, -108.025406, 170.19357]
+        self.tensile_pos_2_p =  [-300.77945, -164.11026, 653.3784, -171.25029, -107.91982, 172.89037]
+
+        self.calc_tensile_jpos_1 = None
+        self.calc_tensile_jpos_2 = None
+        self.calc_tensile_jpos_3 = None
+        
+        self.last_ana_result_params = None
 
     def start(self):
         """ Start the robot communication thread """
@@ -370,6 +402,16 @@ class RobotCommunication:
         Command request from FSM by blackbaord
         - only work in NotReadyIdle mode (Program is NOT running)
         """
+
+        # [Tensile Test] Update positions based on ANA_RESULT (VALUEPOS)
+        ana_result = bb.get("shimadzu/ana_result")
+        if ana_result and ana_result != self.last_ana_result_params:
+            self.last_ana_result_params = ana_result
+            try:
+                value_pos = float(ana_result.get("VALUEPOS", 0))
+                self._update_tensile_positions(value_pos)
+            except Exception as e:
+                Logger.error(f"[Indy] Failed to update tensile positions: {e}")
 
         # [Vision Control] MQTT → Blackboard → VisionHandler 명령 처리
         if bb.get("ui/cmd/vision/trigger"):
@@ -781,6 +823,92 @@ class RobotCommunication:
             self.indy.recover()
             Logger.info(f"Robot Send Recovery command")
 
+    def _update_tensile_positions(self, value_pos):
+        """
+        ANA_RESULT의 VALUEPOS 값을 반영하여 인장 시험 위치를 재계산합니다.
+        """
+        try:
+            # 1번 위치 계산
+            target_p_1 = list(self.tensile_pos_1_p) # copy
+            target_p_1[2] += value_pos
+            # res1 = self.indy.inverse_kin(target_p_1, self.tensile_pos_1_q)
+            # self.calc_tensile_jpos_1 = res1.get('jpos')
+            
+            # if not self.calc_tensile_jpos_1:
+            #     Logger.warn(f"[Indy] JPOS1 calculation failed. Using default JPOS1. Response: {res1}")
+            #     self.calc_tensile_jpos_1 = self.tensile_pos_1_q
+
+            # # 2번 위치 계산
+            target_p_2 = list(self.tensile_pos_2_p) # copy
+            target_p_2[2] += value_pos
+            # res2 = self.indy.inverse_kin(target_p_2, self.tensile_pos_2_q)
+            # self.calc_tensile_jpos_2 = res2.get('jpos')
+            
+            # if not self.calc_tensile_jpos_2:
+            #     Logger.warn(f"[Indy] JPOS2 calculation failed. Using default JPOS2. Response: {res2}")
+            #     self.calc_tensile_jpos_2 = self.tensile_pos_2_q
+
+            # # 3번 위치 계산
+            # target_p_3 = target_p_2.copy() # copy
+            # target_p_3[0] -= 28
+
+            # res3 = self.indy.inverse_kin(target_p_3, self.tensile_pos_3_q)
+            # self.calc_tensile_jpos_3 = res3.get('jpos')
+            
+            # if not self.calc_tensile_jpos_3:
+            #     Logger.warn(f"[Indy] JPOS3 calculation failed. Using default JPOS3. Response: {res3}")
+            #     self.calc_tensile_jpos_3 = self.tensile_pos_3_q
+
+            Logger.info(f"[Indy] Calculated Tensile TPOS with VALUEPOS={value_pos}")
+            Logger.info(f"  TPOS1: {target_p_1}")
+            Logger.info(f"  TPOS2: {target_p_2}")
+            # Logger.info(f"  TPOS3: {target_p_3}")
+
+            # # Blackboard에 저장 (필요 시 사용)
+            # bb.set("robot/tensile/jpos_1", self.calc_tensile_jpos_1)
+            # bb.set("robot/tensile/jpos_2", self.calc_tensile_jpos_2)
+            # bb.set("robot/tensile/jpos_3", self.calc_tensile_jpos_3)
+
+            # 로봇 전역 변수(Global Variable)에 쓰기
+            # addr1 = int(self.config.get("tpos_var/tensile_pos1/addr", 34))
+
+            
+            addr1 = int(self.config.get("tpos_var/tensile_pos1/addr", 400))
+            addr2 = int(self.config.get("tpos_var/tensile_pos2/addr", 401))
+            # addr3 = int(self.config.get("tpos_var/tensile_pos3/addr", 402))
+
+            tpos_vars = []
+   
+            tpos_vars.append({'addr': addr1, 'tpos': target_p_1})
+
+            tpos_vars.append({'addr': addr2, 'tpos': target_p_2})
+
+            # tpos_vars.append({'addr': addr3, 'tpos': target_p_3})
+            
+            self.indy.set_tpos_variable(tpos_vars)
+
+            Logger.info(f"[Indy] Updated TPos variables at {[v['addr'] for v in tpos_vars]} with positions {target_p_1}, {target_p_2}")
+
+            # jpos_vars = []
+            # if self.calc_tensile_jpos_1:
+            #     jpos_vars.append({'addr': addr1, 'jpos': self.calc_tensile_jpos_1})
+            # if self.calc_tensile_jpos_2:
+            #     jpos_vars.append({'addr': addr2, 'jpos': self.calc_tensile_jpos_2})
+            # if self.calc_tensile_jpos_3:
+            #     jpos_vars.append({'addr': addr3, 'jpos': self.calc_tensile_jpos_3})
+
+            # if jpos_vars:
+            #     self.indy.set_jpos_variable(jpos_vars)
+            #     Logger.info(f"[Indy] Updated JPos variables at {[v['addr'] for v in jpos_vars]}")
+
+            # float 변수 설정 추가
+            # kin_tpos_z_addr = int(self.config.get("float_var/kin_tpos_z/addr", 35))
+            # self.indy.set_float_variable([{'addr': kin_tpos_z_addr, 'value': value_pos}])
+            # Logger.info(f"[Indy] Updated Float variable at {kin_tpos_z_addr} with value {value_pos}")
+
+        except Exception as e:
+            Logger.error(f"[Indy] Error in inverse kinematics calculation: {e}")
+
 
     def handle_int_variable(self):
         """
@@ -1052,6 +1180,22 @@ class RobotCommunication:
             program_data = self.indy.get_program_data()
             self.robot_current_pos = control_data['p'][0:3]
             self.control_data_p = control_data['p'] # [Data Recorder] 전체 P 데이터(x,y,z,u,v,w) 저장
+
+            # [Zone Predictor] 현재 위치 기반 Zone 예측
+            if self.zone_predictor is not None:
+                try:
+                    result = self.zone_predictor.predict_with_recovery_action(self.control_data_p)
+                    current_zone = result.get("predicted_zone") if result.get("success") else 0
+                    
+                    prev_zone = bb.get("robot/predicted_zone")
+                    if prev_zone != current_zone:
+                        # Logger.info(f"[Zone Predictor] Zone changed: {prev_zone} -> {current_zone}")
+                        pass
+
+                    bb.set("robot/predicted_zone", current_zone)
+                except Exception as e:
+                    Logger.error(f"[Zone Predictor] Prediction failed: {e}")
+
             self.robot_state = control_data["op_state"]
             self.is_sim_mode = control_data["sim_mode"]
             self.robot_running_hour = control_data["running_hours"]

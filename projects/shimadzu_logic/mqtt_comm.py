@@ -531,6 +531,7 @@ class MqttComm:
                                 "state": self.bb.get("indy").get("robot_state"),
                                 "comm_state" : 1 if robot_comm_ok else 0,
                                 "current_pos": self.bb.get("ui/robot/state/position"),
+                                "position": self.bb.get("robot/predicted_zone") or 0,
                                 "current_motion": self.bb.get("int_var/motion_ack/val")-500,
                                 "recover_motion": self.bb.get("robot/recover/motion/cmd"),
                                 "direct_teaching_mode": self.bb.get("ui/state/direct_state"),

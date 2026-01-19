@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Tuple, Optional, Dict
 import logging
 
-from zone_classifier import ZoneClassifier, WorkZone
+from .zone_classifier import ZoneClassifier, WorkZone
 
 Logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class ZonePredictor:
             pred_zone = WorkZone(pred_zone_id)
             zone_name = ZoneClassifier.get_zone_name(pred_zone)
 
-            Logger.info(f"[Zone Predictor] Predicted: {zone_name} ({pred_zone.name}) with {confidence*100:.1f}% confidence")
+            # Logger.info(f"[Zone Predictor] Predicted: {zone_name} ({pred_zone.name}) with {confidence*100:.1f}% confidence")
 
             return pred_zone, zone_name, confidence
 
@@ -169,7 +169,7 @@ class ZonePredictor:
 
         return {
             "success": True,
-            "predicted_zone": zone.name,
+            "predicted_zone": zone.value,
             "zone_name": zone_name,
             "confidence": confidence,
             "recovery_action": recovery_action,
@@ -198,20 +198,20 @@ if __name__ == "__main__":
 
     if predictor.load_model():
         # 테스트 예측
-        test_position = [-213.72, -179.88, 702.74, -54.72, 88.20131, 123.596]
+        test_position = [-147.69211, -160.83728, 623.9762, -173.31009, -108.80696, 175.3509]
         result = predictor.predict_with_recovery_action(test_position)
 
-        print(f"\n=== Zone Prediction Result ===")
-        print(f"Success: {result.get('success')}")
-        if result.get('success'):
-            print(f"Predicted Zone: {result['zone_name']}")
-            print(f"Confidence: {result['confidence'] * 100:.2f}%")
-            print(f"Recovery Action: {result['recovery_action']}")
-            print(f"\nZone Info:")
-            zone_info = result.get('zone_info', {})
-            print(f"  - 영문명: {zone_info.get('name_en')}")
-            print(f"  - 설명: {zone_info.get('description')}")
-            print(f"  - 주요 동작: {', '.join(zone_info.get('typical_actions', []))}")
-    else:
-        print("\nZone model not found. Please train first:")
-        print("python -m projects.shimadzu_logic.ml_recovery.train_zone_model")
+    #     print(f"\n=== Zone Prediction Result ===")
+    #     print(f"Success: {result.get('success')}")
+    #     if result.get('success'):
+    #         print(f"Predicted Zone: {result['zone_name']}")
+    #         print(f"Confidence: {result['confidence'] * 100:.2f}%")
+    #         print(f"Recovery Action: {result['recovery_action']}")
+    #         print(f"\nZone Info:")
+    #         zone_info = result.get('zone_info', {})
+    #         print(f"  - 영문명: {zone_info.get('name_en')}")
+    #         print(f"  - 설명: {zone_info.get('description')}")
+    #         print(f"  - 주요 동작: {', '.join(zone_info.get('typical_actions', []))}")
+    # else:
+    #     print("\nZone model not found. Please train first:")
+    #     print("python -m projects.shimadzu_logic.ml_recovery.train_zone_model")

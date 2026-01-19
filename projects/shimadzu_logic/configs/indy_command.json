@@ -31,5 +31,8 @@
   "int_var/motion_ack_backup/addr" : 660,
   "int_var/motion_done/addr" : 700,
   "int_var/motion_done_backup/addr" : 750,
-  "int_var/init/addr" : 770
+  "int_var/init/addr" : 770,
+  "tpos_var/tensile_pos1/addr" : 400,
+  "tpos_var/tensile_pos2/addr" : 401,
+  "tpos_var/tensile_pos3/addr" : 402
 }

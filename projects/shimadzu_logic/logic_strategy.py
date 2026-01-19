@@ -73,7 +73,7 @@ class LogicConnectingStrategy(Strategy):
         if self.dev_smz_enable:
             status_report += f", Shimadzu: {'OK' if shimadzu_ok else 'FAIL'}"
 
-        Logger.info(f"[Logic] Waiting for all modules to connect... Status: [{status_report}]")
+        # Logger.info(f"[Logic] Waiting for all modules to connect... Status: [{status_report}]")
         return LogicEvent.NONE
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:

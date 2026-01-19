@@ -28,6 +28,8 @@
   "indy_state/button_dt": 0,
   "indy_state/button_stop": 0,
   "ui/state/warming_state": 0,
+  "robot/predicted_zone" : 0,
+  "shimadzu/ana_result" : 0,
   "indy": {
     "robot_state": 0,
     "is_sim_mode": false,
