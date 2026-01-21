@@ -76,7 +76,8 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.DO_START_TENSILE_TEST: LogicState.START_TENSILE_TEST,
                 LogicEvent.DO_PICK_SPECIMEN_FROM_TENSILE_MACHINE: LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE,
                 LogicEvent.DO_DISPOSE_SCRAP: LogicState.DISPOSE_SCRAP,
-                LogicEvent.DO_PROCESS_COMPLETE: LogicState.PROCESS_COMPLETE,                
+                LogicEvent.DO_PROCESS_COMPLETE: LogicState.PROCESS_COMPLETE,
+                LogicEvent.DO_MOVE_TO_HOME: LogicState.MOVE_TO_HOME,  # 두께 불량 시 홈으로 이동
                 LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
                 LogicEvent.PROCESS_PAUSE: LogicState.WAIT_PROCESS, # 일시정지 -> 대기
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
@@ -153,6 +154,11 @@ class LogicFSM(FiniteStateMachine):
                 LogicEvent.DONE: LogicState.IDLE, # 데이터 리셋 완료 -> IDLE
                 LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
             },
+            LogicState.MOVE_TO_HOME: {
+                LogicEvent.DONE: LogicState.DETERMINE_TASK,  # 홈 이동 완료 -> 작업 판단 (스크랩 처리)
+                LogicEvent.PROCESS_STOP: LogicState.WAIT_COMMAND,
+                LogicEvent.VIOLATION_DETECT: LogicState.ERROR,
+            },
         }
 
     def _setup_strategies(self):
@@ -192,4 +198,5 @@ class LogicFSM(FiniteStateMachine):
             LogicState.AUTO_RECOVER: LogicAutoRecoverStrategy(),
 
             LogicState.RESET_DATA: LogicResetDataStrategy(),
+            LogicState.MOVE_TO_HOME: LogicMoveToHomeStrategy(),
         }

@@ -625,10 +625,57 @@ class LogicDetermineTaskStrategy(Strategy):
                 context.db.update_test_tray_item(tray_no, specimen_no, {'dimension': float(dimension)})
             else:
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
+
+            # Thickness 검증 실패 시 -> 홈으로 이동 후 스크랩 처리
+            if bb.get("process/auto/thickness_validation_failed"):
+                Logger.warn(f"[Logic] DetermineTask: Thickness validation failed for Tray {tray_no}, Specimen {specimen_no}. Moving to home and disposing.")
+                bb.set("process/auto/thickness_validation_failed", False)  # 플래그 초기화
+                bb.set("process/auto/current_step", 100)  # 특수 스텝: 두께 불량 처리
+                return LogicEvent.DO_MOVE_TO_HOME
+
             bb.set("process/auto/current_step", 6)
             # 정렬중 (4)
             context.db.update_test_tray_item(tray_no, specimen_no, {'status': 4})
             return LogicEvent.DO_MOVE_TO_ALIGN
+
+        elif step == 100: # 두께 불량 - 홈 이동 완료 -> 스크랩 처리
+            Logger.info("[Logic] DetermineTask: Step 100 (Move to Home for thickness failure) done. -> Dispose Scrap.")
+            bb.set("process/auto/current_step", 101)
+            return LogicEvent.DO_DISPOSE_SCRAP
+
+        elif step == 101: # 두께 불량 - 스크랩 처리 완료 -> 다음 시편으로 이동
+            Logger.info("[Logic] DetermineTask: Step 101 (Dispose Scrap for thickness failure) done. Moving to next specimen.")
+            tray_no = current_specimen['tray_no']
+            spec_no = bb.get("process/auto/current_specimen_no")
+            batch_id = batch_data['batch_id']
+
+            # 현재 시편 완료 처리 (두께 불량으로 스킵)
+            context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=spec_no, work_history="DONE (THICKNESS FAIL)")
+            context.db.update_test_tray_item(tray_no, spec_no, {'status': 10})
+            Logger.info(f"[Logic] DetermineTask: Specimen {spec_no} in Tray {tray_no} marked as DONE due to thickness failure.")
+
+            if spec_no < 5:
+                # 다음 시편으로 루프 (동일 트레이)
+                next_spec_no = spec_no + 1
+                bb.set("process/auto/current_specimen_no", next_spec_no)
+                bb.set("process/auto/target_num", next_spec_no)
+                bb.set("process_status/current_process_tray_info", {
+                    "tray_num": tray_no,
+                    "specimen_num": next_spec_no
+                })
+                bb.set("process/auto/current_step", 3)
+                context.db.update_test_tray_item(tray_no, next_spec_no, {'status': 2})
+                context.db.insert_summary_log(batch_id=batch_id, tray_no=tray_no, specimen_no=next_spec_no, work_history="START")
+                Logger.info(f"[Logic] DetermineTask: Moving to next specimen {next_spec_no} after thickness failure.")
+                return LogicEvent.DO_PICK_SPECIMEN
+            else:
+                # 트레이 내 모든 시편 완료 -> 다음 트레이 탐색
+                current_specimen['seq_status'] = 3  # DONE
+                bb.set("process/auto/batch_data", batch_data)
+                context.db.update_processing_status(current_specimen['seq_order'], 3)
+                bb.set("process/auto/current_step", 0)
+                Logger.info(f"[Logic] DetermineTask: All specimens in Tray {tray_no} are complete. Finding next tray.")
+                return self.operate(context)
 
         elif step == 6: # 정렬기로 이동 완료 -> 시편 정렬 (6)
             Logger.info("[Logic] DetermineTask: Step 5 (Move to Aligner) done. -> Step 6 (Align Specimen).")
@@ -856,8 +903,18 @@ class LogicMoveToRackFrontHomeStrategy(Strategy):
             bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
             return context.execute_controlled_stop()
 
-        # Stop check logic is handled inside move_to_rack_front_home if needed, or here.
-        # For consistency with other strategies:
+        tensile_cmd = bb.get("ui/cmd/auto/tensile")
+        if tensile_cmd == 3:
+            bb.set("ui/cmd/auto/tensile", 0)
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
+            bb.set("process/auto/robot/cmd", None)
+            bb.set("process/auto/device/cmd", None)
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
+
         return context.move_to_rack_front_home()
 
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -868,18 +925,28 @@ class LogicMoveToRackForQRReadStrategy(Strategy):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Moving to rack for QR read.")
         context._seq = 0
+        self.is_stopping = False
+
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
+        # 제어된 정지 (Stop)
         if tensile_cmd == 3:
             bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
             # 진행 중인 로봇/장비 명령 취소
             bb.set("process/auto/robot/cmd", None)
             bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
 
         floor = bb.get("process/auto/target_floor")
         num = bb.get("process/auto/target_num")
@@ -1007,6 +1074,19 @@ class LogicMeasureSpecimenThicknessStrategy(Strategy):
                 Logger.info(f"[Logic] specime02 : {specimen_2}")
                 Logger.info(f"[Logic] specime03 : {specimen_3}")
                 Logger.info(f"[Logic] specime_avg : {specimen_avg}")
+
+                # Thickness 검증: method_details의 thickness와 측정 평균값 비교
+                method_details = bb.get("process/auto/current_method_details") or {}
+                expected_thickness = method_details.get("thickness")
+                if expected_thickness is not None:
+                    thickness_diff = abs(specimen_avg - float(expected_thickness))
+                    Logger.info(f"[Logic] Thickness validation: measured_avg={specimen_avg}, expected={expected_thickness}, diff={thickness_diff}")
+                    if thickness_diff >= 0.2:
+                        Logger.warn(f"[Logic] Thickness difference ({thickness_diff}) >= 0.2mm. Specimen will be disposed.")
+                        bb.set("process/auto/thickness_validation_failed", True)
+                        return LogicEvent.DONE
+
+                bb.set("process/auto/thickness_validation_failed", False)
                 return LogicEvent.DONE
 
         return LogicEvent.NONE
@@ -1109,40 +1189,60 @@ class LogicLoadSpecimenTensileMachineStrategy(Strategy):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Loading tensile machine.")
         context._seq = 0
+        self.is_stopping = False
+
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
+        # 제어된 정지 (Stop)
         if tensile_cmd == 3:
             bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
             # 진행 중인 로봇/장비 명령 취소
             bb.set("process/auto/robot/cmd", None)
             bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
 
         return context.Load_Specimen_Tensile_Machine()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
 
-class LogicStartTensileTestStrategy(Strategy): # 이 전략은 그대로 사용
+class LogicStartTensileTestStrategy(Strategy):
     def prepare(self, context: LogicContext, **kwargs):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Starting tensile test.")
         context._seq = 0
+        self.is_stopping = False
+
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
+        # 제어된 정지 (Stop)
         if tensile_cmd == 3:
             bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
             # 진행 중인 로봇/장비 명령 취소
             bb.set("process/auto/robot/cmd", None)
             bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
 
         return context.start_tensile_test()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -1153,18 +1253,28 @@ class LogicPickSpecimenFromTensileMachineStrategy(Strategy):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Picking from tensile machine.")
         context._seq = 0
+        self.is_stopping = False
+
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
+        # 제어된 정지 (Stop)
         if tensile_cmd == 3:
             bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
             # 진행 중인 로봇/장비 명령 취소
             bb.set("process/auto/robot/cmd", None)
             bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
 
         num = bb.get("process/auto/tensile_pick_pos") or 1
         return context.Pick_Specimen_From_Tensile_Machine(num, 0) # pos_z는 현재 사용 안함
@@ -1176,18 +1286,28 @@ class LogicDisposeScrapStrategy(Strategy):
         bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
         Logger.info("[Logic] Retreating and handling scrap.")
         context._seq = 0
+        self.is_stopping = False
+
     def operate(self, context: LogicContext) -> LogicEvent:
         _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
         tensile_cmd = bb.get("ui/cmd/auto/tensile")
-        # 즉시 정지 (Stop)
+        # 제어된 정지 (Stop)
         if tensile_cmd == 3:
             bb.set("ui/cmd/auto/tensile", 0) # 명령 소비
-            Logger.info("[Logic] Received STOP command. Stopping current motion and returning to WAIT_COMMAND.")
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
             # 진행 중인 로봇/장비 명령 취소
             bb.set("process/auto/robot/cmd", None)
             bb.set("process/auto/device/cmd", None)
-            bb.set("indy_command/stop_program", True) # 로봇 프로그램 정지
-            return LogicEvent.PROCESS_STOP
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
 
         return context.Disposer_Scrap()
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
@@ -1238,6 +1358,39 @@ class LogicProcessCompleteStrategy(Strategy):
         #     return LogicEvent.DONE
 
         # return LogicEvent.NONE
-    
+
+    def exit(self, context: LogicContext, event: LogicEvent) -> None:
+        Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")
+
+class LogicMoveToHomeStrategy(Strategy):
+    """두께 불량 시 홈으로 이동하는 전략"""
+    def prepare(self, context: LogicContext, **kwargs):
+        bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[Logic] Moving to home (thickness validation failed).")
+        context._seq = 0
+        self.is_stopping = False
+
+    def operate(self, context: LogicContext) -> LogicEvent:
+        _update_system_status(context)
+        if self.is_stopping:
+            bb.set("logic/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__, "Stop_Sequence" : True})
+            return context.execute_controlled_stop()
+
+        tensile_cmd = bb.get("ui/cmd/auto/tensile")
+        # 제어된 정지 (Stop)
+        if tensile_cmd == 3:
+            bb.set("ui/cmd/auto/tensile", 0)
+            Logger.info("[Logic] Received STOP command. Initiating controlled stop.")
+            bb.set("process/auto/robot/cmd", None)
+            bb.set("process/auto/device/cmd", None)
+            # bb.set("indy_command/stop_program", True) # 제어된 정지를 위해 프로그램 즉시 중지 비활성화
+
+            context._seq_backup = context._seq
+            context._seq = 0
+            self.is_stopping = True
+            return LogicEvent.NONE
+
+        return context.Move_to_home_for_dispose()
+
     def exit(self, context: LogicContext, event: LogicEvent) -> None:
         Logger.info(f"[Logic] exit {self.__class__.__name__} with event: {event}")

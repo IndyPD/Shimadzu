@@ -1538,7 +1538,39 @@ class LogicContext(ContextBase):
                 Logger.error(f"[Logic] Step 11 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
                 
         return LogicEvent.NONE
-    
+
+    def Move_to_home_for_dispose(self):
+        """
+        두께 불량 시 홈으로 이동하는 시퀀스입니다.
+        홈 이동 후 스크랩 처리기로 버리러 갑니다.
+        """
+        get_robot_cmd = bb.get(robot_cmd_key)
+
+        # Seq 0: Robot-Motion-MOVE_TO_HOME
+        if self._seq == 0:
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHome", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_[77.36005, -2.6276846, -119.89775, 179.99402, 57.45355, 165.9208]home_for_dispose Step 0: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            bb.set(robot_cmd_key, robot_cmd)
+            self.set_seq(1)
+            return LogicEvent.NONE
+        elif self._seq == 1:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to home done.")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.DONE
+            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 1 failed: {get_robot_cmd}")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        return LogicEvent.NONE
+
     def Disposer_Scrap(self):
         """
         # Position E Scrap Disposer
@@ -1604,9 +1636,11 @@ class LogicContext(ContextBase):
                 self._log_detail("Disposer_Scrap", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
                 Logger.info(f"[Logic] Step 5: Gripper open at scrap disposer done.")
                 bb.set(robot_cmd_key, None)
-                
+
                 tensile_pick_pos = bb.get("process/auto/tensile_pick_pos")
-                if tensile_pick_pos == 2:
+                current_step = bb.get("process/auto/current_step")
+                # 상단(2) 또는 두께 불량(step 101)인 경우 홈으로 이동
+                if tensile_pick_pos == 2 or current_step == 101:
                     self.set_seq(8)
                 else:
                     self.set_seq(6)
@@ -1971,6 +2005,131 @@ class LogicContext(ContextBase):
                 self.set_seq(0); self.set_sub_seq(0)
                 self.set_seq(25) # 정렬기에서 시편 들고 후퇴
                 self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] MOVE_TO_RACK_FOR_QR - QR 읽기 위해 이동 중 (시편 X)
+            if self.state == LogicState.MOVE_TO_RACK_FOR_QR:
+                Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_RACK_FOR_QR. Moving to home.")
+                self.set_seq(0); self.set_sub_seq(0)
+                self.set_seq(40)  # 바로 홈으로
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] PICK_SPECIMEN - 랙에서 시편 잡기 중
+            if self.state == LogicState.PICK_SPECIMEN:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during PICK_SPECIMEN with specimen. Retreating from rack.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(50)  # 랙에서 후퇴 (시편 O) → 스크랩
+                    self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during PICK_SPECIMEN without specimen. Retreating from rack.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(55)  # 랙에서 후퇴 (시편 X) → 홈
+                    self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] MOVE_TO_ALIGN - 정렬기로 이동 중 (시편 O)
+            if self.state == LogicState.MOVE_TO_ALIGN and is_holding:
+                Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_ALIGN. Moving to home then scrap.")
+                self.set_seq(0); self.set_sub_seq(0)
+                self.set_seq(65)  # 정렬기 앞에서 홈 → 스크랩
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] PICK_SPECIMEN_FROM_ALIGN - 정렬기에서 픽업 중 (아직 안 잡음)
+            if self.state == LogicState.PICK_SPECIMEN_FROM_ALIGN and not is_holding:
+                Logger.info("[Logic] Controlled Stop: Stop during PICK_SPECIMEN_FROM_ALIGN without specimen. Recovering from aligner.")
+                self.set_seq(0); self.set_sub_seq(0)
+                self.set_seq(20)  # 정렬기에서 회수
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] LOAD_TENSILE_MACHINE - 인장기 장착 중
+            if self.state == LogicState.LOAD_TENSILE_MACHINE:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during LOAD_TENSILE_MACHINE with specimen. Retreating from tensile.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(70)  # 인장기에서 후퇴 (시편 O) → 스크랩
+                    self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during LOAD_TENSILE_MACHINE without specimen. Moving to home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(40)  # 홈으로
+                    self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] START_TENSILE_TEST - 인장 시험 중
+            if self.state == LogicState.START_TENSILE_TEST:
+                Logger.info("[Logic] Controlled Stop: Stop during START_TENSILE_TEST. Moving to home (specimen in tensile machine).")
+                self.set_seq(0); self.set_sub_seq(0)
+                self.set_seq(40)  # 홈으로 (시편은 인장기에 남아있음)
+                self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] PICK_SPECIMEN_FROM_TENSILE_MACHINE - 인장기에서 수거 중
+            if self.state == LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during PICK_FROM_TENSILE with specimen. Retreating.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(60)  # 인장기에서 후퇴 → 스크랩
+                    self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during PICK_FROM_TENSILE without specimen. Moving to home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(40)  # 홈으로
+                    self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] DISPOSE_SCRAP - 스크랩 처리 중
+            if self.state == LogicState.DISPOSE_SCRAP:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during DISPOSE_SCRAP with specimen. Continuing disposal.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(30)  # 스크랩 처리 계속
+                    
+                    # [수정] 현재 위치에 따라 시작 단계 조정 (처음부터 하지 않고 이어서)
+                    if current_pos_id == 7020: # SCRAP_FRONT_MOVE
+                        Logger.info("[Logic] Controlled Stop: Already at scrap disposer front. Skipping move.")
+                        self.set_sub_seq(2) # PLACE_IN_SCRAP_DISPOSER 단계로
+                    elif current_pos_id == 7021: # SCRAP_DROP_POS
+                        Logger.info("[Logic] Controlled Stop: Already at scrap drop pos. Skipping move/place.")
+                        self.set_sub_seq(4) # GRIPPER_OPEN_AT_SCRAP_DISPOSER 단계로
+                    else:
+                        self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during DISPOSE_SCRAP without specimen. Moving to home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(40)  # 홈으로
+                    self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] MOVE_TO_RACK_FRONT_HOME - 랙 앞 홈으로 이동 중
+            if self.state == LogicState.MOVE_TO_RACK_FRONT_HOME:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_RACK_FRONT_HOME with specimen. Continuing to scrap.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(30)  # 스크랩 처리
+                    self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_RACK_FRONT_HOME without specimen. Continuing to home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(40)  # 홈으로
+                    self.set_sub_seq(0)
+                return LogicEvent.NONE
+
+            # [추가] MOVE_TO_HOME (두께 불량) - 홈으로 이동 중
+            if self.state == LogicState.MOVE_TO_HOME:
+                if is_holding:
+                    Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_HOME with specimen. Continuing to scrap.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(30)  # 스크랩 처리
+                    self.set_sub_seq(0)
+                else:
+                    Logger.info("[Logic] Controlled Stop: Stop during MOVE_TO_HOME without specimen. Continuing to home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(40)  # 홈으로
+                    self.set_sub_seq(0)
                 return LogicEvent.NONE
 
             # Case 1: 시편이 두께 측정기에 놓여 있는 경우 (회수 필요)
@@ -2516,7 +2675,65 @@ class LogicContext(ContextBase):
                     self._log_detail("execute_controlled_stop", "seq_60_MoveHome", "Robot", "Error")
                     return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
-            
+
+        # State 65: 정렬기 앞에서 홈으로 이동 후 스크랩 처리 (MOVE_TO_ALIGN 중 정지 시)
+        elif self._seq == 65:
+            if self._sub_seq == 0:
+                self._log_detail("execute_controlled_stop", "seq_65_MoveHome", "Robot", "Start")
+                cmd = MotionCommand.ALIGNER_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    self._log_detail("execute_controlled_stop", "seq_65_MoveHome", "Robot", "Done")
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30)  # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    self._log_detail("execute_controlled_stop", "seq_65_MoveHome", "Robot", "Error")
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # State 70: 인장기 장착 중 후퇴 → 스크랩 처리 (LOAD_TENSILE_MACHINE 중 정지 시)
+        elif self._seq == 70:
+            if self._sub_seq == 0:
+                self._log_detail("execute_controlled_stop", "seq_70_Retreat", "Robot", "Start")
+                cmd = MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_LOAD
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    self._log_detail("execute_controlled_stop", "seq_70_Retreat", "Robot", "Done")
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Retreat from tensile machine complete. Moving to home.")
+                    self.set_sub_seq(2)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    self._log_detail("execute_controlled_stop", "seq_70_Retreat", "Robot", "Error")
+                    return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2:  # 홈으로 이동 명령
+                self._log_detail("execute_controlled_stop", "seq_70_MoveHome", "Robot", "Start")
+                cmd = MotionCommand.TENSILE_TESTER_FRONT_HOME
+                robot_cmd = {"process": cmd, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3:  # 홈 이동 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("state") == "done":
+                    self._log_detail("execute_controlled_stop", "seq_70_MoveHome", "Robot", "Done")
+                    bb.set(robot_cmd_key, None)
+                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                    self.set_seq(30)  # 스크랩 처리로 이동
+                    self.set_sub_seq(0)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    self._log_detail("execute_controlled_stop", "seq_70_MoveHome", "Robot", "Error")
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
         return LogicEvent.NONE
 
     def check_and_change_tool(self):

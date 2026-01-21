@@ -368,14 +368,14 @@ class ShimadzuClient:
         self.send_command("ACK_ANA_RESULT")
         self.log("Sent ACK_ANA_RESULT")
 
-    def wait_for_ana_result(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
+    def wait_for_ana_result(self, timeout: float = 900.0) -> Optional[Dict[str, Any]]:
         """
         9. 시험 결과 대기 (ANA_RESULT)
         시험이 완료될 때까지 ANA_RESULT 메시지를 대기합니다.
-        시험 시간이 길 수 있으므로 기본 타임아웃은 300초(5분)입니다.
+        시험 시간이 길 수 있으므로 기본 타임아웃은 900초(15분)입니다.
 
         Args:
-            timeout: 응답 대기 시간 (초, 기본 300초)
+            timeout: 응답 대기 시간 (초, 기본 900초)
 
         Returns:
             응답 데이터 {"command": "ANA_RESULT", "params": {...}} 또는 타임아웃 시 None

@@ -60,6 +60,7 @@ class LogicState(OpState):
     AUTO_RECOVER                        = 24            # 자동 복구
     RESET_DATA                          = 26            # 19. 데이터 리셋
     MOVE_TO_RACK_FRONT_HOME             = 27            # 랙 앞 홈으로 이동
+    MOVE_TO_HOME                        = 28            # 홈으로 이동 (두께 불량 시)
     
 
     
@@ -108,6 +109,7 @@ class LogicEvent(OpEvent):
     DO_DATA_RESET                       = 40            # 데이터 리셋 실행
     DO_AUTO_RECOVER                     = 41            # 자동 복구 실행
     DO_MOVE_TO_RACK_FRONT_HOME          = 42            # 랙 앞 홈으로 이동 실행
+    DO_MOVE_TO_HOME                     = 43            # 홈으로 이동 실행 (두께 불량 시)
     
 
 # 3. LogicViolation (Neuromeka 전체 제어 위반) 정의
