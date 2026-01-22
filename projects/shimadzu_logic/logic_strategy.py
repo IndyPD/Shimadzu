@@ -501,6 +501,18 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/target_num", 1) # Robot에게 1번 시편 위치 지시
             bb.set("process/auto/sequence", current_specimen['seq_order'])
             
+            # 새 트레이 시작 전 Shimadzu START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
+            if current_specimen['seq_order'] > 1:
+                lot_name = current_specimen.get('lot', 'DEFAULT_LOT')
+                Logger.info(f"[Logic] DetermineTask: New tray starting. Sending START_RUN to Shimadzu (Lot: {lot_name}).")
+                result = context.start_measurement_sequence(lot_name)
+                if result == LogicEvent.NONE:
+                    # START_RUN 전송/대기 중
+                    return LogicEvent.NONE
+                elif result == LogicEvent.VIOLATION_DETECT:
+                    return LogicEvent.VIOLATION_DETECT
+                # START_RUN 완료 후 첫 번째 단계 시작
+
             # 첫 번째 단계 시작 (Command.md 1번: QR 인식)
             bb.set("process/auto/current_step", 1)
             Logger.info(f"[Logic] DetermineTask: Starting sequence {current_specimen['seq_order']} (Tray: {current_specimen['tray_no']}). First step is DO_MOVE_TO_RACK_FOR_QR.")
@@ -555,6 +567,17 @@ class LogicDetermineTaskStrategy(Strategy):
 
                 # 3. 시작 이벤트 결정 및 즉시 반환
                 if spec_no == 1:
+                    # 새 트레이 시작 전 Shimadzu START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
+                    if current_specimen['seq_order'] > 1:
+                        lot_name = current_specimen.get('lot', 'DEFAULT_LOT')
+                        Logger.info(f"[Logic] Restart: New tray starting. Sending START_RUN to Shimadzu (Lot: {lot_name}).")
+                        result = context.start_measurement_sequence(lot_name)
+                        if result == LogicEvent.NONE:
+                            # START_RUN 전송/대기 중
+                            return LogicEvent.NONE
+                        elif result == LogicEvent.VIOLATION_DETECT:
+                            return LogicEvent.VIOLATION_DETECT
+                        # START_RUN 완료 후 QR 읽기로 이동
                     bb.set("process/auto/current_step", 1)
                     return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
                 else:

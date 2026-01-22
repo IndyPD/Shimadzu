@@ -91,11 +91,12 @@ class ShimadzuClient:
         self.response_event = threading.Event()
         self.response_data = None
         self.expected_response = None
+        self._comm_lock = threading.Lock()  # 통신 직렬화를 위한 Lock
  
     def log(self, message: str):
         if self.ui_callback:
             self.ui_callback(message)
-        # Logger.info(f"[ShimadzuClient] {message}")
+        Logger.info(f"[ShimadzuClient] {message}")
  
     def connect(self) -> bool:
         try:
@@ -120,15 +121,17 @@ class ShimadzuClient:
         self.log("Disconnected from server.")
  
     def _receive_loop(self):
+        self.log("[DEBUG] _receive_loop started")
         buffer = b""
         while self.running:
             try:
                 data = self.socket.recv(4096)
                 if not data:
+                    self.log("[DEBUG] No data received, breaking loop")
                     break
                 # [Log Filter] Raw data log filtering
                 if b"SYS_STATUS" not in data and b"I_AM_HERE" not in data:
-                    self.log(f'Received raw data: {data}')
+                    self.log(f'[DEBUG] Received raw data: {data}')
                 buffer += data
                 while b'\x02' in buffer and b'\x03' in buffer:
                     start_idx = buffer.find(b'\x02')
@@ -157,14 +160,18 @@ class ShimadzuClient:
 
             command = parsed.get("type")
             params = parsed.get("params", {})
-            
+
             if command not in ["SYS_STATUS", "I_AM_HERE"]:
                 self.log(f"Received: {command} | Params: {params}")
+                self.log(f"[DEBUG] expected_response: {self.expected_response}, command: {command}")
 
             # 응답 대기 중인 경우 이벤트 세트
             if self.expected_response and command == self.expected_response:
+                self.log(f"[DEBUG] Match! Setting response_data and event")
                 self.response_data = {"command": command, "params": params}
                 self.response_event.set()
+            elif self.expected_response:
+                self.log(f"[DEBUG] No match: expected '{self.expected_response}' but got '{command}'")
 
             # 전역 핸들러 실행
             if command in self.handlers:
@@ -197,9 +204,10 @@ class ShimadzuClient:
         except Exception as e:
             self.log(f"Send error: {e}")
 
-    def send_and_wait(self, command: str, expected_response: str, params: Dict[str, Any] = None, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def send_and_wait(self, command: str, expected_response: str, params: Dict[str, Any] = None, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         명령을 전송하고 타임아웃 내에 응답을 기다립니다.
+        Lock을 사용하여 동시에 하나의 명령만 처리합니다.
 
         Args:
             command: 전송할 명령
@@ -214,6 +222,8 @@ class ShimadzuClient:
             self.log("Cannot send: Not connected.")
             return None
 
+        # Lock을 획득하여 동시 통신 방지
+        # with self._comm_lock:
         try:
             # 이전 응답 데이터 초기화
             self.response_event.clear()
@@ -226,7 +236,7 @@ class ShimadzuClient:
             if isinstance(msg, str):
                 msg = msg.encode('utf-8')
             self.socket.sendall(msg)
-            
+
             if command not in ["ASK_SYS_STATUS", "ARE_YOU_THERE"]:
                 self.log(f"Sent: {command} | Params: {params} | Waiting for: {expected_response}")
 
@@ -250,11 +260,11 @@ class ShimadzuClient:
             self.log(f"Send and wait error: {e}")
             self.expected_response = None
             self.response_data = None
-            return None
+        return None
  
     # --- API Methods (Rev.A 사양 반영) ---
  
-    def send_are_you_there(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def send_are_you_there(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         1. 접속 확인
 
@@ -266,24 +276,21 @@ class ShimadzuClient:
         """
         return self.send_and_wait("ARE_YOU_THERE", "I_AM_HERE", timeout=timeout)
         
-    def send_init_run(self, timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    def send_init_run(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         4. 자동운전 초기화
-        INIT 명령 전송 후 ACK_INIT와 INIT_FINISHED 두 응답을 순차적으로 수신합니다.
+        INIT 명령 전송 후 INIT_FINISHED 응답을 기다립니다.
+        (ACK_INIT는 중간 응답으로, INIT_FINISHED가 최종 응답)
 
         Args:
-            timeout: 각 응답별 대기 시간 (초)
+            timeout: 응답 대기 시간 (초)
 
         Returns:
             INIT_FINISHED 응답 데이터 ({"command": "INIT_FINISHED", "params": {"CODE": "Normal"}}) 또는 실패 시 None
         """
-        # 1단계: INIT 전송 후 ACK_INIT 대기
-        ack_result = self.send_and_wait("INIT", "ACK_INIT", timeout=timeout)
-        if ack_result is None:
-            return None
-
-        # 2단계: INIT_FINISHED 대기 (추가 명령 전송 없이 수신만 대기)
-        init_finished_result = self.wait_for_response("INIT_FINISHED", timeout=timeout)
+        # INIT 전송 후 최종 응답인 INIT_FINISHED 대기
+        # (ACK_INIT는 중간에 오지만 무시하고 INIT_FINISHED만 기다림)
+        init_finished_result = self.send_and_wait("INIT", "INIT_FINISHED", timeout=timeout)
         if init_finished_result is None:
             return None
 
@@ -296,7 +303,7 @@ class ShimadzuClient:
 
         return init_finished_result
 
-    def wait_for_response(self, expected_response: str, timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    def wait_for_response(self, expected_response: str, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         특정 응답을 대기합니다 (명령 전송 없이 수신만 대기).
 
@@ -335,8 +342,8 @@ class ShimadzuClient:
             self.expected_response = None
             self.response_data = None
             return None
- 
-    def send_start_run(self, lotname="LOT_001", timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+
+    def send_start_run(self, lotname="LOT_001", timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         3. 자동운전 개시
 
@@ -349,7 +356,7 @@ class ShimadzuClient:
         """
         return self.send_and_wait("START_RUN", "ACK_START_RUN", {"LOTNAME": lotname}, timeout=timeout)
 
-    def send_ask_sys_status(self, timeout: float = 30.0) -> Optional[Dict[str, Any]]:
+    def send_ask_sys_status(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         2. 시스템 상태 확인
 
@@ -360,8 +367,8 @@ class ShimadzuClient:
             응답 데이터 또는 타임아웃 시 None
         """
         return self.send_and_wait("ASK_SYS_STATUS", "SYS_STATUS", timeout=timeout)
- 
-    def send_ask_register(self, mtname, tpname, size1="10.00", size2="4.00", gl="50.00", chuckl="115.00", isfinal="False", timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+
+    def send_ask_register(self, mtname, tpname, size1="10.00", size2="4.00", gl="50.00", chuckl="115.00", isfinal="False", timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         5. 등록 요청 (ASK_REGISTER)
         사양서에 따라 MTNAME, TPNAME, SIZE1, SIZE2, GL, ChuckL, ISFinal 만 사용
@@ -403,7 +410,7 @@ class ShimadzuClient:
         """
         return self.send_and_wait("STOP_ANA", "ACK_STOP_ANA", timeout=timeout)
 
-    def send_ask_preload(self, timeout: float = 60.0) :
+    def send_ask_preload(self, timeout: float = 300.0) :
         """
         12. 프리로드 시험 시작 요청 (ASK_PRELOAD)
 
@@ -415,7 +422,7 @@ class ShimadzuClient:
         """
         return self.send_and_wait("ASK_PRELOAD", "ACK_PRELOAD", timeout=timeout)
 
-    def send_start_ana(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def send_start_ana(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
         """
         7. 시험 시작 요청 (START_ANA)
         ASK_REGISTER -> REGISTER_RESULT 이후 시험 시작 명령
@@ -497,7 +504,7 @@ class ShimadzuClient:
     #         return result
     #     return None
 
-    def send_end_run(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def send_end_run(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         """
         자동운전 종료 (END_RUN)
         모든 시험 완료 후 자동운전 종료 명령

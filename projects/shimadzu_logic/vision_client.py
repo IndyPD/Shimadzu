@@ -98,7 +98,7 @@ class VisionClient:
         msg = {"type": "HELLO"}
         return self.send_data(msg)
 
-    def check_scene(self, mode="SINGLE"):
+    def check_scene(self, mode="CONTINUOUS"):
         """
         6. CHECK_SCENE: 장면 인식 요청
         :param mode: "SINGLE" 또는 "CONTINUOUS"

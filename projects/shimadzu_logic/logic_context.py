@@ -931,6 +931,7 @@ class LogicContext(ContextBase):
         정렬된 시편을 집어서 나오는 전체 시퀀스입니다.
         """
         get_robot_cmd = bb.get(robot_cmd_key)
+        get_device_cmd = bb.get(device_cmd_key)
 
         # 시퀀스 시작 시점에 인장기 상태를 확인하여 분기합니다.
         if self._seq == 0:
@@ -1032,8 +1033,8 @@ class LogicContext(ContextBase):
                     Logger.info(f"[Logic] Step 5: Retreat from align done.")
                     bb.set(robot_cmd_key, None)
                     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq}_MoveHome", "Robot", "Start")
-                    self.set_seq(0)
-                    return LogicEvent.DONE
+                    self.set_seq(6)
+                    return LogicEvent.NONE
                 elif get_robot_cmd.get("state") == "error":
                     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
                     Logger.error(f"[Logic] Step 5 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
@@ -1058,6 +1059,78 @@ class LogicContext(ContextBase):
         #         elif get_robot_cmd.get("state") == "error":
         #             self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
         #             Logger.error(f"[Logic] Step 7 failed: {get_robot_cmd}"); bb.set(robot_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
+        #     return LogicEvent.NONE
+
+        # Seq 8-9: ASK_REGISTER (시험 조건 등록)
+        elif self._seq == 6:
+            self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
+            # 시험 조건 등록을 위한 데이터 준비
+            tray_no = bb.get("process/auto/target_floor")
+            specimen_no = bb.get("process/auto/current_specimen_no")
+            qr_no = bb.get("process_status/qr_no") or ""
+            batch_id = bb.get("process_status/batch_id") or ""
+            thickness = bb.get("specimen/thickness_avg") or 0.0
+
+            if not batch_id:
+                Logger.warn("[Logic] Pick_Specimen_From_Align: 'process_status/batch_id' is empty.")
+            if not qr_no:
+                Logger.warn("[Logic] Pick_Specimen_From_Align: 'process_status/qr_no' is empty.")
+
+            regist_data = {
+                "tray_no": tray_no,
+                "specimen_no": specimen_no,
+                "qr_no": qr_no,
+                "batch_id": batch_id,
+                "thickness": thickness
+            }
+
+            device_cmd = {"command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False}
+            Logger.info(f"[Logic] Step 6: Sending command: {DeviceCommand.REGISTER_METHOD} (Ask Register)")
+            bb.set(device_cmd_key, device_cmd)
+            self.set_seq(7)
+            return LogicEvent.NONE
+        elif self._seq == 7:
+            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.REGISTER_METHOD and get_device_cmd.get("is_done"):
+                if get_device_cmd.get("state") == "done":
+                    self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Done")
+                    Logger.info(f"[Logic] Step 7: Register method completed successfully.")
+                    bb.set(device_cmd_key, None)
+                    # 흐름도: ASK_REGISTER 완료 -> EXT_FORWARD
+                    self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
+                    self.set_seq(0)  # EXT_FORWARD로 이동
+                    return LogicEvent.DONE
+                else:
+                    self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Error")
+                    Logger.error(f"[Logic] Step 7 failed: {get_device_cmd}")
+                    bb.set(device_cmd_key, None)
+                    self.set_seq(0)
+                    return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+        
+        # elif self._seq == 6:
+        #     self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
+        #     tray_no = bb.get("process/auto/target_floor")
+        #     specimen_no = bb.get("process/auto/current_specimen_no")
+        #     qr_no = bb.get("process_status/qr_no") or ""
+        #     batch_id = bb.get("process_status/batch_id") or ""
+        #     thickness = bb.get("specimen/thickness_avg") or 0.0
+        #     regist_data = {"tray_no": tray_no, "specimen_no": specimen_no, "qr_no": qr_no, "batch_id": batch_id, "thickness": thickness}
+        #     device_cmd = {"command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False}
+        #     Logger.info(f"[Logic] Step 8: Sending command: {DeviceCommand.REGISTER_METHOD} (Ask Register)")
+        #     bb.set(device_cmd_key, device_cmd)
+        #     self.set_seq(9)
+        #     return LogicEvent.NONE
+        # elif self._seq == 7:
+        #     if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.REGISTER_METHOD and get_device_cmd.get("is_done"):
+        #         if get_device_cmd.get("state") == "done":
+        #             self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Done")
+        #             Logger.info(f"[Logic] Step 9: Register method completed successfully.")
+        #             bb.set(device_cmd_key, None)
+        #             self.set_seq(0)
+        #             return LogicEvent.DONE
+        #         else:
+        #             self._log_detail("Pick_Specimen_From_Align", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Error")
+        #             Logger.error(f"[Logic] Step 9 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
         #     return LogicEvent.NONE
 
         return LogicEvent.NONE
@@ -1254,58 +1327,58 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Done")
                     Logger.info(f"[Logic] Step 11: Upper tensile gripper (GRIPPER_1) on done.")
                     bb.set(device_cmd_key, None)
-                    # 흐름도: 상단 그리퍼 닫기 완료 -> ASK_REGISTER
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
-                    self.set_seq(16)  # ASK_REGISTER로 이동
+                    # 흐름도: 상단 그리퍼 닫기 완료 -> ASK_PRELOAD (순서 변경)
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskPreload", "Device-Shimadzu", "Start")
+                    self.set_seq(14)  # ASK_PRELOAD로 이동
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_Gripper1On", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 11 failed: {get_device_cmd}"); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
         # Seq 16-17: ASK_REGISTER (시험 조건 등록)
-        elif self._seq == 16:
-            self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
-            # 시험 조건 등록을 위한 데이터 준비
-            tray_no = bb.get("process/auto/target_floor")
-            specimen_no = bb.get("process/auto/current_specimen_no")
-            qr_no = bb.get("process_status/qr_no") or ""
-            batch_id = bb.get("process_status/batch_id") or ""
-            thickness = bb.get("specimen/thickness_avg") or 0.0
+        # elif self._seq == 16:
+        #     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskRegister", "Device-Shimadzu", "Start")
+        #     # 시험 조건 등록을 위한 데이터 준비
+        #     tray_no = bb.get("process/auto/target_floor")
+        #     specimen_no = bb.get("process/auto/current_specimen_no")
+        #     qr_no = bb.get("process_status/qr_no") or ""
+        #     batch_id = bb.get("process_status/batch_id") or ""
+        #     thickness = bb.get("specimen/thickness_avg") or 0.0
 
-            if not batch_id:
-                Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/batch_id' is empty.")
-            if not qr_no:
-                Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/qr_no' is empty.")
+        #     if not batch_id:
+        #         Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/batch_id' is empty.")
+        #     if not qr_no:
+        #         Logger.warn("[Logic] Load_Specimen_Tensile_Machine: 'process_status/qr_no' is empty.")
 
-            regist_data = {
-                "tray_no": tray_no,
-                "specimen_no": specimen_no,
-                "qr_no": qr_no,
-                "batch_id": batch_id,
-                "thickness": thickness
-            }
+        #     regist_data = {
+        #         "tray_no": tray_no,
+        #         "specimen_no": specimen_no,
+        #         "qr_no": qr_no,
+        #         "batch_id": batch_id,
+        #         "thickness": thickness
+        #     }
 
-            device_cmd = {"command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False}
-            Logger.info(f"[Logic] Step 16: Sending command: {DeviceCommand.REGISTER_METHOD} (Ask Register)")
-            bb.set(device_cmd_key, device_cmd)
-            self.set_seq(17)
-            return LogicEvent.NONE
-        elif self._seq == 17:
-            if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.REGISTER_METHOD and get_device_cmd.get("is_done"):
-                if get_device_cmd.get("state") == "done":
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Done")
-                    Logger.info(f"[Logic] Step 17: Register method completed successfully.")
-                    bb.set(device_cmd_key, None)
-                    # 흐름도: ASK_REGISTER 완료 -> EXT_FORWARD
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
-                    self.set_seq(12)  # EXT_FORWARD로 이동
-                else:
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Error")
-                    Logger.error(f"[Logic] Step 17 failed: {get_device_cmd}")
-                    bb.set(device_cmd_key, None)
-                    self.set_seq(0)
-                    return LogicEvent.VIOLATION_DETECT
-            return LogicEvent.NONE
+        #     device_cmd = {"command": DeviceCommand.REGISTER_METHOD, "params": regist_data, "state": "", "is_done": False}
+        #     Logger.info(f"[Logic] Step 16: Sending command: {DeviceCommand.REGISTER_METHOD} (Ask Register)")
+        #     bb.set(device_cmd_key, device_cmd)
+        #     self.set_seq(17)
+        #     return LogicEvent.NONE
+        # elif self._seq == 17:
+        #     if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.REGISTER_METHOD and get_device_cmd.get("is_done"):
+        #         if get_device_cmd.get("state") == "done":
+        #             self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Done")
+        #             Logger.info(f"[Logic] Step 17: Register method completed successfully.")
+        #             bb.set(device_cmd_key, None)
+        #             # 흐름도: ASK_REGISTER 완료 -> EXT_FORWARD
+        #             self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
+        #             self.set_seq(12)  # EXT_FORWARD로 이동
+        #         else:
+        #             self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskRegister", "Device-Shimadzu", "Error")
+        #             Logger.error(f"[Logic] Step 17 failed: {get_device_cmd}")
+        #             bb.set(device_cmd_key, None)
+        #             self.set_seq(0)
+        #             return LogicEvent.VIOLATION_DETECT
+        #     return LogicEvent.NONE
 
         # Seq 12-13: EXT_FORWARD (신율계 전진)
         elif self._seq == 12:
@@ -1322,9 +1395,9 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Done")
                     Logger.info(f"[Logic] Step 13: Extensometer forward done.")
                     bb.set(device_cmd_key, None)
-                    # 흐름도: EXT_FORWARD 완료 -> ASK_PRELOAD
-                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_AskPreload", "Device-Shimadzu", "Start")
-                    self.set_seq(14)  # ASK_PRELOAD로 이동
+                    # 흐름도: EXT_FORWARD 완료 -> DONE
+                    self.set_seq(0)
+                    return LogicEvent.DONE
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_ExtForward", "Device-Tensile", "Error")
                     Logger.error(f"[Logic] Step 13 extensometer failed: {get_device_cmd}"); bb.set(robot_cmd_key, None); bb.set(device_cmd_key, None); self.set_seq(0); return LogicEvent.VIOLATION_DETECT
@@ -1344,8 +1417,9 @@ class LogicContext(ContextBase):
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskPreload", "Device-Shimadzu", "Done")
                     Logger.info(f"[Logic] Step 15: Preload status received successfully. Specimen loaded and ready for test.")
                     bb.set(device_cmd_key, None)
-                    self.set_seq(0)
-                    return LogicEvent.DONE
+                    # 흐름도: ASK_PRELOAD 완료 -> EXT_FORWARD
+                    self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_ExtForward", "Device-Tensile", "Start")
+                    self.set_seq(12)
                 else:
                     self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq-1}_AskPreload", "Device-Shimadzu", "Error")
                     Logger.error(f"[Logic] Step 15 failed: {get_device_cmd}")
@@ -1543,27 +1617,99 @@ class LogicContext(ContextBase):
         """
         두께 불량 시 홈으로 이동하는 시퀀스입니다.
         홈 이동 후 스크랩 처리기로 버리러 갑니다.
+        -> (수정) 6번(스크랩 앞) -> 버리기 -> 26번(스크랩 앞 홈) -> 홈 이동
         """
         get_robot_cmd = bb.get(robot_cmd_key)
 
         # Seq 0: Robot-Motion-MOVE_TO_HOME
+        # Seq 0: Robot-Motion-HOME_SCRAP_DISPOSER_FRONT (6)
         if self._seq == 0:
-            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHome", "Robot", "Start")
-            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
-            Logger.info(f"[Logic] Move_to_[77.36005, -2.6276846, -119.89775, 179.99402, 57.45355, 165.9208]home_for_dispose Step 0: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveScrapFront", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.HOME_SCRAP_DISPOSER_FRONT, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 0: Sending command: {MotionCommand.HOME_SCRAP_DISPOSER_FRONT}")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(1)
             return LogicEvent.NONE
         elif self._seq == 1:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.HOME_SCRAP_DISPOSER_FRONT and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to scrap front done.")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(2)
+            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Error")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 1 failed: {get_robot_cmd}")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Seq 2: Robot-Motion-GRIPPER_OPEN_AT_SCRAP_DISPOSER
+        elif self._seq == 2:
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 2: Sending command: {MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER}")
+            bb.set(robot_cmd_key, robot_cmd)
+            self.set_seq(3)
+            return LogicEvent.NONE
+        elif self._seq == 3:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 3: Gripper open done.")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(4)
+            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 3 failed: {get_robot_cmd}")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Seq 4: Robot-Motion-SCRAP_DISPOSER_FRONT_HOME (26)
+        elif self._seq == 4:
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_Retreat", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.SCRAP_DISPOSER_FRONT_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 4: Sending command: {MotionCommand.SCRAP_DISPOSER_FRONT_HOME}")
+            bb.set(robot_cmd_key, robot_cmd)
+            self.set_seq(5)
+            return LogicEvent.NONE
+        elif self._seq == 5:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.SCRAP_DISPOSER_FRONT_HOME and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 5: Retreat done.")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(6)
+            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 5 failed: {get_robot_cmd}")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Seq 6: Robot-Motion-MOVE_TO_HOME
+        elif self._seq == 6:
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHome", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_[77.36005, -2.6276846, -119.89775, 179.99402, 57.45355, 165.9208]home_for_dispose Step 0: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 6: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            bb.set(robot_cmd_key, robot_cmd)
+            self.set_seq(1)
+            self.set_seq(7)
+            return LogicEvent.NONE
+        elif self._seq == 7:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done":
                 self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
                 Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to home done.")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 7: Move to home done.")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                 self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
                 Logger.error(f"[Logic] Move_to_home_for_dispose Step 1 failed: {get_robot_cmd}")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 7 failed: {get_robot_cmd}")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.VIOLATION_DETECT

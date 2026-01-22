@@ -45,6 +45,7 @@ class DeviceContext(ContextBase):
         self.dev_remoteio_enable = True
         self.dev_smz_enable =  True
         self.dev_qr_enable = True
+        self.smz_init_run_done = False
         self.smz_initial_check_done = False
 
         self.dev_smz_check_time = datetime.now()
@@ -117,6 +118,7 @@ class DeviceContext(ContextBase):
             self.qr_reader.quit()
 
         # ShimadzuClient 장치 인스턴스 생성
+        self.smz_connection_verified = False  # ARE_YOU_THERE 응답 확인 플래그
         if self.dev_smz_enable :
             self.shimadzu_client = ShimadzuClient(host=config.get("shimadzu_ip"),
                                                 port=config.get("shimadzu_port"))
@@ -128,6 +130,7 @@ class DeviceContext(ContextBase):
             result = self.shimadzu_client.send_are_you_there()
             if result is not None:
                 Logger.info(f"[ShimadzuClient] Connected to Shimadzu Device Successfully.")
+                self.smz_connection_verified = True  # 연결 확인 완료
             else:
                 Logger.error(f"[ShimadzuClient] Failed to connect to Shimadzu Device.")
 
@@ -376,8 +379,26 @@ class DeviceContext(ContextBase):
                     # bb.set("device/shimadzu/comm_status", 1 if smz_run_state else 0)
                     # # if smz_run_state:
                     # #     bb.set("device/shimadzu/run_state", smz_run_state)
-                    
-                    if not self.smz_initial_check_done:
+
+                    # 연결 확인이 완료된 후에만 INIT_RUN 실행
+                    if not self.smz_connection_verified:
+                        # 연결 확인 재시도
+                        result = self.smz_are_you_there()
+                        if result is not None:
+                            Logger.info("[device] Shimadzu connection verified (ARE_YOU_THERE)")
+                            self.smz_connection_verified = True
+                        continue  # 연결 확인 완료 전까지는 다음 단계로 진행하지 않음
+
+                    # INIT_RUN을 먼저 실행 (한 번만, 연결 확인 후)
+                    if not self.smz_init_run_done:
+                        init_result = self.smz_send_init_run()
+                        if init_result:
+                            Logger.info("[device] Shimadzu INIT_RUN completed successfully")
+                            self.smz_init_run_done = True
+                        else:
+                            Logger.warn("[device] Shimadzu INIT_RUN failed, will retry")
+
+                    if not self.smz_initial_check_done and self.smz_init_run_done:
                         smz_run_state = self.smz_ask_sys_status()
                         if smz_run_state:
                             bb.set("device/shimadzu/comm_status", 1)
@@ -443,7 +464,20 @@ class DeviceContext(ContextBase):
                 #     Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
                 #     self.violation_code |= DeviceViolation.SMZ_COMM_ERR
                 
-                if not self.smz_initial_check_done:
+                # 연결 확인이 완료되지 않았으면 INIT 및 후속 작업 스킵
+                if not self.smz_connection_verified:
+                    pass  # _thread_comm_status_updater에서 연결 확인 처리
+                else:
+                    # INIT_RUN을 먼저 실행 (한 번만, 연결 확인 후)
+                    if not self.smz_init_run_done:
+                        init_result = self.smz_send_init_run()
+                        if init_result:
+                            Logger.info("[device] Shimadzu INIT_RUN completed successfully (check_violation)")
+                            self.smz_init_run_done = True
+                        else:
+                            Logger.warn("[device] Shimadzu INIT_RUN failed, will retry (check_violation)")
+
+                if not self.smz_initial_check_done and self.smz_init_run_done:
                     smz_state = self.smz_ask_sys_status()
                     try :
                         if smz_state is False:
@@ -453,7 +487,7 @@ class DeviceContext(ContextBase):
                             if smz_state.get("RUN") == "E":
                                 Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
                                 self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
-                            
+
                             # 성공적으로 상태를 받았으면 플래그 설정
                             self.smz_initial_check_done = True
                             bb.set("device/shimadzu/comm_status", 1)
@@ -1387,7 +1421,7 @@ class DeviceContext(ContextBase):
             return False
 
     # shimadzu client 래핑 함수들
-    def smz_ask_register(self, regist_data: dict, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def smz_ask_register(self, regist_data: dict, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 시험 등록 요청을 전송하고 응답을 기다립니다.
 
@@ -1438,11 +1472,13 @@ class DeviceContext(ContextBase):
             gl = db_result.get("gl") or db_result.get("ql") or regist_data.get("gl")
             # thickness = bb.get(""specimen/thickness_avg")
             chuckl = db_result.get("chuckl") or regist_data.get("chuckl")
-            last_tray_no = bb.get("process_status/last_tray_no")
-            
+            # last_tray_no = bb.get("process_status/last_tray_no")
+
             isfinal = 0
-            if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
-                isfinal = 1  # 전체 시험중 마지막 시험인 경우
+            if specimen_no == 5:
+                isfinal = 1  # 각 트레이의 마지막 시편(5번째)인 경우
+            # if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
+            #     isfinal = 1  # 전체 시험중 마지막 시험인 경우
 
             Logger.info(f"[device] Sending ASK_REGISTER to Shimadzu (MTNAME: {mtname}, TPNAME: {tpname}, SIZE1: {size1}, SIZE2: {size2}, GL: {gl}, ChuckL: {chuckl}, ISFinal: {isfinal}, timeout: {timeout}s)")
 
@@ -1466,8 +1502,8 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in smz_ask_register: {e}\n{traceback.format_exc()}")
             reraise(e)
             return None
-    
-    def smz_start_measurement(self, lotname: str, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+
+    def smz_start_measurement(self, lotname: str, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 측정 시작 명령을 전송하고 응답을 기다립니다.
 
@@ -1494,12 +1530,12 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in smz_start_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
             return None
-    
-    def smz_stop_measurement(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+
+    def smz_stop_measurement(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 측정 정지 명령을 전송하고 응답을 기다립니다.
 
-        :param timeout: 응답 대기 시간 (초, 기본값 5초)
+        :param timeout: 응답 대기 시간 (초, 기본값 60초)
         :type timeout: float
         :return: 성공 시 응답 데이터, 타임아웃 또는 실패 시 None
         :rtype: Optional[Dict[str, Any]]
@@ -1520,8 +1556,8 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in smz_stop_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
             return None
-    
-    def smz_are_you_there(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+
+    def smz_are_you_there(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 접속 확인 요청을 보내고 응답을 기다립니다.
 
@@ -1552,7 +1588,36 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_ask_sys_status(self, timeout: float = 30.0) -> Optional[Dict[str, Any]]:
+    def smz_send_init_run(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+        '''
+        Shimadzu 서버에 자동운전 초기화(INIT) 명령을 전송하고 응답을 기다립니다.
+        INIT 명령 전송 후 ACK_INIT와 INIT_FINISHED 두 응답을 순차적으로 수신합니다.
+
+        Args:
+            timeout: 각 응답별 대기 시간 (초, 기본값 10초)
+
+        Returns:
+            성공 시 INIT_FINISHED 응답 데이터 {"command": "INIT_FINISHED", "params": {"CODE": "Normal"}}
+            타임아웃 또는 실패 시 None
+        '''
+        try:
+            Logger.info(f"[device] Sending INIT to Shimadzu (timeout: {timeout}s)")
+
+            result = self.shimadzu_client.send_init_run(timeout=timeout)
+
+            if result is None:
+                Logger.info(f"[device] INIT timeout after {timeout}s - No response from Shimadzu")
+                return None
+
+            Logger.info(f"[device] INIT_FINISHED response received: {result}")
+            return result
+
+        except Exception as e:
+            Logger.error(f"[device] Error in smz_send_init_run: {e}\n{traceback.format_exc()}")
+            reraise(e)
+            return None
+
+    def smz_ask_sys_status(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 시스템 상태 확인 요청을 보내고 응답을 기다립니다.
 
@@ -1595,7 +1660,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_ask_preload(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+    def smz_ask_preload(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 프리로드 상태 확인 요청을 보내고 응답을 기다립니다.
 
@@ -1623,7 +1688,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_start_ana(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def smz_start_ana(self, timeout: float = 300.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 시험 시작 명령(START_ANA)을 전송하고 응답을 기다립니다.
 

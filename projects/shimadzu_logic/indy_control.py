@@ -409,6 +409,10 @@ class RobotCommunication:
             self.last_ana_result_params = ana_result
             try:
                 value_pos = float(ana_result.get("VALUEPOS", 0))
+                value_pos -= 4  # 오프셋 보정
+                if value_pos < -4:
+                    Logger.warn(f"[Indy] Invalid VALUEPOS received: {value_pos + 4}. Skipping position update.")
+                    return
                 self._update_tensile_positions(value_pos)
             except Exception as e:
                 Logger.error(f"[Indy] Failed to update tensile positions: {e}")
@@ -530,7 +534,7 @@ class RobotCommunication:
                             # 이전 결과가 남아있을 수 있으므로 초기화
                             bb.set("device/vision/scene_result", None)
                             Logger.info("[BinPickControl] Step 1: Sending CHECK_SCENE request... (status=1)")
-                            self.vision_handler.check_scene(mode="SINGLE")
+                            self.vision_handler.check_scene(mode="CONTINUOUS")
 
                             # Step 2: SCENE_RESULT 응답 대기 (binpicking.md Section 7 참조)
                             Logger.info("[BinPickControl] Step 2: Waiting for SCENE_RESULT...")
@@ -914,7 +918,7 @@ class RobotCommunication:
             #     Logger.warn(f"[Indy] JPOS3 calculation failed. Using default JPOS3. Response: {res3}")
             #     self.calc_tensile_jpos_3 = self.tensile_pos_3_q
 
-            Logger.info(f"[Indy] Calculated Tensile TPOS with VALUEPOS={value_pos}")
+            Logger.info(f"[Indy] Calculated Tensile TPOS with VALUEPOS={value_pos - 3}")
             Logger.info(f"  TPOS1: {target_p_1}")
             Logger.info(f"  TPOS2: {target_p_2}")
             # Logger.info(f"  TPOS3: {target_p_3}")
