@@ -583,6 +583,16 @@ class DeviceContext(ContextBase):
                 bb.set("device/remote/input/ATC_2_1_SENSOR", self.remote_input_data[DigitalInput.ATC_2_1_SENSOR])
                 bb.set("device/remote/input/ATC_2_2_SENSOR", self.remote_input_data[DigitalInput.ATC_2_2_SENSOR])
 
+                # [추가] 툴 타입 감지 로직
+                atc_1_2 = self.remote_input_data[DigitalInput.ATC_1_2_SENSOR]
+                atc_2_2 = self.remote_input_data[DigitalInput.ATC_2_2_SENSOR]
+                current_gripper = 0
+                if atc_1_2 == 1 and atc_2_2 == 0:
+                    current_gripper = 2 # Bin Tool (빈피킹)
+                elif atc_1_2 == 0 and atc_2_2 == 1:
+                    current_gripper = 1 # Pro Tool (인장시험기)
+                bb.set("robot/tool_type", current_gripper)
+
             # 측정기 받침 상태 저장
             if (bb.get("device/remote/input/INDICATOR_GUIDE_UP") == 1 and
                 bb.get("device/remote/input/INDICATOR_GUIDE_DOWN") == 0) :
@@ -1542,7 +1552,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_ask_sys_status(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def smz_ask_sys_status(self, timeout: float = 30.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 시스템 상태 확인 요청을 보내고 응답을 기다립니다.
 

@@ -513,6 +513,7 @@ class RobotCommunication:
 
                     try:
                         specimen_idx = 1
+                        retry_count = 0
                         # [Loop] 시편이 없을 때까지 반복
                         while True:
                             # [Update] 빈피킹 루프 중에도 로봇 상태 업데이트
@@ -523,7 +524,7 @@ class RobotCommunication:
                             if bb.get("ui/cmd/binpick/action") == "stop":
                                 Logger.info("[BinPickControl] Stop signal detected. Aborting loop.")
                                 break
-
+                            self.indy.movej(self.bin_picking_home, vel_ratio=50)
                             # Step 1: Check Scene 요청 (status=1: 인식)
                             bb.set("process/binpick/status", 1)
                             # 이전 결과가 남아있을 수 있으므로 초기화
@@ -564,17 +565,49 @@ class RobotCommunication:
                             Logger.info(f"[BinPickControl] Processing status: {status}")
 
                             if status == "TASK_DONE":
+                                retry_count = 0
                                 Logger.info("[BinPickControl] No specimens detected (TASK_DONE). Loop finished.")
                                 bb.set("process/binpick/status", 7)  # 완료
                                 break
                             elif status == "OVERLAPPING":
+                                retry_count = 0
                                 Logger.warn("[BinPickControl] Specimens are overlapping. Shake motion needed.")
                                 bb.set("process/binpick/status", 10)  # 쉐이킹
-                                # TODO: Shake 동작 구현 필요 시 여기에 추가
+
+                                # Shake 동작 실행
+                                target_coords = bb.get("device/vision/target_coords")
+                                if target_coords:
+                                    shake_x = target_coords.get("target_x", 75.56)
+                                    shake_y = target_coords.get("target_y", 571.73)
+                                    self.vision_handler.motion_shake(base_x=shake_x, base_y=shake_y)
+                                else:
+                                    # 기본 좌표로 shake
+                                    self.vision_handler.motion_shake(base_x=75.56, base_y=571.73)
+
                                 # Shake 후 다시 루프 처음으로 돌아가서 인식 시도
-                                # 현재는 구현 없으므로 break
-                                break
+                                continue
+                            elif status == "RETRY":
+                                retry_count += 1
+                                if retry_count >= 3:
+                                    Logger.warn(f"[BinPickControl] Vision system requested RETRY {retry_count} times. Treating as TASK_DONE.")
+                                    
+                                    error_payload = {
+                                        "kind": "event",
+                                        "evt": "error",
+                                        "status": "Auto",
+                                        "category": "robot",
+                                        "code": "R-004",
+                                        "message": "로봇 타겟위치를 잡을 수 없습니다."
+                                    }
+                                    bb.set("logic/send_event", error_payload)
+                                    bb.set("process/binpick/status", 7)  # 완료
+                                    break
+                                else:
+                                    Logger.warn(f"[BinPickControl] Vision system requested RETRY. Restarting recognition... ({retry_count}/3)")
+                                    # 다시 인식 시도 (루프 처음으로 돌아감)
+                                    continue
                             elif status == "TASK_EXECUTION":
+                                retry_count = 0
                                 Logger.info(f"[BinPickControl] Status is TASK_EXECUTION. Processing specimens...")
                                 
                                 # [Stop Check]

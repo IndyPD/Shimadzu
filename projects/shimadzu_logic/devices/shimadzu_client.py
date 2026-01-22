@@ -266,6 +266,75 @@ class ShimadzuClient:
         """
         return self.send_and_wait("ARE_YOU_THERE", "I_AM_HERE", timeout=timeout)
         
+    def send_init_run(self, timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+        """
+        4. 자동운전 초기화
+        INIT 명령 전송 후 ACK_INIT와 INIT_FINISHED 두 응답을 순차적으로 수신합니다.
+
+        Args:
+            timeout: 각 응답별 대기 시간 (초)
+
+        Returns:
+            INIT_FINISHED 응답 데이터 ({"command": "INIT_FINISHED", "params": {"CODE": "Normal"}}) 또는 실패 시 None
+        """
+        # 1단계: INIT 전송 후 ACK_INIT 대기
+        ack_result = self.send_and_wait("INIT", "ACK_INIT", timeout=timeout)
+        if ack_result is None:
+            return None
+
+        # 2단계: INIT_FINISHED 대기 (추가 명령 전송 없이 수신만 대기)
+        init_finished_result = self.wait_for_response("INIT_FINISHED", timeout=timeout)
+        if init_finished_result is None:
+            return None
+
+        # CODE 확인
+        code = init_finished_result.get("params", {}).get("CODE", "")
+        if code == "Normal" or code == "0":
+            self.log("INIT completed successfully (CODE=Normal)")
+        else:
+            self.log(f"INIT completed with CODE={code}")
+
+        return init_finished_result
+
+    def wait_for_response(self, expected_response: str, timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+        """
+        특정 응답을 대기합니다 (명령 전송 없이 수신만 대기).
+
+        Args:
+            expected_response: 기대하는 응답 명령
+            timeout: 타임아웃 시간 (초)
+
+        Returns:
+            응답 데이터 ({"command": str, "params": dict}) 또는 타임아웃 시 None
+        """
+        if not self.is_connected:
+            self.log("Cannot wait: Not connected.")
+            return None
+
+        try:
+            self.response_event.clear()
+            self.response_data = None
+            self.expected_response = expected_response
+
+            self.log(f"Waiting for: {expected_response}")
+
+            if self.response_event.wait(timeout):
+                self.log(f"Response received: {self.response_data}")
+                result = self.response_data
+                self.expected_response = None
+                self.response_data = None
+                return result
+            else:
+                self.log(f"Timeout: No {expected_response} received within {timeout}s")
+                self.expected_response = None
+                self.response_data = None
+                return None
+
+        except Exception as e:
+            self.log(f"Wait for response error: {e}")
+            self.expected_response = None
+            self.response_data = None
+            return None
  
     def send_start_run(self, lotname="LOT_001", timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         """
@@ -280,7 +349,7 @@ class ShimadzuClient:
         """
         return self.send_and_wait("START_RUN", "ACK_START_RUN", {"LOTNAME": lotname}, timeout=timeout)
 
-    def send_ask_sys_status(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    def send_ask_sys_status(self, timeout: float = 30.0) -> Optional[Dict[str, Any]]:
         """
         2. 시스템 상태 확인
 
@@ -485,9 +554,9 @@ if __name__ == "__main__":
             print(f"   ✗ 타임아웃 또는 실패")
         time.sleep(1)
 
-        # 2. 시스템 상태 확인 (타임아웃 5초)
+        # 2. 시스템 상태 확인 (타임아웃 30초)
         print("\n2. ASK_SYS_STATUS 전송 중...")
-        result = client.send_ask_sys_status(timeout=5.0)
+        result = client.send_ask_sys_status(timeout=30.0)
         if result:
             print(f"   ✓ 응답 수신: {result}")
         else:

@@ -536,6 +536,7 @@ class MqttComm:
                                 "recover_motion": self.bb.get("robot/recover/motion/cmd"),
                                 "direct_teaching_mode": self.bb.get("ui/state/direct_state"),
                                 "program_run": program_run_status,
+                                "current_gripper": self.bb.get("robot/tool_type") or 0,
                                 "gripper_state": self.bb.get("robot/gripper/actual_state"),
                                 "msg": "OK" if robot_comm_ok else "Connection Failed"
                             },

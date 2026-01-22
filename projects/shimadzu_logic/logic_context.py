@@ -2091,10 +2091,10 @@ class LogicContext(ContextBase):
                     # [수정] 현재 위치에 따라 시작 단계 조정 (처음부터 하지 않고 이어서)
                     if current_pos_id == 7020: # SCRAP_FRONT_MOVE
                         Logger.info("[Logic] Controlled Stop: Already at scrap disposer front. Skipping move.")
-                        self.set_sub_seq(2) # PLACE_IN_SCRAP_DISPOSER 단계로
+                        self.set_sub_seq(2) # GRIPPER_OPEN_AT_SCRAP_DISPOSER 단계로
                     elif current_pos_id == 7021: # SCRAP_DROP_POS
                         Logger.info("[Logic] Controlled Stop: Already at scrap drop pos. Skipping move/place.")
-                        self.set_sub_seq(4) # GRIPPER_OPEN_AT_SCRAP_DISPOSER 단계로
+                        self.set_sub_seq(2) # GRIPPER_OPEN_AT_SCRAP_DISPOSER 단계로
                     else:
                         self.set_sub_seq(0)
                 else:
@@ -2451,7 +2451,7 @@ class LogicContext(ContextBase):
             # 
             if self._sub_seq == 0: # 스크랩 처리기로 이동
                 self._log_detail("execute_controlled_stop", "seq_30_MoveToScrap", "Robot", "Start")
-                cmd = MotionCommand.MOVE_TO_SCRAP_DISPOSER
+                cmd = MotionCommand.HOME_SCRAP_DISPOSER_FRONT
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(1)
             elif self._sub_seq == 1: # 이동 완료 대기
@@ -2461,36 +2461,24 @@ class LogicContext(ContextBase):
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                     self._log_detail("execute_controlled_stop", "seq_30_MoveToScrap", "Robot", "Error")
                     return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 2: # 스크랩 처리기에 놓기
-                self._log_detail("execute_controlled_stop", "seq_30_PlaceInScrap", "Robot", "Start")
-                cmd = MotionCommand.PLACE_IN_SCRAP_DISPOSER
-                Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
-                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(3)
-            elif self._sub_seq == 3: # 놓기 완료 대기
-                if get_robot_cmd and get_robot_cmd.get("state") == "done":
-                    self._log_detail("execute_controlled_stop", "seq_30_PlaceInScrap", "Robot", "Done")
-                    bb.set(robot_cmd_key, None); self.set_sub_seq(4)
-                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                    self._log_detail("execute_controlled_stop", "seq_30_PlaceInScrap", "Robot", "Error")
-                    return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 4: # 그리퍼 열기
+            elif self._sub_seq == 2: # 그리퍼 열기
                 self._log_detail("execute_controlled_stop", "seq_30_GripperOpen", "Robot", "Start")
                 cmd = MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
-                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(5)
-            elif self._sub_seq == 5: # 열기 완료 대기
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(3)
+            elif self._sub_seq == 3: # 열기 완료 대기
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     self._log_detail("execute_controlled_stop", "seq_30_GripperOpen", "Robot", "Done")
-                    bb.set(robot_cmd_key, None); self.set_sub_seq(6)
+                    bb.set(robot_cmd_key, None); self.set_sub_seq(4)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                     self._log_detail("execute_controlled_stop", "seq_30_GripperOpen", "Robot", "Error")
                     return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 6: # 스크랩 처리기에서 후퇴
+            elif self._sub_seq == 4: # 스크랩 처리기에서 후퇴
                 self._log_detail("execute_controlled_stop", "seq_30_Retreat", "Robot", "Start")
-                cmd = MotionCommand.RETREAT_FROM_SCRAP_DISPOSER
+                cmd = MotionCommand.SCRAP_DISPOSER_FRONT_HOME
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
-                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(7)
-            elif self._sub_seq == 7: # 후퇴 완료 대기
+                bb.set(robot_cmd_key, {"process": cmd, "state": ""}); self.set_sub_seq(5)
+            elif self._sub_seq == 5: # 후퇴 완료 대기
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     self._log_detail("execute_controlled_stop", "seq_30_Retreat", "Robot", "Done")
                     bb.set(robot_cmd_key, None)

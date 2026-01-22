@@ -52,7 +52,7 @@
   "robot/current/position": 0,
   "robot/target_floor": 1,
   "robot/target_position": 1,
-  "robot/tool_type": 102,
+  "robot/tool_type": 0,
   "specimen/thickness_1": 0,
   "specimen/thickness_2": 0,
   "specimen/thickness_3": 0,
