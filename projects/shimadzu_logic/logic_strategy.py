@@ -650,11 +650,19 @@ class LogicDetermineTaskStrategy(Strategy):
                 Logger.warn(f"[Logic] DetermineTask: No dimension data found for specimen {specimen_no} to update.")
 
             # Thickness 검증 실패 시 -> 홈으로 이동 후 스크랩 처리
+            enable_thickness_check = bb.get("process/config/enable_thickness_check")
+            if enable_thickness_check is None:
+                enable_thickness_check = True
+
             if bb.get("process/auto/thickness_validation_failed"):
-                Logger.warn(f"[Logic] DetermineTask: Thickness validation failed for Tray {tray_no}, Specimen {specimen_no}. Moving to home and disposing.")
-                bb.set("process/auto/thickness_validation_failed", False)  # 플래그 초기화
-                bb.set("process/auto/current_step", 100)  # 특수 스텝: 두께 불량 처리
-                return LogicEvent.DO_MOVE_TO_HOME
+                if enable_thickness_check:
+                    Logger.warn(f"[Logic] DetermineTask: Thickness validation failed for Tray {tray_no}, Specimen {specimen_no}. Moving to home and disposing.")
+                    bb.set("process/auto/thickness_validation_failed", False)  # 플래그 초기화
+                    bb.set("process/auto/current_step", 100)  # 특수 스텝: 두께 불량 처리
+                    return LogicEvent.DO_MOVE_TO_HOME
+                else:
+                    Logger.warn(f"[Logic] DetermineTask: Thickness validation failed but check is DISABLED. Proceeding.")
+                    bb.set("process/auto/thickness_validation_failed", False)
 
             bb.set("process/auto/current_step", 6)
             # 정렬중 (4)
@@ -664,7 +672,7 @@ class LogicDetermineTaskStrategy(Strategy):
         elif step == 100: # 두께 불량 - 홈 이동 완료 -> 스크랩 처리
             Logger.info("[Logic] DetermineTask: Step 100 (Move to Home for thickness failure) done. -> Dispose Scrap.")
             bb.set("process/auto/current_step", 101)
-            return LogicEvent.DO_DISPOSE_SCRAP
+            return self.operate(context)
 
         elif step == 101: # 두께 불량 - 스크랩 처리 완료 -> 다음 시편으로 이동
             Logger.info("[Logic] DetermineTask: Step 101 (Dispose Scrap for thickness failure) done. Moving to next specimen.")
@@ -1074,7 +1082,7 @@ class LogicMeasureSpecimenThicknessStrategy(Strategy):
 
         if result == LogicEvent.DONE:
             Logger.info(f"[Logic] Finished thickness measurement for point {self.measure_point}.")
-            # 개별 측정 포이트에 대한 두께 값을 정확히 가져옵니다.
+            # 개별 측정 포인트에 대한 두께 값을 정확히 가져옵니다.
             thickness_data = bb.get("process/auto/thickness") or {}
             current_measurement = thickness_data.get(str(self.measure_point))
             if current_measurement is not None:

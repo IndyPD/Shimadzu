@@ -405,17 +405,19 @@ class RobotCommunication:
 
         # [Tensile Test] Update positions based on ANA_RESULT (VALUEPOS)
         ana_result = bb.get("shimadzu/ana_result")
-        if ana_result and ana_result != self.last_ana_result_params:
-            self.last_ana_result_params = ana_result
+        if ana_result and ana_result != 0:  # 0은 초기값, 매번 새로운 결과를 처리
             try:
                 value_pos = float(ana_result.get("VALUEPOS", 0))
                 value_pos -= 4  # 오프셋 보정
                 if value_pos < -4:
                     Logger.warn(f"[Indy] Invalid VALUEPOS received: {value_pos + 4}. Skipping position update.")
+                    bb.set("shimadzu/ana_result", 0)  # Reset to avoid reprocessing
                     return
                 self._update_tensile_positions(value_pos)
+                bb.set("shimadzu/ana_result", 0)  # Reset to avoid reprocessing
             except Exception as e:
                 Logger.error(f"[Indy] Failed to update tensile positions: {e}")
+                bb.set("shimadzu/ana_result", 0)  # Reset to avoid reprocessing
 
         # [Vision Control] MQTT → Blackboard → VisionHandler 명령 처리
         if bb.get("ui/cmd/vision/trigger"):
@@ -586,7 +588,10 @@ class RobotCommunication:
                                     self.vision_handler.motion_shake(base_x=shake_x, base_y=shake_y)
                                 else:
                                     # 기본 좌표로 shake
-                                    self.vision_handler.motion_shake(base_x=75.56, base_y=571.73)
+                                    # self.vision_handler.motion_shake(base_x=75.56, base_y=571.73)
+                                    #TODO : 좌표 못받아올때 어떻게 할지
+                                    pass
+                                # [Stop Check]  
 
                                 # Shake 후 다시 루프 처음으로 돌아가서 인식 시도
                                 continue
@@ -1026,6 +1031,10 @@ class RobotCommunication:
             
             if motion_done is not None:
                 bb.set("int_var/motion_done/val", motion_done)
+                # 홈 복귀 명령 완료 시 position을 0으로 설정
+                home_return_commands = [21, 22, 23, 24, 25, 26]  # RACK_FRONT_HOME ~ SCRAP_DISPOSER_FRONT_HOME
+                if motion_done in home_return_commands or motion_done in [cmd + 10000 for cmd in home_return_commands]:
+                    bb.set("robot/current/position", 0)
                 #Sehoon DONE timestamp capture
                 # if self.cmd_tracking_id is not None and (motion_done == self.cmd_tracking_id or motion_done == self.cmd_tracking_id + 10000):
                 #     self.cmd_done_ts = time.perf_counter()

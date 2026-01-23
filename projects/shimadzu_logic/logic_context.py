@@ -1616,100 +1616,116 @@ class LogicContext(ContextBase):
     def Move_to_home_for_dispose(self):
         """
         두께 불량 시 홈으로 이동하는 시퀀스입니다.
-        홈 이동 후 스크랩 처리기로 버리러 갑니다.
-        -> (수정) 6번(스크랩 앞) -> 버리기 -> 26번(스크랩 앞 홈) -> 홈 이동
+        측정기 -> 홈 -> 스크랩 처리기(6) -> 버리기 -> 스크랩 앞 홈(26) -> 홈 이동
         """
         get_robot_cmd = bb.get(robot_cmd_key)
 
-        # Seq 0: Robot-Motion-MOVE_TO_HOME
-        # Seq 0: Robot-Motion-HOME_SCRAP_DISPOSER_FRONT (6)
+        # Seq 0: Robot-Motion-THICK_GAUGE_FRONT_HOME (23) - 측정기에서 홈으로 먼저 이동
         if self._seq == 0:
-            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveScrapFront", "Robot", "Start")
-            robot_cmd = {"process": MotionCommand.HOME_SCRAP_DISPOSER_FRONT, "state": ""}
-            Logger.info(f"[Logic] Move_to_home_for_dispose Step 0: Sending command: {MotionCommand.HOME_SCRAP_DISPOSER_FRONT}")
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHomeFromGauge", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.THICK_GAUGE_FRONT_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 0: Sending command: {MotionCommand.THICK_GAUGE_FRONT_HOME}")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(1)
             return LogicEvent.NONE
         elif self._seq == 1:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.HOME_SCRAP_DISPOSER_FRONT and get_robot_cmd.get("state") == "done":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Done")
-                Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to scrap front done.")
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.THICK_GAUGE_FRONT_HOME and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHomeFromGauge", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to home from gauge done.")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(2)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Error")
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHomeFromGauge", "Robot", "Error")
                 Logger.error(f"[Logic] Move_to_home_for_dispose Step 1 failed: {get_robot_cmd}")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Seq 2: Robot-Motion-GRIPPER_OPEN_AT_SCRAP_DISPOSER
+        # Seq 2: Robot-Motion-HOME_SCRAP_DISPOSER_FRONT (6)
         elif self._seq == 2:
-            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
-            robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER, "state": ""}
-            Logger.info(f"[Logic] Move_to_home_for_dispose Step 2: Sending command: {MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER}")
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveScrapFront", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.HOME_SCRAP_DISPOSER_FRONT, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 2: Sending command: {MotionCommand.HOME_SCRAP_DISPOSER_FRONT}")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(3)
             return LogicEvent.NONE
         elif self._seq == 3:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
-                Logger.info(f"[Logic] Move_to_home_for_dispose Step 3: Gripper open done.")
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.HOME_SCRAP_DISPOSER_FRONT and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 3: Move to scrap front done.")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(4)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveScrapFront", "Robot", "Error")
                 Logger.error(f"[Logic] Move_to_home_for_dispose Step 3 failed: {get_robot_cmd}")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Seq 4: Robot-Motion-SCRAP_DISPOSER_FRONT_HOME (26)
+        # Seq 4: Robot-Motion-GRIPPER_OPEN_AT_SCRAP_DISPOSER
         elif self._seq == 4:
-            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_Retreat", "Robot", "Start")
-            robot_cmd = {"process": MotionCommand.SCRAP_DISPOSER_FRONT_HOME, "state": ""}
-            Logger.info(f"[Logic] Move_to_home_for_dispose Step 4: Sending command: {MotionCommand.SCRAP_DISPOSER_FRONT_HOME}")
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 4: Sending command: {MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER}")
             bb.set(robot_cmd_key, robot_cmd)
             self.set_seq(5)
             return LogicEvent.NONE
         elif self._seq == 5:
-            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.SCRAP_DISPOSER_FRONT_HOME and get_robot_cmd.get("state") == "done":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Done")
-                Logger.info(f"[Logic] Move_to_home_for_dispose Step 5: Retreat done.")
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_OPEN_AT_SCRAP_DISPOSER and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 5: Gripper open done.")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(6)
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
-                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_GripperOpen", "Robot", "Error")
                 Logger.error(f"[Logic] Move_to_home_for_dispose Step 5 failed: {get_robot_cmd}")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.VIOLATION_DETECT
             return LogicEvent.NONE
 
-        # Seq 6: Robot-Motion-MOVE_TO_HOME
+        # Seq 6: Robot-Motion-SCRAP_DISPOSER_FRONT_HOME (26)
         elif self._seq == 6:
-            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHome", "Robot", "Start")
-            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
-            Logger.info(f"[Logic] Move_to_[77.36005, -2.6276846, -119.89775, 179.99402, 57.45355, 165.9208]home_for_dispose Step 0: Sending command: {MotionCommand.MOVE_TO_HOME}")
-            Logger.info(f"[Logic] Move_to_home_for_dispose Step 6: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_Retreat", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.SCRAP_DISPOSER_FRONT_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 6: Sending command: {MotionCommand.SCRAP_DISPOSER_FRONT_HOME}")
             bb.set(robot_cmd_key, robot_cmd)
-            self.set_seq(1)
             self.set_seq(7)
             return LogicEvent.NONE
         elif self._seq == 7:
+            if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.SCRAP_DISPOSER_FRONT_HOME and get_robot_cmd.get("state") == "done":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Done")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 7: Retreat done.")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(8)
+            elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_Retreat", "Robot", "Error")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 7 failed: {get_robot_cmd}")
+                bb.set(robot_cmd_key, None)
+                self.set_seq(0)
+                return LogicEvent.VIOLATION_DETECT
+            return LogicEvent.NONE
+
+        # Seq 8: Robot-Motion-MOVE_TO_HOME
+        elif self._seq == 8:
+            self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq}_MoveHome", "Robot", "Start")
+            robot_cmd = {"process": MotionCommand.MOVE_TO_HOME, "state": ""}
+            Logger.info(f"[Logic] Move_to_home_for_dispose Step 8: Sending command: {MotionCommand.MOVE_TO_HOME}")
+            bb.set(robot_cmd_key, robot_cmd)
+            self.set_seq(9)
+            return LogicEvent.NONE
+        elif self._seq == 9:
             if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.MOVE_TO_HOME and get_robot_cmd.get("state") == "done":
                 self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Done")
-                Logger.info(f"[Logic] Move_to_home_for_dispose Step 1: Move to home done.")
-                Logger.info(f"[Logic] Move_to_home_for_dispose Step 7: Move to home done.")
+                Logger.info(f"[Logic] Move_to_home_for_dispose Step 9: Move to home done.")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.DONE
             elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                 self._log_detail("Move_to_home_for_dispose", f"seq_{self._seq-1}_MoveHome", "Robot", "Error")
-                Logger.error(f"[Logic] Move_to_home_for_dispose Step 1 failed: {get_robot_cmd}")
-                Logger.error(f"[Logic] Move_to_home_for_dispose Step 7 failed: {get_robot_cmd}")
+                Logger.error(f"[Logic] Move_to_home_for_dispose Step 9 failed: {get_robot_cmd}")
                 bb.set(robot_cmd_key, None)
                 self.set_seq(0)
                 return LogicEvent.VIOLATION_DETECT
@@ -2038,6 +2054,7 @@ class LogicContext(ContextBase):
         - 최종적으로 홈 위치로 복귀합니다.
         """
         get_robot_cmd = bb.get(robot_cmd_key)
+        get_device_cmd = bb.get(device_cmd_key)
 
         if self._seq == 0:
             # UI로부터 STOP 명령을 받으면 5초간 대기합니다.
@@ -2215,8 +2232,21 @@ class LogicContext(ContextBase):
 
             # [추가] PICK_SPECIMEN_FROM_TENSILE_MACHINE - 인장기에서 수거 중
             if self.state == LogicState.PICK_SPECIMEN_FROM_TENSILE_MACHINE:
+                # 현재 위치가 인장기 내부(7000번대 또는 8000번대)인지 확인
+                in_tensile_area = (7000 <= current_pos_id < 9000)
+
                 if is_holding:
                     Logger.info("[Logic] Controlled Stop: Stop during PICK_FROM_TENSILE with specimen. Retreating.")
+                    # recovery_pos 설정: 7012, 8002면 2 (UP), 아니면 1 (DOWN)
+                    self.recovery_pos = 2 if current_pos_id in [7012, 8002] else 1
+                    self.set_seq(0); self.set_sub_seq(0)
+                    self.set_seq(60)  # 인장기에서 후퇴 → 스크랩
+                    self.set_sub_seq(0)
+                elif in_tensile_area:
+                    # 시편은 없지만 인장기 내부에 있으면 먼저 후퇴
+                    Logger.info(f"[Logic] Controlled Stop: Stop during PICK_FROM_TENSILE without specimen but inside tensile area (pos: {current_pos_id}). Retreating first.")
+                    # recovery_pos 설정: 7012, 8002면 2 (UP), 아니면 1 (DOWN)
+                    self.recovery_pos = 2 if current_pos_id in [7012, 8002] else 1
                     self.set_seq(0); self.set_sub_seq(0)
                     self.set_seq(60)  # 인장기에서 후퇴 → 스크랩
                     self.set_sub_seq(0)
@@ -2662,8 +2692,16 @@ class LogicContext(ContextBase):
                 self._log_detail("execute_controlled_stop", "seq_40_MoveHome", "Robot", "Start")
                 # 현재 위치에 따라 적절한 홈 복귀 명령을 선택합니다.
                 current_pos_id = int(bb.get("robot/current/position") or 0)
+
+                # 이미 홈(0)에 있으면 명령 없이 바로 완료
+                if current_pos_id == 0:
+                    Logger.info("[Logic] Controlled Stop: Already at home position. Skipping move command.")
+                    Logger.info("[Logic] Controlled Stop: Sequence finished at Home.")
+                    self.set_seq(0); self.set_sub_seq(0)
+                    return LogicEvent.PROCESS_STOP
+
                 home_cmd = MotionCommand.MOVE_TO_HOME # 기본 홈 복귀 명령
-                
+
                 # Command.md의 후퇴 시퀀스에 따라, 각 Waypoint에서 Home으로 가는 전용 명령이 있다면 사용합니다.
                 if current_pos_id == RobotMotionCommand.RACK_FRONT_RETURN: # 랙 앞
                     home_cmd = MotionCommand.RACK_FRONT_HOME
@@ -2776,35 +2814,89 @@ class LogicContext(ContextBase):
         # State 60: 인장기에서 후퇴
         elif self._seq == 60:
             if self._sub_seq == 0:
+                # 먼저 로봇 그리퍼를 닫음
+                self._log_detail("execute_controlled_stop", "seq_60_GripperClose", "Robot", "Start")
+                robot_cmd = {"process": MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE, "state": ""}
+                Logger.info(f"[Logic] Controlled Stop: Sending command: {MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE}")
+                bb.set(robot_cmd_key, robot_cmd)
+                self.set_sub_seq(1)
+            elif self._sub_seq == 1:
+                # 로봇 그리퍼 닫기 완료 대기
+                if get_robot_cmd and get_robot_cmd.get("process") == MotionCommand.GRIPPER_CLOSE_FOR_TENSILE_MACHINE and get_robot_cmd.get("state") == "done":
+                    self._log_detail("execute_controlled_stop", "seq_60_GripperClose", "Robot", "Done")
+                    Logger.info("[Logic] Controlled Stop: Robot gripper close done.")
+                    bb.set(robot_cmd_key, None)
+                    self.set_sub_seq(2)
+                elif get_robot_cmd and get_robot_cmd.get("state") == "error":
+                    self._log_detail("execute_controlled_stop", "seq_60_GripperClose", "Robot", "Error")
+                    Logger.error("[Logic] Controlled Stop: Robot gripper close failed.")
+                    bb.set(robot_cmd_key, None)
+                    return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 2:
+                # 인장기 그리퍼를 해제 (recovery_pos: 1=하단, 2=상단)
+                self._log_detail("execute_controlled_stop", "seq_60_TensileGripperOff", "Device-Tensile", "Start")
+                if self.recovery_pos == 2:
+                    gripper_off_cmd = DeviceCommand.TENSILE_GRIPPER_1_OFF  # 상단 그리퍼 열기
+                    Logger.info(f"[Logic] Controlled Stop: Sending command: {DeviceCommand.TENSILE_GRIPPER_1_OFF} (Upper Chuck OFF)")
+                else:
+                    gripper_off_cmd = DeviceCommand.TENSILE_GRIPPER_2_OFF  # 하단 그리퍼 열기
+                    Logger.info(f"[Logic] Controlled Stop: Sending command: {DeviceCommand.TENSILE_GRIPPER_2_OFF} (Lower Chuck OFF)")
+                device_cmd = {"command": gripper_off_cmd, "state": "", "is_done": False}
+                bb.set(device_cmd_key, device_cmd)
+                self.set_sub_seq(3)
+            elif self._sub_seq == 3:
+                # 인장기 그리퍼 OFF 완료 대기
+                expected_cmd = DeviceCommand.TENSILE_GRIPPER_1_OFF if self.recovery_pos == 2 else DeviceCommand.TENSILE_GRIPPER_2_OFF
+                if get_device_cmd and get_device_cmd.get("command") == expected_cmd and get_device_cmd.get("is_done"):
+                    if get_device_cmd.get("state") == "done":
+                        gripper_name = "Upper" if self.recovery_pos == 2 else "Lower"
+                        self._log_detail("execute_controlled_stop", "seq_60_TensileGripperOff", "Device-Tensile", "Done")
+                        Logger.info(f"[Logic] Controlled Stop: Tensile {gripper_name} gripper off done.")
+                        bb.set(device_cmd_key, None)
+                        self.set_sub_seq(4)
+                    elif get_device_cmd.get("state") == "error":
+                        self._log_detail("execute_controlled_stop", "seq_60_TensileGripperOff", "Device-Tensile", "Error")
+                        Logger.error("[Logic] Controlled Stop: Tensile gripper off failed.")
+                        bb.set(device_cmd_key, None)
+                        return LogicEvent.VIOLATION_DETECT
+            elif self._sub_seq == 4:
+                # 인장기에서 후퇴
                 self._log_detail("execute_controlled_stop", "seq_60_Retreat", "Robot", "Start")
                 cmd = MotionCommand.RETREAT_FROM_TENSILE_MACHINE_AFTER_PICK
                 robot_cmd = {"process": cmd, "position": self.recovery_pos, "state": ""}
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
-                self.set_sub_seq(1)
-            elif self._sub_seq == 1:
+                self.set_sub_seq(5)
+            elif self._sub_seq == 5:
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     self._log_detail("execute_controlled_stop", "seq_60_Retreat", "Robot", "Done")
                     bb.set(robot_cmd_key, None)
                     Logger.info("[Logic] Controlled Stop: Retreat from tensile machine complete. Moving to home.")
-                    self.set_sub_seq(2) # 홈으로 이동
+                    self.set_sub_seq(6) # 홈으로 이동
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                     self._log_detail("execute_controlled_stop", "seq_60_Retreat", "Robot", "Error")
                     return LogicEvent.VIOLATION_DETECT
-            elif self._sub_seq == 2: # 홈으로 이동 명령
+            elif self._sub_seq == 6: # 홈으로 이동 명령
                 self._log_detail("execute_controlled_stop", "seq_60_MoveHome", "Robot", "Start")
                 cmd = MotionCommand.TENSILE_TESTER_FRONT_HOME
                 robot_cmd = {"process": cmd, "state": ""}
                 Logger.info(f"[Logic] Controlled Stop: Sending command: {cmd}")
                 bb.set(robot_cmd_key, robot_cmd)
-                self.set_sub_seq(3)
-            elif self._sub_seq == 3: # 홈 이동 완료 대기
+                self.set_sub_seq(7)
+            elif self._sub_seq == 7: # 홈 이동 완료 대기
                 if get_robot_cmd and get_robot_cmd.get("state") == "done":
                     self._log_detail("execute_controlled_stop", "seq_60_MoveHome", "Robot", "Done")
                     bb.set(robot_cmd_key, None)
-                    Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
-                    self.set_seq(30) # 스크랩 처리로 이동
-                    self.set_sub_seq(0)
+                    # 그리퍼에 시편이 있는지 확인
+                    is_holding_now = (bb.get("robot/gripper/actual_state") == 2)
+                    if is_holding_now:
+                        Logger.info("[Logic] Controlled Stop: Move to home complete. Proceeding to scrap disposal.")
+                        self.set_seq(30) # 스크랩 처리로 이동
+                        self.set_sub_seq(0)
+                    else:
+                        Logger.info("[Logic] Controlled Stop: Move to home complete. No specimen, going to final home.")
+                        self.set_seq(40) # 최종 홈 복귀
+                        self.set_sub_seq(0)
                 elif get_robot_cmd and get_robot_cmd.get("state") == "error":
                     self._log_detail("execute_controlled_stop", "seq_60_MoveHome", "Robot", "Error")
                     return LogicEvent.VIOLATION_DETECT

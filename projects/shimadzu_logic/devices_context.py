@@ -464,38 +464,9 @@ class DeviceContext(ContextBase):
                 #     Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
                 #     self.violation_code |= DeviceViolation.SMZ_COMM_ERR
                 
-                # 연결 확인이 완료되지 않았으면 INIT 및 후속 작업 스킵
-                if not self.smz_connection_verified:
-                    pass  # _thread_comm_status_updater에서 연결 확인 처리
-                else:
-                    # INIT_RUN을 먼저 실행 (한 번만, 연결 확인 후)
-                    if not self.smz_init_run_done:
-                        init_result = self.smz_send_init_run()
-                        if init_result:
-                            Logger.info("[device] Shimadzu INIT_RUN completed successfully (check_violation)")
-                            self.smz_init_run_done = True
-                        else:
-                            Logger.warn("[device] Shimadzu INIT_RUN failed, will retry (check_violation)")
-
-                if not self.smz_initial_check_done and self.smz_init_run_done:
-                    smz_state = self.smz_ask_sys_status()
-                    try :
-                        if smz_state is False:
-                            Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
-                            self.violation_code |= DeviceViolation.SMZ_COMM_ERR
-                        elif smz_state is not None :
-                            if smz_state.get("RUN") == "E":
-                                Logger.info(f"[device] Check violation : Shimadzu Device Error Detected")
-                                self.violation_code |= DeviceViolation.SMZ_DEVICE_ERR
-
-                            # 성공적으로 상태를 받았으면 플래그 설정
-                            self.smz_initial_check_done = True
-                            bb.set("device/shimadzu/comm_status", 1)
-
-                    except Exception as e:
-                        Logger.error(f"[device] SMZ Ask system status result : {smz_state}")
-                        Logger.error(f"[device] Error parsing Shimadzu status: {e}\n{traceback.format_exc()}")
-                        self.violation_code |= DeviceViolation.SMZ_COMM_ERR
+                # Shimadzu 초기화 및 상태 확인은 _thread_comm_status_updater에서 처리됨
+                # check_violation에서는 초기화 완료 여부만 확인
+                pass
             
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
@@ -1617,7 +1588,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_ask_sys_status(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+    def smz_ask_sys_status(self, timeout: float = 360.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 시스템 상태 확인 요청을 보내고 응답을 기다립니다.
 

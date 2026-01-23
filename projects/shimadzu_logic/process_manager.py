@@ -51,6 +51,12 @@ class ProcessManager:
         Logger.info(f"configs remot io : {config.get('remote_io')}")
         Logger.info(f"configs mqtt : {config.get('mqtt_ip')}")
         Logger.info(f"configs shimadzu : {config.get('shimadzu_ip')} : {config.get('shimadzu_port')}")
+        
+        # 두께 불량 체크 옵션 로드 (기본값: True)
+        enable_thickness_check = config.get("enable_thickness_check", True)
+        bb.set("process/config/enable_thickness_check", enable_thickness_check)
+        Logger.info(f"Config: enable_thickness_check = {enable_thickness_check}")
+
         if test_mode :
             Logger.info(f"실행 모드 : TEST 모드")
         else :
