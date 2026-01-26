@@ -109,7 +109,15 @@ class StatePredictor:
             X = np.array([position], dtype=np.float32)
 
             # 예측
-            pred_cmd_id = int(self.model.predict(X)[0])
+            pred_index = int(self.model.predict(X)[0])
+
+            # Map index back to original CMD ID
+            label_mapping = self.metadata.get('label_mapping')
+            if label_mapping:
+                # JSON keys are strings
+                pred_cmd_id = label_mapping.get(str(pred_index), label_mapping.get(pred_index))
+            else:
+                pred_cmd_id = pred_index
 
             # 상태명 변환
             state_name = self.metadata.get("cmd_to_name", {}).get(pred_cmd_id, f"CMD_{pred_cmd_id}")

@@ -46,6 +46,13 @@ def main():
         preprocessor = MotionDataPreprocessor()
         X, y_cmd, metadata = preprocessor.load_all_data(min_samples=3)
 
+        # GRIPPER 명령 (90, 91) 제외
+        gripper_mask = ~np.isin(y_cmd, [90, 91])
+        if np.sum(~gripper_mask) > 0:
+            Logger.info(f"🚫 GRIPPER 명령 (90, 91) 데이터 {np.sum(~gripper_mask):,}개 제외됨")
+            X = X[gripper_mask]
+            y_cmd = y_cmd[gripper_mask]
+
         print(f"\n📊 원본 데이터셋:")
         print(f"  - 총 샘플: {len(X):,}")
         print(f"  - CMD 종류: {metadata['num_states']}")
@@ -86,14 +93,8 @@ def main():
         y_zone_raw = y_zone_raw[keep_mask]
         Logger.info(f"🏠 Home 위치 필터링 완료: {np.sum(~keep_mask):,}개 샘플 제외됨 (이동 중인 Home 데이터)")
 
-        # LightGBM은 레이블이 0부터 시작해야 하므로 변환
-        # WorkZone은 1~6이므로 1을 빼서 0~5로 변환
-        y_zone = y_zone_raw - 1
-
-        # Zone ID 매핑 저장 (나중에 예측 시 복원용)
-        zone_id_mapping = {
-            i: i + 1 for i in range(len(set(y_zone)))  # 0→1, 1→2, ..., 5→6
-        }
+        # ModelTrainer가 LabelEncoder를 사용하므로 원본 Zone ID (1~7)를 그대로 사용
+        y_zone = y_zone_raw
 
         # Zone 분포 확인
         unique_zones, zone_counts = np.unique(y_zone, return_counts=True)
@@ -104,9 +105,7 @@ def main():
         print(f"\n📈 Zone별 샘플 분포:")
 
         for zone_id, count in zip(unique_zones, zone_counts):
-            # 원래 Zone 값으로 복원 (0→1, 1→2, ...)
-            original_zone_id = zone_id + 1
-            zone = WorkZone(original_zone_id)
+            zone = WorkZone(zone_id)
             zone_name = ZoneClassifier.get_zone_name(zone)
             zone_distribution[zone_name] = count
             percentage = count / len(X) * 100
@@ -152,14 +151,13 @@ def main():
             "num_states": len(unique_zones),
             "state_counts": zone_distribution,
             "cmd_to_name": {
-                int(zone_id): ZoneClassifier.get_zone_name(WorkZone(zone_id + 1))
+                int(zone_id): ZoneClassifier.get_zone_name(WorkZone(zone_id))
                 for zone_id in unique_zones
             },
             "unique_cmds": sorted([int(z) for z in unique_zones]),
             "model_type_desc": "Zone-based (TENSILE 포함)",
             "data_version": "v2_with_tensile",
             "motion_data_files": 519,
-            "zone_id_mapping": zone_id_mapping,  # 0-based → 1-based 변환 정보
         }
 
         results = trainer.train(X, y_zone, zone_metadata, test_size=0.2, use_lgb=use_lgb)
@@ -199,9 +197,7 @@ def main():
         print(f"=" * 70)
 
         for zone_id in sorted(unique_zones):
-            # 원래 Zone 값으로 복원 (0→1, 1→2, ...)
-            original_zone_id = zone_id + 1
-            zone = WorkZone(original_zone_id)
+            zone = WorkZone(zone_id)
             zone_name = ZoneClassifier.get_zone_name(zone)
             zone_info = ZoneClassifier.get_zone_info(zone)
             sample_count = zone_distribution.get(zone_name, 0)

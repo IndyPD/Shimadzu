@@ -580,17 +580,22 @@ class RobotCommunication:
                                 Logger.warn("[BinPickControl] Specimens are overlapping. Shake motion needed.")
                                 bb.set("process/binpick/status", 10)  # 쉐이킹
 
-                                # Shake 동작 실행
+                                # Shake 동작 실행 - motion_shake + motion_shake_collect
                                 target_coords = bb.get("device/vision/target_coords")
                                 if target_coords:
                                     shake_x = target_coords.get("target_x", 75.56)
                                     shake_y = target_coords.get("target_y", 571.73)
+                                    # 1. 기존 motion_shake (원형 모션)
                                     self.vision_handler.motion_shake(base_x=shake_x, base_y=shake_y)
+                                    # 2. motion_shake_collect 호출 (시편을 중심으로 모으기)
+                                    approach_pos = [-149.19308, 407.53992, 357.72766, 0.24065389, 179.09027, 91.468346]
+                                    right_pos = [224.86676, 407.505, 357.71887, 0.24322267, 179.09541, 91.48431]
+                                    y_lifted_pos = [224.87956, 459.8748, 357.69815, 0.24832879, 179.10071, 91.48997]
+                                    self.vision_handler.motion_shake_collect(approach_pos=approach_pos, right_pos=right_pos,
+                                                                            y_lifted_pos=y_lifted_pos, center_z=309.0, num_loops=2)
                                 else:
                                     # 기본 좌표로 shake
-                                    # self.vision_handler.motion_shake(base_x=75.56, base_y=571.73)
-                                    #TODO : 좌표 못받아올때 어떻게 할지
-                                    pass
+                                    Logger.warn("[BinPickControl] No target coordinates. Skipping shake motion.")
                                 # [Stop Check]  
 
                                 # Shake 후 다시 루프 처음으로 돌아가서 인식 시도

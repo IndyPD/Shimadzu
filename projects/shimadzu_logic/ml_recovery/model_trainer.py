@@ -13,6 +13,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Tuple
 import logging
+from sklearn.preprocessing import LabelEncoder
 
 try:
     import lightgbm as lgb
@@ -70,16 +71,24 @@ class ModelTrainer:
         Returns:
             학습 결과 딕셔너리 (정확도, 분류 보고서 등)
         """
+        # Label Encoding (0..N-1로 변환)
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(y)
+        num_classes = len(le.classes_)
+
+        # 매핑 정보 저장 (Index -> Original Label)
+        metadata['label_mapping'] = {int(i): int(label) for i, label in enumerate(le.classes_)}
+
         # Train/Test Split
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y
+            X, y_encoded, test_size=test_size, random_state=42, stratify=y_encoded
         )
 
         Logger.info(f"[ML Trainer] Train samples: {len(X_train)}, Test samples: {len(X_test)}")
 
         # 모델 선택 및 학습
         if use_lgb and LIGHTGBM_AVAILABLE:
-            self.model = self._train_lightgbm(X_train, y_train, X_test, y_test)
+            self.model = self._train_lightgbm(X_train, y_train, X_test, y_test, num_classes)
             model_type = "LightGBM"
         else:
             self.model = self._train_random_forest(X_train, y_train)
@@ -97,7 +106,7 @@ class ModelTrainer:
         Logger.info(f"[ML Trainer] {model_type} Test Accuracy: {accuracy * 100:.2f}%")
 
         # 상세 분류 보고서
-        class_names = [metadata["cmd_to_name"].get(cmd, f"CMD_{cmd}") for cmd in sorted(set(y))]
+        class_names = [metadata["cmd_to_name"].get(cmd, f"CMD_{cmd}") for cmd in le.classes_]
         report = classification_report(y_test, y_pred, target_names=class_names, output_dict=True)
 
         # 혼동 행렬
@@ -126,13 +135,13 @@ class ModelTrainer:
 
         return results
 
-    def _train_lightgbm(self, X_train, y_train, X_val, y_val):
+    def _train_lightgbm(self, X_train, y_train, X_val, y_val, num_classes=None):
         """LightGBM 모델 학습"""
         train_data = lgb.Dataset(X_train, label=y_train)
         val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
 
-        # Calculate num_class based on the maximum label value to handle non-contiguous labels
-        num_classes = int(max(np.max(y_train), np.max(y_val))) + 1
+        if num_classes is None:
+            num_classes = int(max(np.max(y_train), np.max(y_val))) + 1
 
         params = {
             'objective': 'multiclass',

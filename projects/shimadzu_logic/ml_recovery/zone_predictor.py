@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Tuple, Optional, Dict
 import logging
 
-from .zone_classifier import ZoneClassifier, WorkZone
+try:
+    from .zone_classifier import ZoneClassifier, WorkZone
+except ImportError:
+    from zone_classifier import ZoneClassifier, WorkZone
 
 Logger = logging.getLogger(__name__)
 
@@ -111,15 +114,11 @@ class ZonePredictor:
             if model_type == "LightGBM":
                 # LightGBM Booster는 확률을 반환
                 pred_proba = self.model.predict(X)[0]  # (num_classes,) 배열
-                pred_zone_id = int(np.argmax(pred_proba))
-                # 0-based를 1-based로 변환 (zone_id_mapping 사용)
-                zone_id_mapping = self.metadata.get('zone_id_mapping', {})
-                # JSON에서 로드하면 키가 문자열일 수 있음
-                pred_zone_id = zone_id_mapping.get(str(pred_zone_id), zone_id_mapping.get(pred_zone_id, pred_zone_id + 1))
+                pred_index = int(np.argmax(pred_proba))
                 confidence = float(np.max(pred_proba)) if return_confidence else None
             else:
                 # RandomForest는 클래스를 직접 반환
-                pred_zone_id = int(self.model.predict(X)[0])
+                pred_index = int(self.model.predict(X)[0])
                 # 신뢰도 계산
                 confidence = None
                 if return_confidence:
@@ -131,6 +130,14 @@ class ZonePredictor:
                             confidence = 0.95
                     except:
                         confidence = 0.95
+
+            # Map index back to original Zone ID
+            label_mapping = self.metadata.get('label_mapping')
+            if label_mapping:
+                pred_zone_id = label_mapping.get(str(pred_index), label_mapping.get(pred_index))
+            else:
+                # Fallback (should not happen with new trainer)
+                pred_zone_id = pred_index + 1
 
             pred_zone = WorkZone(pred_zone_id)
             zone_name = ZoneClassifier.get_zone_name(pred_zone)
