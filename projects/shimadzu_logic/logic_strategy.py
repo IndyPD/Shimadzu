@@ -1353,14 +1353,18 @@ class LogicProcessCompleteStrategy(Strategy):
         # 런타임 계산 중지를 위해 시작 시간 객체 제거
         bb.set("process_status/runtime_start_obj", None)
 
-        # # [수정] 공정 완료 시 자동 시작 명령 리셋을 prepare에서 수행
-        # bb.set("ui/cmd/auto/tensile", 0)
-        # Logger.info("[Logic] Auto start command has been reset. System is in COMPLETE state.")
+        # 공정 완료 시 자동 시작 명령 리셋 (PROCESS_COMPLETE 상태 유지)
+        bb.set("ui/cmd/auto/tensile", 0)
+        Logger.info("[Logic] Auto start command has been reset. System is in COMPLETE state.")
 
         # MQTT 'process_completed' 이벤트 발행
         batch_data = bb.get("process/auto/batch_data")
         batch_id = batch_data.get("batch_id", "N/A")
         total_completed = batch_data.get("procedure_num", 0)
+
+        # batch_info에 "완료" 상태 업데이트 (UI에 표시)
+        bb.set("process_status/batch_info", {"batch_id": batch_id, "status": "완료"})
+
         event_payload = {
             "kind": "event",
             "evt": "process_completed",

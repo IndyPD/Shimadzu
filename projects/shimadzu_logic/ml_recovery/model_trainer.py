@@ -131,9 +131,12 @@ class ModelTrainer:
         train_data = lgb.Dataset(X_train, label=y_train)
         val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
 
+        # Calculate num_class based on the maximum label value to handle non-contiguous labels
+        num_classes = int(max(np.max(y_train), np.max(y_val))) + 1
+
         params = {
             'objective': 'multiclass',
-            'num_class': len(np.unique(y_train)),
+            'num_class': num_classes,
             'metric': 'multi_logloss',
             'boosting_type': 'gbdt',
             'num_leaves': 31,

@@ -21,6 +21,7 @@ class WorkZone(IntEnum):
     TENSILE_TESTER = 4      # 인장 시험기
     SCRAP_DISPOSER = 5      # 스크랩 처리기
     HOME = 6                # 홈 위치
+    TOOL_CHANGE = 7         # 툴 체인지
 
 
 class ZoneClassifier:
@@ -33,6 +34,7 @@ class ZoneClassifier:
             (1000, 1500),   # RACK_FRONT_MOVE, 픽업 관련
             (2000, 2100),   # RACK_FRONT_RETURN
             (1300, 1400),   # QR 스캔
+            (1, 1), (21, 21), # HOME_TO_RACK, RACK_TO_HOME
         ],
 
         # 두께 측정기 (3000~4999)
@@ -40,32 +42,40 @@ class ZoneClassifier:
             (3000, 3003),   # THICK_GAUGE_FRONT_MOVE, PLACE
             (3011, 3013),   # THICK_GAUGE_PICK
             (4000, 4002),   # THICK_GAUGE_RETURN
+            (2, 2), (22, 22), # HOME_TO_THICK, THICK_TO_HOME
         ],
 
         # 정렬기 (5000~6999)
         WorkZone.ALIGNER: [
             (5000, 5012),   # ALIGNER_FRONT_MOVE, PLACE, PICK, WAIT
             (6000, 6000),   # ALIGNER_RETURN
+            (3, 3), (23, 23), # HOME_TO_ALIGN, ALIGN_TO_HOME
         ],
 
         # 인장 시험기 (7000~8000) - TENSILE 관련 추가됨
         WorkZone.TENSILE_TESTER: [
             (7000, 7002),   # TENSILE_FRONT_MOVE, PLACE, 샘플 배치
             (7011, 7013),   # TENSILE_PICK, 샘플 회수
-            (8000, 8001),   # TENSILE_RETURN
+            (8000, 8002),   # TENSILE_RETURN
+            (4, 4), (24, 24), # HOME_TO_TENSILE, TENSILE_TO_HOME
         ],
 
         # 스크랩 처리기 (7020~7022)
         WorkZone.SCRAP_DISPOSER: [
             (7020, 7022),   # SCRAP_FRONT_MOVE, DROP, RETURN
+            (5, 5), (25, 25), # HOME_TO_SCRAP, SCRAP_TO_HOME
         ],
 
         # 홈 및 기본 동작 (1~100, 90~91)
         WorkZone.HOME: [
-            (1, 6),         # HOME_XXX_FRONT
-            (21, 26),       # XXX_FRONT_HOME
-            (90, 91),       # GRIPPER_OPEN/CLOSE
+            # (90, 91),       # GRIPPER_OPEN/CLOSE
             (100, 100),     # RECOVERY_HOME
+        ],
+
+        # 툴 체인지 (101~111)
+        WorkZone.TOOL_CHANGE: [
+            (101, 111),     # BIN_TOOL, PRO_TOOL, TOOL_CHANGE_HOME
+            (6, 6), (26, 26), # HOME_TO_TOOL, TOOL_TO_HOME
         ],
     }
 
@@ -117,6 +127,7 @@ class ZoneClassifier:
             WorkZone.TENSILE_TESTER: "인장 시험기",
             WorkZone.SCRAP_DISPOSER: "스크랩 처리기",
             WorkZone.HOME: "홈/기본 동작",
+            WorkZone.TOOL_CHANGE: "툴 체인지",
         }
         return names.get(zone, "알 수 없음")
 
@@ -159,6 +170,12 @@ class ZoneClassifier:
                 "name_en": "Home",
                 "description": "초기 위치 및 기본 동작",
                 "typical_actions": ["홈 복귀", "그리퍼 개폐"],
+            },
+            WorkZone.TOOL_CHANGE: {
+                "name_kr": "툴 체인지",
+                "name_en": "Tool Change",
+                "description": "툴 교체 및 반납 구역",
+                "typical_actions": ["툴 교체", "툴 반납"],
             },
         }
         return info.get(zone, {})

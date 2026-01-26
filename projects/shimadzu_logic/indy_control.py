@@ -671,8 +671,11 @@ class RobotCommunication:
                                         Logger.info("[BinPickControl] One cycle completed. Restarting for next specimen...")
                                         # 루프 계속 (다음 시편 인식)
                                         specimen_idx += 1
+
+                                        # 3개 옮기기 완료 후 정지
                                         if specimen_idx > 3:
-                                            specimen_idx = 1
+                                            Logger.info("[BinPickControl] 3 specimens placed successfully. Stopping bin picking.")
+                                            break
 
                                     else:
                                         Logger.error("[BinPickControl] Failed to place specimen.")

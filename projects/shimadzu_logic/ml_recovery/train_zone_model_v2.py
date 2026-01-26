@@ -28,6 +28,9 @@ logging.basicConfig(
 )
 Logger = logging.getLogger(__name__)
 
+# Home 위치 정의 (이 위치에 있을 때만 HOME Zone으로 학습)
+HOME_POS = np.array([-50.0, 30.0, -160.0, 180.0, -40.0, 90.0])
+
 
 def main():
     """Zone 기반 학습 파이프라인 v2 - TENSILE 포함"""
@@ -51,6 +54,37 @@ def main():
         # 2. CMD ID → Zone 변환
         Logger.info("\n[Step 2/6] Converting CMD IDs to Zones...")
         y_zone_raw = np.array([ZoneClassifier.cmd_to_zone(cmd).value for cmd in y_cmd])
+
+        # UNKNOWN (0)인 데이터 필터링
+        valid_mask = y_zone_raw != 0
+        unknown_count = len(y_zone_raw) - np.sum(valid_mask)
+
+        if unknown_count > 0:
+            Logger.warning(f"⚠️ UNKNOWN Zone 데이터 {unknown_count:,}개 제외됨")
+            X = X[valid_mask]
+            y_zone_raw = y_zone_raw[valid_mask]
+
+        if len(X) == 0:
+            Logger.error("❌ 유효한 학습 데이터가 없습니다.")
+            return False
+
+        # HOME Zone 위치 기반 필터링
+        # WorkZone.HOME인 경우, 실제 위치가 HOME_POS와 가까운지 확인
+        home_zone_val = WorkZone.HOME.value
+        is_home_label = (y_zone_raw == home_zone_val)
+        
+        # 각 축별 오차 5.0 이내인 경우만 HOME으로 인정 (엄격한 기준 적용)
+        # X는 (N, 6) 형태
+        pos_diff = np.abs(X - HOME_POS)
+        is_at_home_pos = np.all(pos_diff < 5.0, axis=1)
+        
+        # HOME 레이블이지만 위치가 HOME이 아닌 데이터 제거 (이동 중인 데이터 등)
+        # (HOME이 아니거나) OR (HOME이면서 위치도 HOME인 경우) 만 유지
+        keep_mask = (~is_home_label) | (is_at_home_pos)
+        
+        X = X[keep_mask]
+        y_zone_raw = y_zone_raw[keep_mask]
+        Logger.info(f"🏠 Home 위치 필터링 완료: {np.sum(~keep_mask):,}개 샘플 제외됨 (이동 중인 Home 데이터)")
 
         # LightGBM은 레이블이 0부터 시작해야 하므로 변환
         # WorkZone은 1~6이므로 1을 빼서 0~5로 변환
