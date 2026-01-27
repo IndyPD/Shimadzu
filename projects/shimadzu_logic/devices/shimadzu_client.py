@@ -343,7 +343,7 @@ class ShimadzuClient:
             self.response_data = None
             return None
 
-    def send_start_run(self, lotname="LOT_001", timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+    def send_start_run(self, lotname="LOT_001", timeout: float = 600.0) -> Optional[Dict[str, Any]]:
         """
         3. 자동운전 개시
 

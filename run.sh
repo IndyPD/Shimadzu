@@ -1,4 +1,15 @@
 #!/bin/bash
-python3 run.py --project=shimadzu_logic & # <-- '&' 추가
-#                                           ^
-#                                           이것이 run.py를 백그라운드에서 실행하고 run.sh를 즉시 종료하게 만듭니다.
+
+# python 명령어 확인 (python3 또는 python)
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD=python3
+else
+    PYTHON_CMD=python
+fi
+
+# nohup을 사용하여 터미널이 종료되어도 프로세스가 유지되도록 함
+nohup $PYTHON_CMD run.py --project=shimadzu_logic > /dev/null 2>&1 &
+
+# 백그라운드 실행된 프로세스의 PID 저장
+echo $! > shimadzu_pid.txt
+echo "Shimadzu Logic started. PID stored in shimadzu_pid.txt"

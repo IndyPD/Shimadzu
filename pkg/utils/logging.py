@@ -2,7 +2,7 @@ import os
 import sys
 import datetime
 import time
-import cgitb
+import traceback
 from collections import deque
 from enum import Enum
 from typing import List, Union, Tuple
@@ -318,4 +318,4 @@ class Logger(metaclass=SingletonMeta):
 
 
 def get_trace_info():
-    return cgitb.text(sys.exc_info())
+    return traceback.format_exc()

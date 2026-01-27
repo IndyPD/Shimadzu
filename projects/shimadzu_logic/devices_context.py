@@ -321,6 +321,7 @@ class DeviceContext(ContextBase):
                         bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
                         bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
                         bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+                        bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
                     elif is_idle:
                         # 노란색 점멸, 나머지 꺼짐
                         bb.set("device/remote/output/TOWER_LAMP_RED", 0)

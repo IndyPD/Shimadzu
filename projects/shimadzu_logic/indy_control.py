@@ -157,8 +157,10 @@ class RobotCommunication:
             Logger.warn(f'[VisionHandler] VisionHandler module not available. Bin Picking features will be disabled.')
 
         # [Tensile Test] Hardcoded Positions & Calculation Variables
-        self.tensile_pos_1_p = [-210.2356, -160.18307, 641.5257, -168.5878, -108.025406, 170.19357]
-        self.tensile_pos_2_p =  [-300.77945, -164.11026, 653.3784, -171.25029, -107.91982, 172.89037]
+        # self.tensile_pos_1_p = [-210.2356, -160.18307, 641.5257, -168.5878, -108.025406, 170.19357]
+        self.tensile_pos_1_p = [-210.00015, -172.58992, 630.04016, -175.70006, -107.41002, 175.13005]
+        # self.tensile_pos_2_p =  [-300.77945, -164.11026, 653.3784, -171.25029, -107.91982, 172.89037]
+        self.tensile_pos_2_p =  [-295.39023, -172.54004, 640.1499, -175.79987, -107.399994, 175.19989]
 
         self.calc_tensile_jpos_1 = None
         self.calc_tensile_jpos_2 = None
@@ -820,14 +822,14 @@ class RobotCommunication:
                                     # 홈 위치에 도달하면 중단
                                     if self.is_home_pos:
                                         Logger.info("[Home Move] Reached home position.")
-                                        # bb.set("logic/send_event", {
-                                        #     "kind": "event",
-                                        #     "evt": "error",
-                                        #     "status": "Manual",
-                                        #     "category": "robot",
-                                        #     "code": "R-004",
-                                        #     "message": "이미 홈 위치에 도달했습니다.."
-                                        # })
+                                        bb.set("logic/send_event", {
+                                            "kind": "event",
+                                            "evt": "error",
+                                            "status": "Manual",
+                                            "category": "robot",
+                                            "code": "R-004",
+                                            "message": "이미 홈 위치에 도달했습니다.."
+                                        })
                                         break
 
                                     # 홈으로 이동 (teaching_mode로 부드럽게)
@@ -1391,10 +1393,12 @@ class RobotCommunication:
             bb.get("device/remote/input/DOOR_1_OPEN"),
             bb.get("device/remote/input/DOOR_2_OPEN"),
             bb.get("device/remote/input/DOOR_3_OPEN"),
-            bb.get("device/remote/input/DOOR_4_OPEN")
+            # bb.get("device/remote/input/DOOR_4_OPEN")
         ])
         # Test중일때는 사용안함
-        is_door_open = False
+        # is_door_open = False
+        if is_door_open:
+            Logger.info(f"[Robot] Door is open status detected.")
 
         # [추가] SELECT_SW가 0(Manual)이면 즉시 정지
         is_manual_mode = bb.get("device/remote/input/SELECT_SW") == 0
