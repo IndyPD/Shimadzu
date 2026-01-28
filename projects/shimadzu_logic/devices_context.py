@@ -1450,7 +1450,9 @@ class DeviceContext(ContextBase):
             if specimen_no == 5:
                 isfinal = 1  # 각 트레이의 마지막 시편(5번째)인 경우
             # if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
-            #     isfinal = 1  # 전체 시험중 마지막 시험인 경우
+
+            # 반드시 수정 필요!!
+            # isfinal = 1  # 전체 시험중 마지막 시험인 경우
 
             Logger.info(f"[device] Sending ASK_REGISTER to Shimadzu (MTNAME: {mtname}, TPNAME: {tpname}, SIZE1: {size1}, SIZE2: {size2}, GL: {gl}, ChuckL: {chuckl}, ISFinal: {isfinal}, timeout: {timeout}s)")
 
@@ -1487,8 +1489,8 @@ class DeviceContext(ContextBase):
         :rtype: Optional[Dict[str, Any]]
         '''
         try:
-            Logger.info(f"[device] Sending STOP_ANA before START_RUN to Shimadzu")
-            self.shimadzu_client.send_stop_ana(timeout=60.0)
+            # Logger.info(f"[device] Sending STOP_ANA before START_RUN to Shimadzu")
+            # self.shimadzu_client.send_stop_ana(timeout=60.0)
 
             Logger.info(f"[device] Sending START_RUN to Shimadzu (LOTNAME: {lotname}, timeout: {timeout}s)")
 
@@ -1532,6 +1534,22 @@ class DeviceContext(ContextBase):
             Logger.error(f"[device] Error in smz_stop_measurement: {e}\n{traceback.format_exc()}")
             reraise(e)
             return None
+    
+    def delay_time(self, seconds: float) -> None:
+        '''
+        지정된 시간(초)만큼 지연합니다.
+
+        :param seconds: 지연 시간 (초)
+        :type seconds: float
+
+        '''
+        try:
+            current_time = time.time()
+            while time.time() - current_time < seconds:
+                time.sleep(0.1)
+        except Exception as e:
+            Logger.error(f"[device] Error in delay_time: {e}\n{traceback.format_exc()}")
+            reraise(e)
 
     def smz_are_you_there(self, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
         '''
