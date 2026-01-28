@@ -21,6 +21,8 @@ class ConnectingStrategy(Strategy):
         self.dev_smz_enable = context.dev_smz_enable
         self.dev_qr_enable = context.dev_qr_enable
 
+        self.last_log_time = 0  # 마지막 로그 출력 시간 추적
+
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # 각 장치의 통신 상태를 블랙보드에서 직접 확인합니다.
         remote_io_ok = True if not self.dev_remoteio_enable else int(bb.get("device/remote/comm_status") or 0) == 1
@@ -45,8 +47,13 @@ class ConnectingStrategy(Strategy):
         if self.dev_smz_enable:
             status_report.append(f"Shimadzu: {'OK' if shimadzu_ok else 'FAIL'}")
 
-        Logger.info(f"[device] Waiting for devices to connect... Status: [{', '.join(status_report)}]")
+        # Logger.info(f"[device] Waiting for devices to connect... Status: [{', '.join(status_report)}]")
+        current_time = time.time()
+        if current_time - self.last_log_time > 10.0:
+            Logger.info(f"[device] Waiting for devices to connect... Status: [{', '.join(status_report)}]")
+            self.last_log_time = current_time
         
+        # return DeviceEvent.NONE
         # 연결 대기 중 다른 위반 사항이 있는지 확인 (예: 비상정지)
         if context.check_violation():
             return DeviceEvent.VIOLATION_DETECT

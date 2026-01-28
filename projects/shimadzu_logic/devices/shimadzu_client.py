@@ -354,12 +354,13 @@ class ShimadzuClient:
         Returns:
             응답 데이터 또는 타임아웃 시 None
         """
+
         return self.send_and_wait("START_RUN", "ACK_START_RUN", {"LOTNAME": lotname}, timeout=timeout)
 
     def send_ask_sys_status(self, timeout: float = 360.0) -> Optional[Dict[str, Any]]:
         """
         2. 시스템 상태 확인
-s
+
         Args:
             timeout: 응답 대기 시간 (초)
 

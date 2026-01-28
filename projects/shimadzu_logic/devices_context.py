@@ -321,7 +321,7 @@ class DeviceContext(ContextBase):
                         bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
                         bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
                         bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
-                        bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
+                        # bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
                     elif is_idle:
                         # 노란색 점멸, 나머지 꺼짐
                         bb.set("device/remote/output/TOWER_LAMP_RED", 0)
@@ -1475,7 +1475,7 @@ class DeviceContext(ContextBase):
             reraise(e)
             return None
 
-    def smz_start_measurement(self, lotname: str, timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+    def smz_start_measurement(self, lotname: str, timeout: float = 600.0) -> Optional[Dict[str, Any]]:
         '''
         Shimadzu 서버에 측정 시작 명령을 전송하고 응답을 기다립니다.
 
@@ -1487,14 +1487,18 @@ class DeviceContext(ContextBase):
         :rtype: Optional[Dict[str, Any]]
         '''
         try:
+            Logger.info(f"[device] Sending STOP_ANA before START_RUN to Shimadzu")
+            self.shimadzu_client.send_stop_ana(timeout=60.0)
+
             Logger.info(f"[device] Sending START_RUN to Shimadzu (LOTNAME: {lotname}, timeout: {timeout}s)")
-            
+
             result = self.shimadzu_client.send_start_run(lotname=lotname, timeout=timeout)
 
             if result is None:
                 Logger.info(f"[device] START_RUN timeout after {timeout}s - No response from Shimadzu")
                 return None
 
+            # code = result.get('params', {}).get('CODE')  # 0
             Logger.info(f"[device] START_RUN response received: {result}")
             return result
 

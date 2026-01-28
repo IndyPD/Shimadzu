@@ -410,9 +410,9 @@ class RobotCommunication:
         if ana_result and ana_result != 0:  # 0은 초기값, 매번 새로운 결과를 처리
             try:
                 value_pos = float(ana_result.get("VALUEPOS", 0))
-                value_pos -= 4  # 오프셋 보정
+                value_pos -= 124  # 오프셋 보정
                 if value_pos < -4:
-                    Logger.warn(f"[Indy] Invalid VALUEPOS received: {value_pos + 4}. Skipping position update.")
+                    Logger.warn(f"[Indy] Invalid VALUEPOS received: {value_pos + 124}. Skipping position update.")
                     bb.set("shimadzu/ana_result", 0)  # Reset to avoid reprocessing
                     return
                 self._update_tensile_positions(value_pos)
