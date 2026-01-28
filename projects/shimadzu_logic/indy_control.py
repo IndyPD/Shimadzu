@@ -202,6 +202,59 @@ class RobotCommunication:
         self.indy.wait_for_motion_state('is_target_reached')
         Logger.info("[Indy7] Reached home position.")
 
+    def check_door_and_wait(self):
+        """
+        문 열림을 체크하고, 문이 열려 있으면 닫힐 때까지 대기합니다.
+        문이 닫히면 CMD 100 (RECOVERY_HOME)으로 복귀합니다.
+
+        Returns:
+            bool: True if should continue, False if should abort (stop command)
+        """
+        # 문 상태 확인 (하나라도 0이면 '열림'으로 간주)
+        is_door_open = not all([
+            bb.get("device/remote/input/DOOR_1_OPEN"),
+            bb.get("device/remote/input/DOOR_2_OPEN"),
+            bb.get("device/remote/input/DOOR_3_OPEN"),
+        ])
+
+        if is_door_open:
+            Logger.info("[BinPickControl] Door opened detected. Waiting for door to close...")
+
+            # 문이 닫힐 때까지 대기
+            while True:
+                # 상태 업데이트
+                self.indy_communication()
+                self.send_data_to_bb()
+
+                # 정지 명령 체크
+                if bb.get("ui/cmd/binpick/action") == "stop":
+                    Logger.info("[BinPickControl] Stop command during door wait. Aborting.")
+                    return False
+
+                # 문 상태 재확인
+                is_door_open = not all([
+                    bb.get("device/remote/input/DOOR_1_OPEN"),
+                    bb.get("device/remote/input/DOOR_2_OPEN"),
+                    bb.get("device/remote/input/DOOR_3_OPEN"),
+                ])
+
+                if not is_door_open:
+                    Logger.info("[BinPickControl] Door closed detected. Returning to home position (CMD 100)...")
+
+                    # 홈 위치로 복귀 (CMD 100: RECOVERY_HOME)
+                    try:
+                        self.indy.movej(self.bin_picking_home, vel_ratio=50)
+                        self.indy.wait_for_motion_state('is_target_reached')
+                        Logger.info("[BinPickControl] Returned to home position. Resuming bin picking.")
+                    except Exception as e:
+                        Logger.error(f"[BinPickControl] Failed to return to home: {e}")
+
+                    break
+
+                time.sleep(0.1)  # 100ms 주기로 체크
+
+        return True  # 계속 진행
+
     def execute_cmd_sequence(self, cmd_list, description=""):
         """
         로봇에게 일련의 CMD ID를 순차적으로 전송하고 완료를 대기합니다.
@@ -455,7 +508,34 @@ class RobotCommunication:
                 if action == "start":
                     Logger.info("[BinPickControl] Starting Bin Picking sequence...")
                     # status: 0:초기값/1:인식/2:이동/3:잡기/4:인지/5:놓기/6:홈 이동/7:완료/10:쉐이킹
-                    
+
+                    # [Program Stop] Bin Picking 시작 전 실행 중인 프로그램 정지
+                    try:
+                        if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                            Logger.info("[BinPickControl] Detected running program. Stopping program before bin picking...")
+                            bb.set("indy_command/stop_program", True)
+
+                            # 프로그램이 정지될 때까지 대기 (최대 5초)
+                            timeout = 5.0
+                            start_time = time.time()
+                            while (time.time() - start_time) < timeout:
+                                self.handle_int_variable()  # 플래그 처리 (프로그램 정지)
+                                self.indy_communication()  # 상태 업데이트
+                                self.send_data_to_bb()
+
+                                if self.program_state not in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                                    Logger.info("[BinPickControl] Program stopped successfully. Proceeding with bin picking.")
+                                    break
+
+                                time.sleep(0.1)  # 100ms 주기로 체크
+
+                            if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                                Logger.warning("[BinPickControl] Program stop timeout. Proceeding anyway...")
+                        else:
+                            Logger.info("[BinPickControl] No running program detected. Starting bin picking directly.")
+                    except Exception as e:
+                        Logger.error(f"[BinPickControl] Error checking/stopping program: {e}")
+
                     # [Tool Check] Bin Picking 시작 전 툴 상태 확인
                     # ATC_2_2_SENSOR (Bin Tool): 1=In Station(미장착), 0=On Robot(장착)
                     atc_2_2 = bb.get("device/remote/input/ATC_2_2_SENSOR")
@@ -682,6 +762,13 @@ class RobotCommunication:
                                         # 3개 옮기기 완료 후 정지
                                         if specimen_idx > 3:
                                             Logger.info("[BinPickControl] 3 specimens placed successfully. Stopping bin picking.")
+                                            self.indy.movej(self.home_pos, vel_ratio=50)
+
+                                            # 완료 후 bin_picking action 리셋
+                                            bb.set("ui/cmd/binpick/action", "")
+                                            bb.set("process/binpick/status", 0)
+
+                                            Logger.info("[BinPickControl] Bin picking completed successfully.")
                                             break
 
                                     else:
