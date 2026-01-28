@@ -155,6 +155,7 @@ class DeviceState(OpState):
     GRIPPER_2_RELEASE                   = 28            # 하단 그리퍼 풀기
     ASK_PRELOAD                         = 29            # 프리로드 확인
     START_MEASUREMENT                   = 30            # 측정 시작 (START_RUN)
+    INITIALIZE_SHIMADZU                 = 31            # Shimadzu 초기화
 
 
 
@@ -228,6 +229,10 @@ class DeviceEvent(OpEvent):
     DO_START_MEASUREMENT                = 55            # 측정 시작 실행
     START_MEASUREMENT_DONE              = 56            # 측정 시작 완료
     START_MEASUREMENT_FAIL              = 57            # 측정 시작 실패
+
+    DO_INITIALIZE_SHIMADZU              = 58            # Shimadzu 초기화 실행
+    INITIALIZE_SHIMADZU_DONE            = 59            # Shimadzu 초기화 완료
+    INITIALIZE_SHIMADZU_FAIL            = 60            # Shimadzu 초기화 실패
 
 # 6. DeviceViolation (시험기 제어 위반) 정의 - Logic FSM으로 보고됨
 class DeviceViolation(ViolationType):
@@ -604,3 +609,4 @@ class DeviceCommand(str, Enum):
     REGISTER_METHOD                     = "register_method"
     ASK_PRELOAD                         = "ask_preload"
     START_MEASUREMENT                   = "start_measurement"
+    INITIALIZE_SHIMADZU                 = "initialize_shimadzu"

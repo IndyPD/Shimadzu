@@ -62,6 +62,7 @@ class DeviceFsm(FiniteStateMachine):
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
                 DeviceEvent.DO_REGISTER_METHOD: DeviceState.REGISTER_METHOD,
                 DeviceEvent.DO_ASK_PRELOAD: DeviceState.ASK_PRELOAD,
+                DeviceEvent.DO_INITIALIZE_SHIMADZU: DeviceState.INITIALIZE_SHIMADZU,
                 DeviceEvent.DO_START_MEASUREMENT: DeviceState.START_MEASUREMENT,
             },
             DeviceState.READ_QR: {
@@ -149,6 +150,11 @@ class DeviceFsm(FiniteStateMachine):
                 DeviceEvent.ASK_PRELOAD_FAIL: DeviceState.WAIT_COMMAND,
                 DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
             },
+            DeviceState.INITIALIZE_SHIMADZU: {
+                DeviceEvent.INITIALIZE_SHIMADZU_DONE: DeviceState.WAIT_COMMAND,
+                DeviceEvent.INITIALIZE_SHIMADZU_FAIL: DeviceState.WAIT_COMMAND,
+                DeviceEvent.VIOLATION_DETECT: DeviceState.ERROR,
+            },
             DeviceState.START_MEASUREMENT: {
                 DeviceEvent.START_MEASUREMENT_DONE: DeviceState.WAIT_COMMAND,
                 DeviceEvent.START_MEASUREMENT_FAIL: DeviceState.WAIT_COMMAND,
@@ -183,5 +189,6 @@ class DeviceFsm(FiniteStateMachine):
             DeviceState.GRIPPER_2_GRIP: Gripper2GripStrategy(),
             DeviceState.GRIPPER_2_RELEASE: Gripper2ReleaseStrategy(),
             DeviceState.ASK_PRELOAD: AskPreloadStrategy(),
+            DeviceState.INITIALIZE_SHIMADZU: InitializeShimadzuStrategy(),
             DeviceState.START_MEASUREMENT: StartMeasurementStrategy(),
         }

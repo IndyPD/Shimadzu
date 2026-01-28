@@ -438,8 +438,9 @@ class LogicDetermineTaskStrategy(Strategy):
             Logger.info("[Logic] DetermineTask: No running sequence found, searching for the next ready one.")
             current_specimen = next((s for s in batch_data['processData'] if s.get('seq_status') == 1), None)
             if not current_specimen:
-                # 모든 시편 완료
-                Logger.info("[Logic] DetermineTask: No more ready sequences found. Process is complete.")
+                # 모든 시편 완료: Shimadzu 상태만 초기화
+                Logger.info("[Logic] DetermineTask: No more ready sequences found. Tray complete. Resetting Shimadzu comm_status.")
+                bb.set("device/shimadzu/comm_status", 0)
                 return LogicEvent.DO_PROCESS_COMPLETE
             
             # 새 시편 시작: 상태 업데이트
@@ -501,26 +502,20 @@ class LogicDetermineTaskStrategy(Strategy):
             bb.set("process/auto/target_num", 1) # Robot에게 1번 시편 위치 지시
             bb.set("process/auto/sequence", current_specimen['seq_order'])
             
-            # 새 트레이 시작 전 Shimadzu START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
+            # 새 트레이 시작 전 Shimadzu 초기화 필요 표시 (두 번째 트레이부터)
             if current_specimen['seq_order'] > 1:
-                lot_name = current_specimen.get('lot', 'DEFAULT_LOT')
-                Logger.info(f"[Logic] DetermineTask: New tray starting. Sending START_RUN to Shimadzu (Lot: {lot_name}).")
-                result = context.start_measurement_sequence(lot_name)
-                if result == LogicEvent.NONE:
-                    # START_RUN 전송/대기 중
-                    return LogicEvent.NONE
-                elif result == LogicEvent.VIOLATION_DETECT:
-                    return LogicEvent.VIOLATION_DETECT
-                # START_RUN 완료 후 첫 번째 단계 시작
+                # 새 트레이 시작 시 Shimadzu 초기화 상태 리셋
+                bb.set("device/shimadzu/comm_status", 0)
+                Logger.info(f"[Logic] DetermineTask: New tray starting (Tray {current_specimen['tray_no']}). Will initialize Shimadzu and send START_RUN.")
 
-            # 첫 번째 단계 시작 (Command.md 1번: QR 인식)
-            bb.set("process/auto/current_step", 1)
-            Logger.info(f"[Logic] DetermineTask: Starting sequence {current_specimen['seq_order']} (Tray: {current_specimen['tray_no']}). First step is DO_MOVE_TO_RACK_FOR_QR.")
-            return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
+            # step = 0으로 설정하여 step==0 블록에서 초기화 및 START_RUN 처리
+            bb.set("process/auto/current_step", 0)
+            # 다음 틱에서 step == 0 블록으로 진입하여 처리
+            return LogicEvent.NONE
 
         # 3. 진행 중인 시편의 다음 단계 결정 (Command.md 흐름 준수)
         step = bb.get("process/auto/current_step")
-        
+
         # [Safety Check] step이 0이 아닌데 현재 진행 중인 시편 정보가 없다면 0으로 리셋하여 재판단
         if step > 0 and not current_specimen:
             Logger.warn(f"[Logic] DetermineTask: Step is {step} but no running specimen found. Resetting step to 0.")
@@ -530,6 +525,21 @@ class LogicDetermineTaskStrategy(Strategy):
         # [Start/Restart Logic] 스텝이 0인 경우, DB에서 현재 트레이의 시편 상태를 확인하여 작업을 결정합니다.
         # 공정 중단 후 재시작 시, 중단된 시편은 스크랩 처리된 것으로 간주하고 다음 시편부터 시작합니다.
         if step == 0:
+            # 새 트레이 시작 시 Shimadzu 초기화가 필요한 경우 (comm_status == 0)
+            comm_status = bb.get("device/shimadzu/comm_status")
+            if comm_status == 0:
+                Logger.info("[Logic] DetermineTask (step==0): Shimadzu initialization required before proceeding.")
+
+                # Shimadzu 초기화 확인 (ARE_YOU_THERE, INIT_RUN, ASK_SYS_STATUS)
+                init_result = context.ensure_shimadzu_initialized()
+                if init_result == LogicEvent.NONE:
+                    # 초기화 진행 중
+                    return LogicEvent.NONE
+                elif init_result == LogicEvent.VIOLATION_DETECT:
+                    return LogicEvent.VIOLATION_DETECT
+                # 초기화 완료 후 다음 틱에서 계속 진행
+                Logger.info("[Logic] DetermineTask (step==0): Shimadzu initialization complete. Continuing with step==0 logic.")
+
             tray_no = current_specimen['tray_no']
             tray_items = context.db.get_test_tray_items(tray_no)
             
@@ -567,16 +577,27 @@ class LogicDetermineTaskStrategy(Strategy):
 
                 # 3. 시작 이벤트 결정 및 즉시 반환
                 if spec_no == 1:
-                    # 새 트레이 시작 전 Shimadzu START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
+                    # 새 트레이 시작 전 Shimadzu 초기화 및 START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
                     if current_specimen['seq_order'] > 1:
                         lot_name = current_specimen.get('lot', 'DEFAULT_LOT')
-                        Logger.info(f"[Logic] Restart: New tray starting. Sending START_RUN to Shimadzu (Lot: {lot_name}).")
-                        result = context.start_measurement_sequence(lot_name)
-                        if result == LogicEvent.NONE:
-                            # START_RUN 전송/대기 중
-                            return LogicEvent.NONE
-                        elif result == LogicEvent.VIOLATION_DETECT:
-                            return LogicEvent.VIOLATION_DETECT
+                        comm_status = bb.get("device/shimadzu/comm_status")
+                        if comm_status == 0:
+                            Logger.info("[Logic] Restart: New tray starting. Initializing Shimadzu (ASK, INIT).")
+                            init_result = context.ensure_shimadzu_initialized()
+                            if init_result == LogicEvent.NONE:
+                                # 초기화 진행 중
+                                return LogicEvent.NONE
+                            elif init_result == LogicEvent.VIOLATION_DETECT:
+                                return LogicEvent.VIOLATION_DETECT
+                            Logger.info("[Logic] Shimadzu initialization complete. Will send START_RUN next.")
+                        if bb.get("device/shimadzu/comm_status") == 1:
+                            Logger.info(f"[Logic] Restart: New tray starting. Sending START_RUN to Shimadzu (Lot: {lot_name}).")
+                            result = context.start_measurement_sequence(lot_name)
+                            if result == LogicEvent.NONE:
+                                # START_RUN 전송/대기 중
+                                return LogicEvent.NONE
+                            elif result == LogicEvent.VIOLATION_DETECT:
+                                return LogicEvent.VIOLATION_DETECT
                         # START_RUN 완료 후 QR 읽기로 이동
                     bb.set("process/auto/current_step", 1)
                     return LogicEvent.DO_MOVE_TO_RACK_FOR_QR

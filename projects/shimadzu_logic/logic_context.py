@@ -50,6 +50,7 @@ class LogicContext(ContextBase):
         self.db = db_handler
         self._sub_seq_bk = 0
         self._seq_bk = 0
+        self._init_sub_seq = 0  # Shimadzu 초기화 전용 서브 시퀀스
         self.gripper_retry_count = {}  # 그리퍼 재시도 카운터 딕셔너리
         # gripper_failure_location은 blackboard 사용: "logic/gripper_failure_location"
 
@@ -1448,11 +1449,14 @@ class LogicContext(ContextBase):
 
             if ext_fw_sensor == 1 and ext_bw_sensor == 0:
                 # 신율계가 전진해 있으면 후진 명령 전송
+                # self.delay_start = time.time()
                 Logger.info("[Logic] Extensometer is forward. Sending BACKWARD command.")
                 self._log_detail("Pick_Specimen_From_Tensile_Machine", f"seq_{self._seq}_ExtBackward", "Device-Tensile", "Start")
                 device_cmd = {"command": DeviceCommand.EXT_BACKWARD, "state": "", "is_done": False}
                 bb.set(device_cmd_key, device_cmd)
+                
                 self.set_seq(1)
+
             else:
                 # 이미 후진 위치이면 바로 다음 시퀀스로
                 Logger.info("[Logic] Extensometer is already backward. Proceeding to move to tensile machine.")
@@ -1991,6 +1995,57 @@ class LogicContext(ContextBase):
             self.set_seq(0)
             return LogicEvent.VIOLATION_DETECT
     
+    def ensure_shimadzu_initialized(self):
+        """
+        Device FSM에 Shimadzu 초기화 명령을 전달하고 완료를 대기합니다.
+        연결 확인(ARE_YOU_THERE), INIT_RUN, 상태 확인(ASK_SYS_STATUS)를 순차적으로 수행합니다.
+        """
+        try:
+            # 이미 초기화가 완료되었는지 확인
+            comm_status = bb.get("device/shimadzu/comm_status")
+            if comm_status == 1 and self._init_sub_seq == 0:
+                Logger.info("[Logic] Shimadzu already initialized, skipping initialization.")
+                return LogicEvent.DONE
+
+            get_device_cmd = bb.get(device_cmd_key)
+
+            # Step 1: 명령 전송
+            if self._init_sub_seq == 0:
+                device_cmd = {
+                    "command": DeviceCommand.INITIALIZE_SHIMADZU,
+                    "params": {},
+                    "state": "",
+                    "is_done": False
+                }
+                bb.set(device_cmd_key, device_cmd)
+                Logger.info(f"[Logic] Sent INITIALIZE_SHIMADZU command to DeviceFSM.")
+                self._init_sub_seq = 1
+                return LogicEvent.NONE
+
+            # Step 2: 명령 완료 대기
+            elif self._init_sub_seq == 1:
+                if get_device_cmd and get_device_cmd.get("command") == DeviceCommand.INITIALIZE_SHIMADZU:
+                    if not get_device_cmd.get("is_done"):
+                        return LogicEvent.NONE
+
+                    if get_device_cmd.get("state") == "done":
+                        Logger.info("[Logic] DeviceFSM confirmed Shimadzu initialized.")
+                        bb.set(device_cmd_key, None)
+                        self._init_sub_seq = 0
+                        return LogicEvent.DONE
+                    else:
+                        Logger.error(f"[Logic] DeviceFSM failed to initialize Shimadzu.")
+                        bb.set(device_cmd_key, None)
+                        self._init_sub_seq = 0
+                        return LogicEvent.VIOLATION_DETECT
+
+            return LogicEvent.NONE
+
+        except Exception as e:
+            Logger.error(f"[Logic] Exception in ensure_shimadzu_initialized: {e}")
+            self._init_sub_seq = 0
+            return LogicEvent.VIOLATION_DETECT
+
     def start_measurement_sequence(self, lot_name: str):
         """
         Device FSM에 측정 시작(START_RUN) 명령을 전달하고 완료를 대기합니다.

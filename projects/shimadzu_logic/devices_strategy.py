@@ -476,6 +476,8 @@ class WaitCommandStrategy(Strategy):
                 return DeviceEvent.DO_REGISTER_METHOD
             elif cmd == DeviceCommand.ASK_PRELOAD:
                 return DeviceEvent.DO_ASK_PRELOAD
+            elif cmd == DeviceCommand.INITIALIZE_SHIMADZU:
+                return DeviceEvent.DO_INITIALIZE_SHIMADZU
             elif cmd == DeviceCommand.START_MEASUREMENT:
                 return DeviceEvent.DO_START_MEASUREMENT
 
@@ -848,7 +850,10 @@ class StartTensileTestStrategy(Strategy):
                     Logger.info("[device][TensileTest] Test completed successfully (CODE: 00)")
                 else:
                     Logger.error(f"[device][TensileTest] Test completed with CODE: {code}")
-
+                
+                wait_time = time.time()
+                while time.time() - wait_time < 5.0 :
+                    time.sleep(0.1)
                 # 결과 데이터를 블랙보드에 저장
                 bb.set("shimadzu/ana_result", params)
                 self._seq = 3
@@ -1146,6 +1151,65 @@ class AskPreloadStrategy(Strategy):
             bb.set("process/auto/device/cmd", cmd_data)
         Logger.info(f"[device] exit AskPreloadStrategy with event: {event}")
 
+class InitializeShimadzuStrategy(Strategy):
+    def prepare(self, context: DeviceContext, **kwargs):
+        bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
+        Logger.info("[device] enter InitializeShimadzuStrategy")
+        self.cmd_data = bb.get("process/auto/device/cmd")
+        self.init_seq = 0
+
+    def operate(self, context: DeviceContext) -> DeviceEvent:
+        if not self.cmd_data or not isinstance(self.cmd_data, dict):
+            return DeviceEvent.INITIALIZE_SHIMADZU_FAIL
+
+        # Step 1: ARE_YOU_THERE 연결 확인
+        if self.init_seq == 0:
+            Logger.info("[device] InitializeShimadzu: Step 1 - Checking connection (ARE_YOU_THERE)")
+            result = context.smz_are_you_there()
+            if result is not None:
+                Logger.info("[device] Shimadzu connection verified (ARE_YOU_THERE)")
+                context.smz_connection_verified = True
+                self.init_seq = 1
+            else:
+                Logger.warn("[device] Shimadzu connection check failed, will retry")
+                return DeviceEvent.NONE
+
+        # Step 2: INIT_RUN 전송
+        if self.init_seq == 1:
+            Logger.info("[device] InitializeShimadzu: Step 2 - Sending INIT_RUN")
+            init_result = context.smz_send_init_run()
+            if init_result:
+                Logger.info("[device] Shimadzu INIT_RUN completed successfully")
+                context.smz_init_run_done = True
+                self.init_seq = 2
+            else:
+                Logger.warn("[device] Shimadzu INIT_RUN failed, will retry")
+                return DeviceEvent.NONE
+
+        # Step 3: ASK_SYS_STATUS 확인
+        if self.init_seq == 2:
+            Logger.info("[device] InitializeShimadzu: Step 3 - Checking system status (ASK_SYS_STATUS)")
+            smz_run_state = context.smz_ask_sys_status()
+            if smz_run_state:
+                bb.set("device/shimadzu/comm_status", 1)
+                context.smz_initial_check_done = True
+                Logger.info("[device] Shimadzu initialization completed successfully")
+                return DeviceEvent.INITIALIZE_SHIMADZU_DONE
+            else:
+                bb.set("device/shimadzu/comm_status", 0)
+                Logger.warn("[device] Shimadzu system status check failed")
+                return DeviceEvent.INITIALIZE_SHIMADZU_FAIL
+
+        return DeviceEvent.NONE
+
+    def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
+        if isinstance(self.cmd_data, dict):
+            is_success = event == DeviceEvent.INITIALIZE_SHIMADZU_DONE
+            self.cmd_data["is_done"] = True
+            self.cmd_data["state"] = "done" if is_success else "error"
+            bb.set("process/auto/device/cmd", self.cmd_data)
+        Logger.info(f"[device] exit InitializeShimadzuStrategy with event: {event}")
+
 class StartMeasurementStrategy(Strategy):
     def prepare(self, context: DeviceContext, **kwargs):
         bb.set("device/fsm/strategy", {"state": context.state.name, "strategy": self.__class__.__name__})
@@ -1155,15 +1219,15 @@ class StartMeasurementStrategy(Strategy):
     def operate(self, context: DeviceContext) -> DeviceEvent:
         if not self.cmd_data or not isinstance(self.cmd_data, dict):
             return DeviceEvent.START_MEASUREMENT_FAIL
-        
+
         params = self.cmd_data.get("params", {})
         lot_name = params.get("lot_name", "DEFAULT_LOT")
-        
+
         # 1. START_RUN 전송 (ACK_START_RUN 대기 포함)
         result = context.smz_start_measurement(lot_name)
         if result:
             return DeviceEvent.START_MEASUREMENT_DONE
-        
+
         return DeviceEvent.START_MEASUREMENT_FAIL
 
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
