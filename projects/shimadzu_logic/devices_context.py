@@ -144,6 +144,15 @@ class DeviceContext(ContextBase):
         # DO write 카운터
         self._do_write_counter = 0
 
+        # RESET_SW 버튼 처리 관련 변수
+        self.prev_reset_sw = 0
+        self.reset_button_pressed_time = None  # 버튼을 누른 시간 기록
+        self.reset_in_progress = False  # 리셋 진행 중 플래그
+        self.reset_debounce_interval = 2.0  # Debounce 간격 (초)
+        self.reset_timer = None  # 타이머 객체
+        self.reset_timeout_duration = 10.0  # Recovery timeout (초)
+        self.max_reset_retries = 3  # 최대 재시도 횟수
+
         # read_IO_status 주기적 스레드 추가 self.th_IO_reader를 while문에서 사용
         self.flag_IO_reader = Flagger()
         self.delay_IO_reader = FlagDelay(0.1)  # 0.1초 간격으로 I/O 상태 읽기
@@ -289,15 +298,61 @@ class DeviceContext(ContextBase):
     def _thread_tower_lamp_controller(self):
         """
         주기적으로 시스템 상태를 확인하여 타워 램프를 제어합니다.
-        - 에러: 빨간색 램프 점멸
+        - 도어 열림 (프로그램 실행 중): 빨간색 램프 점멸 + 버저 (최우선)
+        - 에러: 빨간색 램프 점멸 + 버저
         - 공정 중: 녹색 램프 켜짐
         - 대기: 노란색 램프 점멸
         """
         blink_state = False
+        door_open_error_sent = False  # 도어 열림 에러 전송 여부 추적
+
         while True:
             try:
-                # 현재 FSM 상태를 블랙보드에서 가져옵니다.
+                # 블랙보드에만 쓰기 (검증 불필요)
+                blink_state = not blink_state
 
+                # [최우선] 도어 상태 확인 (하나라도 0이면 '열림'으로 간주)
+                is_door_open = not all([
+                    bb.get("device/remote/input/DOOR_1_OPEN"),
+                    bb.get("device/remote/input/DOOR_2_OPEN"),
+                    bb.get("device/remote/input/DOOR_3_OPEN"),
+                ])
+
+                # 프로그램 실행 상태 확인
+                indy_data = bb.get("indy")
+                program_state = indy_data.get("program_state") if indy_data else None
+                is_program_running = program_state in (2, 3) if program_state is not None else False  # PROG_RUNNING(2) or PROG_PAUSING(3)
+
+                # 도어가 열리고 프로그램이 실행 중이면 빨강 깜빡임 + 버저
+                if is_door_open and is_program_running:
+                    bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
+                    bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
+                    bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+                    bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
+
+                    # 에러 이벤트 전송 (한 번만) - 블랙보드를 통해 전송
+                    if not door_open_error_sent:
+                        Logger.error("[device] Door opened during program execution. Program may be at risk!")
+                        error_payload = {
+                            "kind": "event",
+                            "evt": "error",
+                            "status": "Auto",
+                            "category": "robot",
+                            "code": "R-008",
+                            "message": "door가 열려있습니다. 프로그램이 동작중입니다. 닫아주세요."
+                        }
+                        bb.set("logic/send_event", error_payload)
+                        door_open_error_sent = True
+                    continue  # 다른 상태 체크 없이 바로 다음 루프로
+
+                # 도어가 닫히면 에러 플래그 리셋
+                if not is_door_open and door_open_error_sent:
+                    Logger.info("[device] Door closed. Resuming normal operation.")
+                    door_open_error_sent = False
+                elif not is_door_open:
+                    door_open_error_sent = False
+
+                # 현재 FSM 상태를 블랙보드에서 가져옵니다.
                 logic_fsm = bb.get("logic/fsm/strategy")
                 device_fsm = bb.get("device/fsm/strategy")
                 robot_fsm = bb.get("robot/fsm/strategy")
@@ -310,32 +365,31 @@ class DeviceContext(ContextBase):
                     is_error = "ERROR" in (logic_fsm_state or "") or \
                             "ERROR" in (device_fsm_state or "") or \
                             "ERROR" in (robot_fsm_state or "")
-                    
-                    is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
-                    # 블랙보드에만 쓰기 (검증 불필요)
-                    blink_state = not blink_state
+                    is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
                     if is_error:
                         # 빨간색 점멸, 나머지 꺼짐
                         bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
                         bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
                         bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
-                        # bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
+                        bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
                     elif is_idle:
                         # 노란색 점멸, 나머지 꺼짐
                         bb.set("device/remote/output/TOWER_LAMP_RED", 0)
                         bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
                         bb.set("device/remote/output/TOWER_LAMP_YELLOW", 1 if blink_state else 0)
+                        bb.set("device/remote/output/TOWER_BUZZER", 0)
                     else: # 공정 중
                         # 녹색 켜짐, 나머지 꺼짐
                         bb.set("device/remote/output/TOWER_LAMP_RED", 0)
                         bb.set("device/remote/output/TOWER_LAMP_GREEN", 1)
                         bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+                        bb.set("device/remote/output/TOWER_BUZZER", 0)
 
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_tower_lamp_controller: {e}")
-            
+
             time.sleep(0.5) # 0.5초 간격으로 점멸 (1Hz)
 
     def _thread_comm_status_updater(self):
@@ -471,18 +525,24 @@ class DeviceContext(ContextBase):
             
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
+                # SOL_SENSOR 체크 (리스트에 해당 인덱스가 있는지 확인 후 접근)
+                # DigitalInput.SOL_SENSOR = 3이므로, 리스트 길이가 최소 4 이상이어야 함
+                if self.remote_input_data and len(self.remote_input_data) > DigitalInput.SOL_SENSOR:
+                    sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
+                    if sol_sensor == 0:
+                        Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
+                        self.violation_code |= DeviceViolation.SOL_SENSOR_ERR
+
                 # EMO 신호는 NC(Normally Closed)이므로 0일 때 트리거된 것으로 간주
-                emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SW] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_03_SW] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_04_SW] == 0)
-                
-                sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
-                if sol_sensor == 0:
-                    Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
-                    self.violation_code |= DeviceViolation.SOL_SENSOR_ERR
-                if emo_triggered:
-                    Logger.info(f"[device] Check violation : EMO Error Detected")
-                    self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
+                # DigitalInput.EMO_04_SW = 11이므로, 리스트 길이가 최소 12 이상이어야 함
+                if self.remote_input_data and len(self.remote_input_data) > DigitalInput.EMO_04_SW:
+                    emo_triggered = (self.remote_input_data[DigitalInput.EMO_01_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_02_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_03_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_04_SW] == 0)
+                    if emo_triggered:
+                        Logger.info(f"[device] Check violation : EMO Error Detected")
+                        self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
 
             return self.violation_code
         except Exception as e:
@@ -669,12 +729,337 @@ class DeviceContext(ContextBase):
             # Logger.info(f"[device] Connect state : {self.remote_comm_state}")
             bb.set("device/remote/comm_status", 1 if self.remote_comm_state else 0)
             self.remote_io_error_count = 0  # 성공 시 에러 카운트 리셋
+
+            # RESET_SW 버튼 처리 (에러 복구 및 시스템 초기화)
+            self.handle_reset_button()
+
         except Exception as e:
             Logger.error(f"[device] Error in read_IO_status: {e}\n{traceback.format_exc()}")
             self.remote_comm_state = False
             bb.set("device/remote/comm_status", 0)
             self.remote_io_error_count += 1
             Logger.info(f"[device] Remote IO read error count: {self.remote_io_error_count}")
+
+    def handle_reset_button(self):
+        """
+        RESET_SW 버튼 처리 (에러 복구 및 시스템 초기화)
+        - Timeout 처리
+        - 에러 핸들링
+        - Debouncing
+        - 재시도 로직
+        - 에러 상태가 아니어도 강제 초기화 가능
+        """
+        try:
+            # 1. 현재 버튼 상태 읽기 (안전하게)
+            if not self.remote_input_data or len(self.remote_input_data) < 48:
+                # Logger.warn("[Device] RESET_SW: Invalid remote_input_data. Skipping button check.")
+                return
+
+            current_reset_sw = self.remote_input_data[DigitalInput.RESET_SW]
+
+            # 2. Debouncing 체크 - 이전 리셋이 너무 최근이면 무시
+            if self.reset_button_pressed_time:
+                time_since_last_press = time.time() - self.reset_button_pressed_time
+                if time_since_last_press < self.reset_debounce_interval:
+                    # 이전 값만 업데이트하고 리턴
+                    self.prev_reset_sw = current_reset_sw
+                    return
+
+            # 3. 리셋이 이미 진행 중이면 무시
+            if self.reset_in_progress:
+                Logger.debug("[Device] RESET_SW: Reset already in progress. Ignoring button press.")
+                self.prev_reset_sw = current_reset_sw
+                return
+
+            # 4. 1->0 전환 감지 (버튼을 눌렀다 뗌)
+            if self.prev_reset_sw == 1 and current_reset_sw == 0:
+                Logger.info("[Device] RESET_SW button released (1->0). Scheduling system reset...")
+
+                # 버튼 누름 시간 기록
+                self.reset_button_pressed_time = time.time()
+
+                # 기존 타이머가 있으면 취소
+                if self.reset_timer:
+                    self.reset_timer.cancel()
+
+                # 비동기 타이머로 0.5초 후 리셋 실행 (blocking 방지)
+                self.reset_timer = threading.Timer(0.5, self._execute_reset_sequence)
+                self.reset_timer.daemon = True
+                self.reset_timer.start()
+
+            # 5. 이전 값 업데이트
+            self.prev_reset_sw = current_reset_sw
+
+        except Exception as e:
+            Logger.error(f"[Device] RESET_SW: Error in handle_reset_button: {e}")
+            Logger.error(traceback.format_exc())
+            self.reset_in_progress = False  # 에러 발생 시 플래그 리셋
+
+    def _execute_reset_sequence(self):
+        """
+        실제 리셋 시퀀스 실행 (비동기)
+        - 에러 상태 복구
+        - 모든 진행 중인 작업 초기화
+        - 시스템을 IDLE 상태로 전환
+        """
+        retry_count = 0
+
+        while retry_count < self.max_reset_retries:
+            try:
+                # 리셋 진행 중 플래그 설정
+                self.reset_in_progress = True
+
+                Logger.info(f"[Device] RESET_SW: Executing system reset (attempt {retry_count + 1}/{self.max_reset_retries})...")
+
+                # 1. FSM 상태 확인 (안전하게)
+                logic_fsm = bb.get("logic/fsm/strategy")
+                device_fsm = bb.get("device/fsm/strategy")
+                robot_fsm = bb.get("robot/fsm/strategy")
+
+                # None 체크 및 타입 체크
+                if logic_fsm is None or device_fsm is None or robot_fsm is None:
+                    Logger.error("[Device] RESET_SW: FSM states not available (None). Retrying...")
+                    retry_count += 1
+                    time.sleep(1.0)
+                    continue
+
+                if not isinstance(logic_fsm, dict) or not isinstance(device_fsm, dict) or not isinstance(robot_fsm, dict):
+                    Logger.error(f"[Device] RESET_SW: Invalid FSM types. logic={type(logic_fsm)}, device={type(device_fsm)}, robot={type(robot_fsm)}. Retrying...")
+                    retry_count += 1
+                    time.sleep(1.0)
+                    continue
+
+                # 2. 현재 상태 확인
+                logic_fsm_state = logic_fsm.get("state", "")
+                device_fsm_state = device_fsm.get("state", "")
+                robot_fsm_state = robot_fsm.get("state", "")
+
+                is_error = "ERROR" in logic_fsm_state or "ERROR" in device_fsm_state or "ERROR" in robot_fsm_state
+                # Logic은 IDLE, Device는 READY 또는 WAIT_COMMAND, Robot은 READY 또는 WAIT_AUTO_COMMAND가 정상
+                is_normal_state = (
+                    "IDLE" in logic_fsm_state and
+                    ("READY" in device_fsm_state or "WAIT_COMMAND" in device_fsm_state) and
+                    ("READY" in robot_fsm_state or "WAIT_AUTO_COMMAND" in robot_fsm_state)
+                )
+
+                Logger.info(f"[Device] RESET_SW: Current FSM States - Logic:{logic_fsm_state}, Device:{device_fsm_state}, Robot:{robot_fsm_state}")
+
+                # 3. 이미 정상 상태면 초기화만 수행
+                if is_normal_state and not is_error:
+                    Logger.info("[Device] RESET_SW: System already in normal state. Performing quick initialization...")
+                    self._perform_system_initialization()
+                    Logger.info("[Device] RESET_SW: System initialization completed.")
+                    break
+
+                # 4. Error 상태이거나 다른 상태면 Recovery 실행
+                Logger.info("[Device] RESET_SW: Triggering recovery to normal state (Logic:IDLE, Device/Robot:READY)...")
+
+                # 모든 진행 중인 명령 취소
+                bb.set("ui/cmd/start/trigger", 0)
+                bb.set("ui/cmd/stop/trigger", 0)
+                bb.set("ui/cmd/pause/trigger", 0)
+
+                # [CRITICAL] 로봇 복구를 먼저 실행 (Recovery 전)
+                # Robot이 HW_VIOLATION 상태면 FSM Recovery가 완료되지 않음
+                try:
+                    Logger.info("[Device] RESET_SW: Sending robot recovery command (before FSM recovery)...")
+                    bb.set("indy_command/recover", True)
+                    time.sleep(1.5)  # 로봇 복구 명령이 처리될 시간 확보
+                    Logger.info("[Device] RESET_SW: Robot recovery command sent.")
+                except Exception as e:
+                    Logger.warning(f"[Device] RESET_SW: Failed to send robot recovery: {e}")
+
+                # Recovery 트리거 설정
+                bb.set("ui/cmd/recover/trigger", 1)
+
+                # 5. Recovery 완료 대기 (Timeout 포함)
+                recovery_success = self._wait_for_recovery_completion()
+
+                if recovery_success:
+                    Logger.info("[Device] RESET_SW: Recovery completed. Performing system initialization...")
+
+                    # 시스템 초기화 수행
+                    self._perform_system_initialization()
+
+                    Logger.info("[Device] RESET_SW: System reset completed successfully. System is now in normal state and initialized.")
+                    break  # 성공 시 루프 종료
+                else:
+                    Logger.warn(f"[Device] RESET_SW: Recovery failed or timed out (attempt {retry_count + 1}). Retrying...")
+                    retry_count += 1
+                    time.sleep(1.0)
+
+            except KeyError as e:
+                Logger.error(f"[Device] RESET_SW: KeyError during reset sequence: {e}. Retrying...")
+                retry_count += 1
+                time.sleep(1.0)
+
+            except Exception as e:
+                Logger.error(f"[Device] RESET_SW: Unexpected error during reset sequence: {e}")
+                Logger.error(traceback.format_exc())
+                retry_count += 1
+                time.sleep(1.0)
+
+        # 최종 실패 처리
+        if retry_count >= self.max_reset_retries:
+            Logger.error(f"[Device] RESET_SW: Failed to complete reset after {self.max_reset_retries} attempts.")
+            # 에러 알림 (램프 및 부저)
+            try:
+                bb.set("device/remote/output/TOWER_LAMP_RED", 1)
+                bb.set("device/remote/output/TOWER_BUZZER", 1)
+                Logger.info("[Device] RESET_SW: Error notification activated (Red lamp + Buzzer).")
+            except:
+                pass
+
+        # 리셋 진행 중 플래그 해제
+        self.reset_in_progress = False
+
+    def _wait_for_recovery_completion(self):
+        """
+        Recovery 완료 대기 (Timeout 포함)
+
+        Returns:
+            bool: Recovery 성공 여부
+        """
+        timeout_start = time.time()
+        check_interval = 0.2  # 200ms마다 체크
+
+        Logger.info(f"[Device] RESET_SW: Waiting for recovery completion (timeout: {self.reset_timeout_duration}s)...")
+
+        while time.time() - timeout_start < self.reset_timeout_duration:
+            try:
+                # FSM 상태 다시 확인
+                logic_fsm = bb.get("logic/fsm/strategy")
+                device_fsm = bb.get("device/fsm/strategy")
+                robot_fsm = bb.get("robot/fsm/strategy")
+
+                # None 체크
+                if logic_fsm is None or device_fsm is None or robot_fsm is None:
+                    time.sleep(check_interval)
+                    continue
+
+                # 타입 체크
+                if not isinstance(logic_fsm, dict) or not isinstance(device_fsm, dict) or not isinstance(robot_fsm, dict):
+                    time.sleep(check_interval)
+                    continue
+
+                logic_state = logic_fsm.get("state", "")
+                device_state = device_fsm.get("state", "")
+                robot_state = robot_fsm.get("state", "")
+
+                # 정상 상태 확인 (Logic:IDLE, Device:READY/WAIT_COMMAND, Robot:READY/WAIT_AUTO_COMMAND)
+                is_normal_state = (
+                    "IDLE" in logic_state and
+                    ("READY" in device_state or "WAIT_COMMAND" in device_state) and
+                    ("READY" in robot_state or "WAIT_AUTO_COMMAND" in robot_state)
+                )
+                is_error = "ERROR" in logic_state or "ERROR" in device_state or "ERROR" in robot_state
+
+                if is_normal_state and not is_error:
+                    Logger.info(f"[Device] RESET_SW: Recovery successful. System is now in normal state (Logic:{logic_state}, Device:{device_state}, Robot:{robot_state}).")
+                    return True
+
+            except Exception as e:
+                Logger.warn(f"[Device] RESET_SW: Error checking recovery status: {e}")
+
+            time.sleep(check_interval)
+
+        # Timeout
+        Logger.error(f"[Device] RESET_SW: Recovery timeout after {self.reset_timeout_duration}s")
+        return False
+
+    def _perform_system_initialization(self):
+        """
+        시스템 초기화 수행
+        - 모든 블랙보드 상태 초기화
+        - 장비 상태 초기화
+        - 램프 및 부저 리셋
+        """
+        try:
+            Logger.info("[Device] RESET_SW: Performing system initialization...")
+
+            # 1. 모든 명령 트리거 리셋
+            bb.set("ui/cmd/start/trigger", 0)
+            bb.set("ui/cmd/stop/trigger", 0)
+            bb.set("ui/cmd/pause/trigger", 0)
+            bb.set("ui/cmd/recover/trigger", 0)
+
+            # 2. 타워 램프 상태 리셋 (녹색 ON, 나머지 OFF)
+            bb.set("device/remote/output/TOWER_LAMP_RED", 0)
+            bb.set("device/remote/output/TOWER_LAMP_GREEN", 1)
+            bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+            bb.set("device/remote/output/TOWER_BUZZER", 0)
+
+            # 3. RESET 버튼 램프 ON (리셋 준비 완료 표시)
+            bb.set("device/remote/output/RESET_SW_LAMP", 1)
+
+            # 4. 장비 내부 램프 ON
+            try:
+                self.lamp_on()
+                Logger.info("[Device] RESET_SW: Internal lamps turned ON.")
+            except Exception as e:
+                Logger.warn(f"[Device] RESET_SW: Failed to turn on lamps: {e}")
+
+            # 5. 정렬기 후퇴 (안전 상태)
+            try:
+                align_state = bb.get("device/align/state")
+                if align_state != "pull":
+                    Logger.info("[Device] RESET_SW: Retracting aligner to safe position...")
+                    self.align_stop()
+                    time.sleep(0.5)
+                    self.align_pull()
+                    time.sleep(0.3)
+                else:
+                    Logger.info("[Device] RESET_SW: Aligner already in safe position (pull).")
+            except Exception as e:
+                Logger.warn(f"[Device] RESET_SW: Failed to retract aligner: {e}")
+
+            # 6. 측정기 받침 내리기 (안전 상태)
+            try:
+                indicator_state = bb.get("device/indicator/stand/state")
+                if indicator_state != "down":
+                    Logger.info("[Device] RESET_SW: Lowering indicator stand...")
+                    self.indicator_stand_down()
+                    time.sleep(0.3)
+                else:
+                    Logger.info("[Device] RESET_SW: Indicator stand already in safe position (down).")
+            except Exception as e:
+                Logger.warn(f"[Device] RESET_SW: Failed to lower indicator stand: {e}")
+
+            # 7. 로봇 복구 (HW_VIOLATION 등 에러 복구)
+            # Note: Error 상태에서는 이미 Recovery 전에 로봇 복구를 했지만,
+            #       정상 상태에서 바로 초기화하는 경우를 위해 추가로 실행
+            try:
+                Logger.info("[Device] RESET_SW: Sending robot recovery command (final check)...")
+                bb.set("indy_command/recover", True)
+                time.sleep(0.5)  # 로봇 복구 명령이 처리될 시간 확보
+                Logger.info("[Device] RESET_SW: Robot recovery command sent successfully.")
+            except Exception as e:
+                Logger.warn(f"[Device] RESET_SW: Failed to send robot recovery command: {e}")
+
+            # 8. 기타 초기화 작업
+            # Shimadzu 관련 상태 리셋
+            self.smz_init_run_done = False
+            self.gauge_measurement_done = False
+
+            # 에러 카운터 리셋
+            self.remote_io_error_count = 0
+            self.gauge_error_count = 0
+            self.qr_error_count = 0
+
+            Logger.info("[Device] RESET_SW: System initialization completed successfully.")
+
+        except Exception as e:
+            Logger.error(f"[Device] RESET_SW: Error during system initialization: {e}")
+            Logger.error(traceback.format_exc())
+
+    def cleanup_reset_timer(self):
+        """
+        타이머 정리 (시스템 종료 시 호출)
+        """
+        if self.reset_timer:
+            self.reset_timer.cancel()
+            self.reset_timer = None
+            Logger.info("[Device] RESET_SW: Timer cleaned up.")
 
     def UI_DO_Control(self, address: int, value: int) -> bool:
         '''
@@ -1444,13 +1829,13 @@ class DeviceContext(ContextBase):
             gl = db_result.get("gl") or db_result.get("ql") or regist_data.get("gl")
             # thickness = bb.get(""specimen/thickness_avg")
             chuckl = db_result.get("chuckl") or regist_data.get("chuckl")
-            # last_tray_no = bb.get("process_status/last_tray_no")
+            last_tray_no = bb.get("process_status/last_tray_no")
 
             isfinal = 0
             if specimen_no == 5:
                 isfinal = 1  # 각 트레이의 마지막 시편(5번째)인 경우
             # if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
-
+            #     isfinal = 1
             # 반드시 수정 필요!!
             # isfinal = 1  # 전체 시험중 마지막 시험인 경우
 
@@ -1636,17 +2021,19 @@ class DeviceContext(ContextBase):
             parsed_params = result.get("params")
             mode = parsed_params.get("MODE", "")
             run = parsed_params.get("RUN", "N")
-            load = float(parsed_params.get("LOAD", "0.0"))
-            temp = float(parsed_params.get("TEMP", "0.0"))
+            code = parsed_params.get("CODE", "")
+            # load = float(parsed_params.get("LOAD", "0.0"))
+            # temp = float(parsed_params.get("TEMP", "0.0"))
 
             bb.set("device/shimadzu/run_state", {
                 "MODE": mode,
                 "RUN": run,
-                "LOAD": str(load),
-                "TEMP": str(temp)
+                "CODE": code
+                # "TEMP": str(temp)
             })
             
-            # Logger.info(f"[device] ASK_SYS_STATUS response received: {result}")
+            Logger.info(f"[device] ASK_SYS_STATUS response received: {result}, MODE={mode}, RUN={run}, CODE={code}")
+            # Logger.info(f"[device] ASK_SYS_STATUS response: MODE={mode}, RUN={run}, LOAD={load}, TEMP={temp}")
             return result
 
         except Exception as e:

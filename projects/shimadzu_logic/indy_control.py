@@ -77,6 +77,10 @@ class RobotCommunication:
         self.is_sim_mode = False
         self.robot_running_hour = 0
         self.robot_running_min = 0
+
+        # Door state tracking
+        self.prev_door_state = False  # False = closed, True = open
+        self.last_door_open_log_time = 0
  
         #Sehoon CMD lifecycle timing
         self.cmd_send_ts = None
@@ -201,6 +205,59 @@ class RobotCommunication:
         self.indy.movej(self.bin_picking_home, vel_ratio=50)
         self.indy.wait_for_motion_state('is_target_reached')
         Logger.info("[Indy7] Reached home position.")
+
+    def check_door_and_wait(self):
+        """
+        문 열림을 체크하고, 문이 열려 있으면 닫힐 때까지 대기합니다.
+        문이 닫히면 CMD 100 (RECOVERY_HOME)으로 복귀합니다.
+
+        Returns:
+            bool: True if should continue, False if should abort (stop command)
+        """
+        # 문 상태 확인 (하나라도 0이면 '열림'으로 간주)
+        is_door_open = not all([
+            bb.get("device/remote/input/DOOR_1_OPEN"),
+            bb.get("device/remote/input/DOOR_2_OPEN"),
+            bb.get("device/remote/input/DOOR_3_OPEN"),
+        ])
+
+        if is_door_open:
+            Logger.info("[BinPickControl] Door opened detected. Waiting for door to close...")
+
+            # 문이 닫힐 때까지 대기
+            while True:
+                # 상태 업데이트
+                self.indy_communication()
+                self.send_data_to_bb()
+
+                # 정지 명령 체크
+                if bb.get("ui/cmd/binpick/action") == "stop":
+                    Logger.info("[BinPickControl] Stop command during door wait. Aborting.")
+                    return False
+
+                # 문 상태 재확인
+                is_door_open = not all([
+                    bb.get("device/remote/input/DOOR_1_OPEN"),
+                    bb.get("device/remote/input/DOOR_2_OPEN"),
+                    bb.get("device/remote/input/DOOR_3_OPEN"),
+                ])
+
+                if not is_door_open:
+                    Logger.info("[BinPickControl] Door closed detected. Returning to home position (CMD 100)...")
+
+                    # 홈 위치로 복귀 (CMD 100: RECOVERY_HOME)
+                    try:
+                        self.indy.movej(self.bin_picking_home, vel_ratio=50)
+                        self.indy.wait_for_motion_state('is_target_reached')
+                        Logger.info("[BinPickControl] Returned to home position. Resuming bin picking.")
+                    except Exception as e:
+                        Logger.error(f"[BinPickControl] Failed to return to home: {e}")
+
+                    break
+
+                time.sleep(0.1)  # 100ms 주기로 체크
+
+        return True  # 계속 진행
 
     def execute_cmd_sequence(self, cmd_list, description=""):
         """
@@ -455,7 +512,47 @@ class RobotCommunication:
                 if action == "start":
                     Logger.info("[BinPickControl] Starting Bin Picking sequence...")
                     # status: 0:초기값/1:인식/2:이동/3:잡기/4:인지/5:놓기/6:홈 이동/7:완료/10:쉐이킹
-                    
+
+                    # [Program Stop] Bin Picking 시작 전 실행 중인 프로그램 정지
+                    try:
+                        if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                            state_name = self.program_state.name if hasattr(self.program_state, 'name') else str(self.program_state)
+                            Logger.info(f"[BinPickControl] Detected running program (state: {state_name}). Stopping program before bin picking...")
+                            bb.set("indy_command/stop_program", True)
+
+                            # 프로그램이 정지될 때까지 대기 (최대 5초)
+                            timeout = 5.0
+                            start_time = time.time()
+                            prev_state = self.program_state
+                            while (time.time() - start_time) < timeout:
+                                self.handle_int_variable()  # 플래그 처리 (프로그램 정지)
+                                self.indy_communication()  # 상태 업데이트
+                                self.send_data_to_bb()
+
+                                # 상태가 변경되면 로그 출력
+                                if self.program_state != prev_state:
+                                    prev_name = prev_state.name if hasattr(prev_state, 'name') else str(prev_state)
+                                    curr_name = self.program_state.name if hasattr(self.program_state, 'name') else str(self.program_state)
+                                    Logger.info(f"[BinPickControl] Program state changed: {prev_name} -> {curr_name}")
+                                    prev_state = self.program_state
+
+                                if self.program_state not in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                                    final_state = self.program_state.name if hasattr(self.program_state, 'name') else str(self.program_state)
+                                    Logger.info(f"[BinPickControl] Program stopped successfully (final state: {final_state}). Proceeding with bin picking.")
+                                    bb.set("indy_command/stop_program", False)  # 플래그 리셋
+                                    break
+
+                                time.sleep(0.1)  # 100ms 주기로 체크
+
+                            if self.program_state in (ProgramState.PROG_RUNNING, ProgramState.PROG_PAUSING):
+                                timeout_state = self.program_state.name if hasattr(self.program_state, 'name') else str(self.program_state)
+                                Logger.error(f"[BinPickControl] Program stop timeout (current state: {timeout_state}). Proceeding anyway...")
+                                bb.set("indy_command/stop_program", False)  # 타임아웃 시에도 플래그 리셋
+                        else:
+                            Logger.info(f"[BinPickControl] No running program detected (state: {self.program_state.name}). Starting bin picking directly.")
+                    except Exception as e:
+                        Logger.error(f"[BinPickControl] Error checking/stopping program: {e}")
+
                     # [Tool Check] Bin Picking 시작 전 툴 상태 확인
                     # ATC_2_2_SENSOR (Bin Tool): 1=In Station(미장착), 0=On Robot(장착)
                     atc_2_2 = bb.get("device/remote/input/ATC_2_2_SENSOR")
@@ -682,6 +779,13 @@ class RobotCommunication:
                                         # 3개 옮기기 완료 후 정지
                                         if specimen_idx > 3:
                                             Logger.info("[BinPickControl] 3 specimens placed successfully. Stopping bin picking.")
+                                            self.indy.movej(self.home_pos, vel_ratio=50)
+
+                                            # 완료 후 bin_picking action 리셋
+                                            bb.set("ui/cmd/binpick/action", "")
+                                            bb.set("process/binpick/status", 0)
+
+                                            Logger.info("[BinPickControl] Bin picking completed successfully.")
                                             break
 
                                     else:
@@ -1397,8 +1501,21 @@ class RobotCommunication:
         ])
         # Test중일때는 사용안함
         # is_door_open = False
-        if is_door_open:
-            Logger.info(f"[Robot] Door is open status detected.")
+
+        # 도어 상태 변화 및 주기적 로깅 처리
+        current_time = time.time()
+        if is_door_open != self.prev_door_state:
+            # 상태가 변경되었을 때만 로그 출력
+            if is_door_open:
+                Logger.info(f"[Robot] Door opened.")
+                self.last_door_open_log_time = current_time
+            else:
+                Logger.info(f"[Robot] Door closed.")
+            self.prev_door_state = is_door_open
+        elif is_door_open and (current_time - self.last_door_open_log_time) >= 20:
+            # 도어가 계속 열려 있을 때 20초마다 로그 출력
+            Logger.info(f"[Robot] Door is still open.")
+            self.last_door_open_log_time = current_time
 
         # [추가] SELECT_SW가 0(Manual)이면 즉시 정지
         is_manual_mode = bb.get("device/remote/input/SELECT_SW") == 0
@@ -1434,9 +1551,13 @@ class RobotCommunication:
             if is_door_open or is_manual_mode:
                 #TODO warming state == 1일 경우에는 수동모드일지라도 속도가 100이 되도록 해줘. 
                 if bb.get("ui/state/warming_state") == 1 :
-                    if self.indy.get_motion_data().get("speed_ratio") == 0:
-                        self.indy.set_speed_ratio(100)
-                        Logger.info(f"[Robot] Resumed by warming state (Manual Mode ignored). Set Speed Ratio to 100.")
+                    if is_door_open :
+                        self.indy.set_speed_ratio(0)
+                        Logger.info(f"[Robot] Paused by door open. Set Speed Ratio to 0.")
+                    else :
+                        if self.indy.get_motion_data().get("speed_ratio") == 0:
+                            self.indy.set_speed_ratio(100)
+                            Logger.info(f"[Robot] Resumed by warming state (Manual Mode ignored). Set Speed Ratio to 100.")
                 elif self.indy.get_motion_data().get("speed_ratio") != 0:
                     self.indy.set_speed_ratio(0)
                     reason = "door open" if is_door_open else "manual mode switch"

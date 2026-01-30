@@ -1268,7 +1268,7 @@ class LogicContext(ContextBase):
 
         # [추가] 0.5초 딜레이 대기 상태
         elif self._seq == 55:
-            if time.time() - self.delay_start > 1.0:
+            if time.time() - self.delay_start > 3.0:
                 self._log_detail("Load_Specimen_Tensile_Machine", f"seq_{self._seq}_GripperOpen", "Robot", "Start")
                 self.set_seq(6)
             return LogicEvent.NONE

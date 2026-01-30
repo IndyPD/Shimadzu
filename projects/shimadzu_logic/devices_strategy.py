@@ -129,7 +129,8 @@ class ErrorStrategy(Strategy):
         if self.monitor_emo:
             # EMO 신호 확인 (NC: 0=트리거, 1=해제)
             if context.remote_input_data and len(context.remote_input_data) > DigitalInput.EMO_04_SW:
-                emo_cleared = (context.remote_input_data[DigitalInput.EMO_02_SW] == 1 and
+                emo_cleared = (context.remote_input_data[DigitalInput.EMO_01_SW] == 1 and
+                               context.remote_input_data[DigitalInput.EMO_02_SW] == 1 and
                                context.remote_input_data[DigitalInput.EMO_03_SW] == 1 and
                                context.remote_input_data[DigitalInput.EMO_04_SW] == 1)
                 if emo_cleared:
@@ -854,6 +855,7 @@ class StartTensileTestStrategy(Strategy):
                 wait_time = time.time()
                 while time.time() - wait_time < 5.0 :
                     time.sleep(0.1)
+                    Logger.info("[device][TensileTest] Waiting for ACK_ANA_RESULT...")
                 # 결과 데이터를 블랙보드에 저장
                 bb.set("shimadzu/ana_result", params)
                 self._seq = 3
@@ -898,6 +900,8 @@ class ExtensometerBackwardStrategy(Strategy):
         self.retry_count = 0  # 재시도 카운터
         self.command_failed = False
         self.command_sent = False  # 명령 전송 여부 플래그
+        self.backward_complete_time = None  # 후진 완료 시간 기록
+        self.delay_duration = 3.0  # 로봇 충돌 방지를 위한 딜레이 (3초)
 
     def operate(self, context: DeviceContext) -> DeviceEvent:
         # 명령이 아직 전송되지 않았거나 재시도 중인 경우
@@ -931,9 +935,16 @@ class ExtensometerBackwardStrategy(Strategy):
 
         # 후진 완료 확인
         if context.EXT_move_check(direction=2):
-            Logger.info("[device] Extensometer backward movement complete.")
-            return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
-        
+            # 후진이 완료되었을 때, 완료 시간을 기록
+            if self.backward_complete_time is None:
+                self.backward_complete_time = time.time()
+                Logger.info("[device] Extensometer backward movement complete. Waiting 3 seconds before robot motion...")
+
+            # 3초 딜레이 후 완료 이벤트 반환
+            if time.time() - self.backward_complete_time >= self.delay_duration:
+                Logger.info("[device] Delay complete. Robot can now proceed with next motion.")
+                return DeviceEvent.EXTENSOMETER_BACKWARD_DONE
+
         return DeviceEvent.NONE
     
     def exit(self, context: DeviceContext, event: DeviceEvent) -> None:
@@ -1163,31 +1174,43 @@ class InitializeShimadzuStrategy(Strategy):
             return DeviceEvent.INITIALIZE_SHIMADZU_FAIL
 
         # Step 1: ARE_YOU_THERE 연결 확인
+        # if self.init_seq == 0:
+        #     Logger.info("[device] InitializeShimadzu: Step 1 - Checking connection (ARE_YOU_THERE)")
+        #     result = context.smz_are_you_there()
+        #     if result is not None:
+        #         Logger.info("[device] Shimadzu connection verified (ARE_YOU_THERE)")
+        #         context.smz_connection_verified = True
+        #         self.init_seq = 1
+        #     else:
+        #         Logger.warn("[device] Shimadzu connection check failed, will retry")
+        #         return DeviceEvent.NONE
+
+        # # Step 2: INIT_RUN 전송
+        # if self.init_seq == 1:
+        #     Logger.info("[device] InitializeShimadzu: Step 2 - Sending INIT_RUN")
+        #     init_result = context.smz_send_init_run()
+        #     if init_result:
+        #         Logger.info("[device] Shimadzu INIT_RUN completed successfully")
+        #         context.smz_init_run_done = True
+        #         self.init_seq = 2
+        #     else:
+        #         Logger.warn("[device] Shimadzu INIT_RUN failed, will retry")
+        #         return DeviceEvent.NONE
+
+        # # Step 3: ASK_SYS_STATUS 확인
+        # if self.init_seq == 2:
+        #     Logger.info("[device] InitializeShimadzu: Step 3 - Checking system status (ASK_SYS_STATUS)")
+        #     smz_run_state = context.smz_ask_sys_status()
+        #     if smz_run_state:
+        #         bb.set("device/shimadzu/comm_status", 1)
+        #         context.smz_initial_check_done = True
+        #         Logger.info("[device] Shimadzu initialization completed successfully")
+        #         return DeviceEvent.INITIALIZE_SHIMADZU_DONE
+        #     else:
+        #         bb.set("device/shimadzu/comm_status", 0)
+        #         Logger.warn("[device] Shimadzu system status check failed")
+        #         return DeviceEvent.INITIALIZE_SHIMADZU_FAIL
         if self.init_seq == 0:
-            Logger.info("[device] InitializeShimadzu: Step 1 - Checking connection (ARE_YOU_THERE)")
-            result = context.smz_are_you_there()
-            if result is not None:
-                Logger.info("[device] Shimadzu connection verified (ARE_YOU_THERE)")
-                context.smz_connection_verified = True
-                self.init_seq = 1
-            else:
-                Logger.warn("[device] Shimadzu connection check failed, will retry")
-                return DeviceEvent.NONE
-
-        # Step 2: INIT_RUN 전송
-        if self.init_seq == 1:
-            Logger.info("[device] InitializeShimadzu: Step 2 - Sending INIT_RUN")
-            init_result = context.smz_send_init_run()
-            if init_result:
-                Logger.info("[device] Shimadzu INIT_RUN completed successfully")
-                context.smz_init_run_done = True
-                self.init_seq = 2
-            else:
-                Logger.warn("[device] Shimadzu INIT_RUN failed, will retry")
-                return DeviceEvent.NONE
-
-        # Step 3: ASK_SYS_STATUS 확인
-        if self.init_seq == 2:
             Logger.info("[device] InitializeShimadzu: Step 3 - Checking system status (ASK_SYS_STATUS)")
             smz_run_state = context.smz_ask_sys_status()
             if smz_run_state:
