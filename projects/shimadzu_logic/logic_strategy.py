@@ -440,7 +440,7 @@ class LogicDetermineTaskStrategy(Strategy):
             if not current_specimen:
                 # 모든 시편 완료: Shimadzu 상태만 초기화
                 Logger.info("[Logic] DetermineTask: No more ready sequences found. Tray complete. Resetting Shimadzu comm_status.")
-                bb.set("device/shimadzu/comm_status", 0)
+                # bb.set("device/shimadzu/comm_status", 0)
                 return LogicEvent.DO_PROCESS_COMPLETE
             
             # 새 시편 시작: 상태 업데이트
@@ -530,7 +530,7 @@ class LogicDetermineTaskStrategy(Strategy):
             if comm_status == 0:
                 Logger.info("[Logic] DetermineTask (step==0): Shimadzu initialization required before proceeding.")
 
-                # Shimadzu 초기화 확인 (ARE_YOU_THERE, INIT_RUN, ASK_SYS_STATUS)
+                # Shimadzu 초기화 확인 (ASK_SYS_STATUS)
                 init_result = context.ensure_shimadzu_initialized()
                 if init_result == LogicEvent.NONE:
                     # 초기화 진행 중
@@ -579,7 +579,9 @@ class LogicDetermineTaskStrategy(Strategy):
                 if spec_no == 1:
                     # 새 트레이 시작 전 Shimadzu 초기화 및 START_RUN 전송 (첫 번째 트레이는 LogicRegisterBatchDataStrategy에서 이미 전송됨)
                     if current_specimen['seq_order'] > 1:
-                        lot_name = current_specimen.get('lot', 'DEFAULT_LOT')
+                        # lot_name = current_specimen.get('lot', 'DEFAULT_LOT') + str(tray_no)
+                        lot_name = f"{current_specimen.get('lot', 'DEFAULT_LOT')}{tray_no}"
+
                         comm_status = bb.get("device/shimadzu/comm_status")
                         if comm_status == 0:
                             Logger.info("[Logic] Restart: New tray starting. Initializing Shimadzu (ASK, INIT).")
@@ -598,7 +600,7 @@ class LogicDetermineTaskStrategy(Strategy):
                                 return LogicEvent.NONE
                             elif result == LogicEvent.VIOLATION_DETECT:
                                 return LogicEvent.VIOLATION_DETECT
-                        # START_RUN 완료 후 QR 읽기로 이동
+                    #     # START_RUN 완료 후 QR 읽기로 이동
                     bb.set("process/auto/current_step", 1)
                     return LogicEvent.DO_MOVE_TO_RACK_FOR_QR
                 else:

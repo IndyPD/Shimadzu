@@ -298,15 +298,61 @@ class DeviceContext(ContextBase):
     def _thread_tower_lamp_controller(self):
         """
         주기적으로 시스템 상태를 확인하여 타워 램프를 제어합니다.
-        - 에러: 빨간색 램프 점멸
+        - 도어 열림 (프로그램 실행 중): 빨간색 램프 점멸 + 버저 (최우선)
+        - 에러: 빨간색 램프 점멸 + 버저
         - 공정 중: 녹색 램프 켜짐
         - 대기: 노란색 램프 점멸
         """
         blink_state = False
+        door_open_error_sent = False  # 도어 열림 에러 전송 여부 추적
+
         while True:
             try:
-                # 현재 FSM 상태를 블랙보드에서 가져옵니다.
+                # 블랙보드에만 쓰기 (검증 불필요)
+                blink_state = not blink_state
 
+                # [최우선] 도어 상태 확인 (하나라도 0이면 '열림'으로 간주)
+                is_door_open = not all([
+                    bb.get("device/remote/input/DOOR_1_OPEN"),
+                    bb.get("device/remote/input/DOOR_2_OPEN"),
+                    bb.get("device/remote/input/DOOR_3_OPEN"),
+                ])
+
+                # 프로그램 실행 상태 확인
+                indy_data = bb.get("indy")
+                program_state = indy_data.get("program_state") if indy_data else None
+                is_program_running = program_state in (2, 3) if program_state is not None else False  # PROG_RUNNING(2) or PROG_PAUSING(3)
+
+                # 도어가 열리고 프로그램이 실행 중이면 빨강 깜빡임 + 버저
+                if is_door_open and is_program_running:
+                    bb.set("device/remote/output/TOWER_LAMP_RED", 1 if blink_state else 0)
+                    bb.set("device/remote/output/TOWER_LAMP_GREEN", 0)
+                    bb.set("device/remote/output/TOWER_LAMP_YELLOW", 0)
+                    bb.set("device/remote/output/TOWER_BUZZER", 1 if blink_state else 0)
+
+                    # 에러 이벤트 전송 (한 번만) - 블랙보드를 통해 전송
+                    if not door_open_error_sent:
+                        Logger.error("[device] Door opened during program execution. Program may be at risk!")
+                        error_payload = {
+                            "kind": "event",
+                            "evt": "error",
+                            "status": "Auto",
+                            "category": "robot",
+                            "code": "R-008",
+                            "message": "door가 열려있습니다. 프로그램이 동작중입니다. 닫아주세요."
+                        }
+                        bb.set("logic/send_event", error_payload)
+                        door_open_error_sent = True
+                    continue  # 다른 상태 체크 없이 바로 다음 루프로
+
+                # 도어가 닫히면 에러 플래그 리셋
+                if not is_door_open and door_open_error_sent:
+                    Logger.info("[device] Door closed. Resuming normal operation.")
+                    door_open_error_sent = False
+                elif not is_door_open:
+                    door_open_error_sent = False
+
+                # 현재 FSM 상태를 블랙보드에서 가져옵니다.
                 logic_fsm = bb.get("logic/fsm/strategy")
                 device_fsm = bb.get("device/fsm/strategy")
                 robot_fsm = bb.get("robot/fsm/strategy")
@@ -319,11 +365,8 @@ class DeviceContext(ContextBase):
                     is_error = "ERROR" in (logic_fsm_state or "") or \
                             "ERROR" in (device_fsm_state or "") or \
                             "ERROR" in (robot_fsm_state or "")
-                    
-                    is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
-                    # 블랙보드에만 쓰기 (검증 불필요)
-                    blink_state = not blink_state
+                    is_idle = logic_fsm_state in ["IDLE", "WAIT_COMMAND", "PROCESS_COMPLETE", "CONNECTING"]
 
                     if is_error:
                         # 빨간색 점멸, 나머지 꺼짐
@@ -346,7 +389,7 @@ class DeviceContext(ContextBase):
 
             except Exception as e:
                 Logger.error(f"[device] Error in _thread_tower_lamp_controller: {e}")
-            
+
             time.sleep(0.5) # 0.5초 간격으로 점멸 (1Hz)
 
     def _thread_comm_status_updater(self):
@@ -482,18 +525,24 @@ class DeviceContext(ContextBase):
             
             # 3. Remote I/O 장치 오류 확인 (EMO 등)
             if self.dev_remoteio_enable and self.remote_comm_state:
+                # SOL_SENSOR 체크 (리스트에 해당 인덱스가 있는지 확인 후 접근)
+                # DigitalInput.SOL_SENSOR = 3이므로, 리스트 길이가 최소 4 이상이어야 함
+                if self.remote_input_data and len(self.remote_input_data) > DigitalInput.SOL_SENSOR:
+                    sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
+                    if sol_sensor == 0:
+                        Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
+                        self.violation_code |= DeviceViolation.SOL_SENSOR_ERR
+
                 # EMO 신호는 NC(Normally Closed)이므로 0일 때 트리거된 것으로 간주
-                emo_triggered = (self.remote_input_data[DigitalInput.EMO_02_SW] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_03_SW] == 0 or 
-                                 self.remote_input_data[DigitalInput.EMO_04_SW] == 0)
-                
-                sol_sensor = self.remote_input_data[DigitalInput.SOL_SENSOR]
-                if sol_sensor == 0:
-                    Logger.info(f"[device] Check violation : Sol Sensor Error Detected")
-                    self.violation_code |= DeviceViolation.SOL_SENSOR_ERR
-                if emo_triggered:
-                    Logger.info(f"[device] Check violation : EMO Error Detected")
-                    self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
+                # DigitalInput.EMO_04_SW = 11이므로, 리스트 길이가 최소 12 이상이어야 함
+                if self.remote_input_data and len(self.remote_input_data) > DigitalInput.EMO_04_SW:
+                    emo_triggered = (self.remote_input_data[DigitalInput.EMO_01_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_02_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_03_SW] == 0 or
+                                     self.remote_input_data[DigitalInput.EMO_04_SW] == 0)
+                    if emo_triggered:
+                        Logger.info(f"[device] Check violation : EMO Error Detected")
+                        self.violation_code |= DeviceViolation.ISO_EMERGENCY_BUTTON # EMO는 더 구체적인 위반으로 처리
 
             return self.violation_code
         except Exception as e:
@@ -1780,13 +1829,13 @@ class DeviceContext(ContextBase):
             gl = db_result.get("gl") or db_result.get("ql") or regist_data.get("gl")
             # thickness = bb.get(""specimen/thickness_avg")
             chuckl = db_result.get("chuckl") or regist_data.get("chuckl")
-            # last_tray_no = bb.get("process_status/last_tray_no")
+            last_tray_no = bb.get("process_status/last_tray_no")
 
             isfinal = 0
             if specimen_no == 5:
                 isfinal = 1  # 각 트레이의 마지막 시편(5번째)인 경우
             # if last_tray_no != 0 and try_no == last_tray_no and specimen_no == 5:
-
+            #     isfinal = 1
             # 반드시 수정 필요!!
             # isfinal = 1  # 전체 시험중 마지막 시험인 경우
 
@@ -1972,17 +2021,19 @@ class DeviceContext(ContextBase):
             parsed_params = result.get("params")
             mode = parsed_params.get("MODE", "")
             run = parsed_params.get("RUN", "N")
-            load = float(parsed_params.get("LOAD", "0.0"))
-            temp = float(parsed_params.get("TEMP", "0.0"))
+            code = parsed_params.get("CODE", "")
+            # load = float(parsed_params.get("LOAD", "0.0"))
+            # temp = float(parsed_params.get("TEMP", "0.0"))
 
             bb.set("device/shimadzu/run_state", {
                 "MODE": mode,
                 "RUN": run,
-                "LOAD": str(load),
-                "TEMP": str(temp)
+                "CODE": code
+                # "TEMP": str(temp)
             })
             
-            # Logger.info(f"[device] ASK_SYS_STATUS response received: {result}")
+            Logger.info(f"[device] ASK_SYS_STATUS response received: {result}, MODE={mode}, RUN={run}, CODE={code}")
+            # Logger.info(f"[device] ASK_SYS_STATUS response: MODE={mode}, RUN={run}, LOAD={load}, TEMP={temp}")
             return result
 
         except Exception as e:

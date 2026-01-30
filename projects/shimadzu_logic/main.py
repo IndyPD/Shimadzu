@@ -62,10 +62,12 @@ def main(blocking=False):
         time.sleep(0.1)
 
         #MQTT 통신 시작
-        mqtt_communicator = mqtt_comm.MqttComm(role='logic', is_dummy=False, 
+        mqtt_communicator = mqtt_comm.MqttComm(role='logic', is_dummy=False,
                                                rule_path="projects/shimadzu_logic/configs/mqtt_rule.json",
                                                stop_event=terminate_flag)
         mqtt_communicator.run()
+        # MQTT 통신 객체를 블랙보드에 저장 (다른 컴포넌트에서 에러 이벤트 전송용)
+        # bb.set("mqtt/communicator", mqtt_communicator)
         time.sleep(0.1)
         
         # ProcessManager를 생성하고 시작합니다.
